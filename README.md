@@ -1,4 +1,4 @@
-<p align="center">
+<p align="left">
   <img src="img/OpenCurve Logo3.png" alt="OpenCurve" width="320"/>
 </p>
 
