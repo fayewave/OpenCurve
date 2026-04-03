@@ -8,20 +8,13 @@ No purchases. No bloatware. Free forever.
 
 ---
 
-## Features
-
-### Bezier curve editor
-OpenCurve is a visual bezier graph with two draggable control handles. Each handle controls one side of the easing curve — drag them to shape exactly how a property accelerates or decelerates between keyframes.
-
-### Keyframe easing
-Place your playhead on or between 2 keyframes, select a property (position, opacity, scale, etc.), and apply your curve. OpenCurve writes the bezier handles directly to your keyframes — no manual handle dragging in the timeline required.
-
-### Presets
-Save any curve as a named preset with a single click. Presets are persistent across sessions and can be reordered by drag.
+## How it works
+Place your playhead between 2 keyframes, select a property (position, opacity, scale, etc.), and apply your curve. OpenCurve writes the bezier handles directly to your keyframes — no manual handle dragging in the timeline required.
 
 ### Features
 - **Works anywhere** — Use it on clips, on the Transform effect, on Adjustment Layers, anywhere you need it
-- **Sharable presets** — Copy the curve coordinates to share with others, or to back them up
+- **Presets** — Save any curve as a named preset with a single click. Presets are persistent across sessions and can be reordered by drag.
+- **Snap to grid** — Hold shift to snap the bezier handles to the grid
 - **Custom curve colour** — change the colour of the graph line and control points to suit your workspace
 - **Update notifications** — get notified inside the plugin when a new version is available
 
