@@ -1,5 +1,3 @@
-# OpenCurve
-
 <p align="center">
   <img src="img/OpenCurve Logo3.png" alt="OpenCurve" width="320"/>
 </p>
