@@ -1,6 +1,7 @@
 # OpenCurve
 
 A bezier curve editor to add custom easing to your keyframes in Premiere Pro.
+
 No purchases. No bloatware. Free forever.
 
 ![OpenCurve](https://img.shields.io/badge/Premiere%20Pro-UXP%20Plugin-blue)
