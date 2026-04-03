@@ -24,11 +24,13 @@
     .then(function(result) {
       console.log('[OC] Loading downloaded update');
       try {
+        localStorage.setItem('opencurve-post-update', '1');
         var script = document.createElement('script');
         script.textContent = result.content;
         document.body.appendChild(script);
       } catch(e) {
         console.error('[OC] Update script failed, removing and falling back:', e);
+        localStorage.removeItem('opencurve-post-update');
         result.file.delete().catch(function(){});
         loadBundled();
       }

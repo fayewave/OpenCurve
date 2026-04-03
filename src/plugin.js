@@ -1340,7 +1340,7 @@ async function poll() {
 window.__opencurvePoll = poll;
 
 // ─── Settings / flyout ─────────────────────────────────────────────────────
-var CURRENT_VERSION     = '1.0.2';
+var CURRENT_VERSION     = '1.0.3';
 var _CURVE_COLOR_KEY    = 'opencurve-line-color';
 var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#4a9eff';
 var _updateAvailable    = false;
@@ -1823,6 +1823,9 @@ if (_postUpdate) {
     _applyCurveColor(_curveColor);
     poll();
     pollTimer = setInterval(poll, POLL_MS);
+    setTimeout(function() {
+      _showCopyToast('Updated to v' + CURRENT_VERSION, '#3ddc84');
+    }, 500);
   }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', _directInit);
