@@ -1340,7 +1340,7 @@ async function poll() {
 window.__opencurvePoll = poll;
 
 // ─── Settings / flyout ─────────────────────────────────────────────────────
-var CURRENT_VERSION     = '1.0.5';
+var CURRENT_VERSION     = '1.0.6';
 var _CURVE_COLOR_KEY    = 'opencurve-line-color';
 var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#4a9eff';
 var _updateAvailable    = false;

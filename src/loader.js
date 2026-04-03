@@ -17,31 +17,28 @@
     .then(function(folder) {
       return folder.getEntry('plugin-update.js')
         .then(function(file) {
-          return file.read({ format: storage.formats.utf8 })
-            .then(function(content) { return { file: file, content: content }; });
+          return { file: file };
         });
     })
     .then(function(result) {
       console.log('[OC] Loading downloaded update');
       try {
-        localStorage.setItem('opencurve-post-update', '1');
+        var nativePath = result.file.nativePath;
+        console.log('[OC] nativePath:', nativePath);
+        if (!nativePath) throw new Error('no nativePath');
+        var fileUrl = 'file:///' + nativePath.replace(/\\/g, '/');
+        console.log('[OC] loading via file URL:', fileUrl);
         var script = document.createElement('script');
-        // Try blob URL first so it loads like an external script
-        try {
-          var blob = new Blob([result.content], { type: 'text/javascript' });
-          var blobUrl = URL.createObjectURL(blob);
-          script.src = blobUrl;
-          script.onload = function() { URL.revokeObjectURL(blobUrl); };
-          script.onerror = function() {
-            // Blob URL failed, fall back to inline
-            URL.revokeObjectURL(blobUrl);
+        script.src = fileUrl;
+        script.onerror = function(e) {
+          console.error('[OC] file URL load failed, falling back to inline:', e);
+          result.file.read({ format: storage.formats.utf8 }).then(function(content) {
+            localStorage.setItem('opencurve-post-update', '1');
             var s2 = document.createElement('script');
-            s2.textContent = result.content;
+            s2.textContent = content;
             document.body.appendChild(s2);
-          };
-        } catch(blobErr) {
-          script.textContent = result.content;
-        }
+          }).catch(function() { loadBundled(); });
+        };
         document.body.appendChild(script);
       } catch(e) {
         console.error('[OC] Update script failed, removing and falling back:', e);
