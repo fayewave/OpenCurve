@@ -9,11 +9,9 @@ A bezier curve editor to add custom easing to your keyframes in Premiere Pro. No
 
 ## Features
 
-- **Curve editor** — drag control handles to shape your bezier curve in real time
-- **Presets** — save curves as named presets, rename them, reorder by drag, share them easily
+- **Curve editor** — drag control handles to shape your bezier curve in real time, then select what property to add it to
+- **Presets** — save curves as named presets, rename them, share them easily
 - **Custom curve colour** — pick any colour for the graph line and control points from the Settings panel
-- **Check for updates** — get notified when a new version is available, directly inside the plugin
-- **Resizable panel** — drag the divider to adjust the graph/preset split to your preference
 
 ---
 
@@ -23,6 +21,8 @@ A bezier curve editor to add custom easing to your keyframes in Premiere Pro. No
 2. Double-click the `.ccx` file
 3. Creative Cloud will prompt you to confirm — click **Install**
 4. Open Premiere Pro and find OpenCurve under **Window → Extensions**
+
+---
 
 ## Requirements
 
