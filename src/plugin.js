@@ -1340,7 +1340,7 @@ async function poll() {
 window.__opencurvePoll = poll;
 
 // ─── Settings / flyout ─────────────────────────────────────────────────────
-var CURRENT_VERSION     = '1.0.3';
+var CURRENT_VERSION     = '1.0.4';
 var _CURVE_COLOR_KEY    = 'opencurve-line-color';
 var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#4a9eff';
 var _updateAvailable    = false;
@@ -1785,7 +1785,7 @@ function _showSettingsModal() {
   var footer = document.createElement('div');
   footer.style.cssText = 'padding:12px 12px 14px;border-top:1px solid rgba(255,255,255,0.07);flex-shrink:0;';
   var madeBy = document.createElement('div');
-  madeBy.textContent = 'made by faye';
+  madeBy.textContent = 'made by faye  ·  v' + CURRENT_VERSION;
   madeBy.style.cssText = 'color:#555;font-size:12px;margin-bottom:6px;';
   var ghLink = document.createElement('div');
   ghLink.textContent = 'github.com/fayewave/OpenCurve';
@@ -1815,68 +1815,80 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // ─── Entrypoints ──────────────────────────────────────────────────────────
 var _postUpdate = localStorage.getItem('opencurve-post-update') === '1';
-if (_postUpdate) {
-  localStorage.removeItem('opencurve-post-update');
-  console.log('[FS] post-update reload — skipping entrypoints.setup');
-  function _directInit() {
-    initPanel();
-    _applyCurveColor(_curveColor);
-    poll();
-    pollTimer = setInterval(poll, POLL_MS);
+if (_postUpdate) localStorage.removeItem('opencurve-post-update');
+
+var _panelCreated = false;
+
+function _directInit() {
+  if (_panelCreated) return;
+  _panelCreated = true;
+  console.log('[FS] directInit');
+  initPanel();
+  _applyCurveColor(_curveColor);
+  if (!pollTimer) { poll(); pollTimer = setInterval(poll, POLL_MS); }
+  if (_postUpdate) {
     setTimeout(function() {
       _showCopyToast('Updated to v' + CURRENT_VERSION, '#3ddc84');
     }, 500);
   }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', _directInit);
-  } else {
-    _directInit();
-  }
-} else {
-  console.log('[FS] setting up entrypoints');
-  try {
-    var ep = uxp && uxp.entrypoints ? uxp.entrypoints : require('uxp').entrypoints;
-    ep.setup({
-      plugin: {
-        create: function() { console.log('[FS] plugin create'); },
-        destroy: function() { if (pollTimer) { clearInterval(pollTimer); pollTimer=null; } },
-      },
-      panels: {
-        'opencurve-panel': {
-          create: function() {
-            console.log('[FS] panel create — DOM ready');
-            initPanel();
-            _applyCurveColor(_curveColor);
-          },
-          show: function() {
-            console.log('[FS] panel show — starting poll');
-            poll();
-            pollTimer = setInterval(poll, POLL_MS);
-          },
-          hide: function() {
-            console.log('[FS] panel hide — stopping poll');
-            if (pollTimer) { clearInterval(pollTimer); pollTimer=null; }
-          },
-          destroy: function() {
-            if (pollTimer) { clearInterval(pollTimer); pollTimer=null; }
-          },
-          menuItems: [
-            { id: 'options',       label: 'Settings' },
-            { id: 'check-updates', label: 'Check for Updates' },
-            { id: 'sep',           label: '-' },
-            { id: 'made-by',       label: 'made by faye', enabled: false },
-            { id: 'version',       label: 'v' + CURRENT_VERSION, enabled: false },
-          ],
-          invokeMenu: function(id) {
-            if (id === 'options')       _showSettingsModal();
-            if (id === 'check-updates') _checkForUpdates();
-            if (id === 'reset')         _confirmReset();
-          },
+}
+
+console.log('[FS] setting up entrypoints');
+try {
+  var ep = uxp && uxp.entrypoints ? uxp.entrypoints : require('uxp').entrypoints;
+  ep.setup({
+    plugin: {
+      create: function() { console.log('[FS] plugin create'); },
+      destroy: function() { if (pollTimer) { clearInterval(pollTimer); pollTimer=null; } },
+    },
+    panels: {
+      'opencurve-panel': {
+        create: function() {
+          console.log('[FS] panel create — DOM ready');
+          _panelCreated = true;
+          initPanel();
+          _applyCurveColor(_curveColor);
+          if (_postUpdate) {
+            setTimeout(function() {
+              _showCopyToast('Updated to v' + CURRENT_VERSION, '#3ddc84');
+            }, 500);
+          }
+        },
+        show: function() {
+          console.log('[FS] panel show — starting poll');
+          poll();
+          pollTimer = setInterval(poll, POLL_MS);
+        },
+        hide: function() {
+          console.log('[FS] panel hide — stopping poll');
+          if (pollTimer) { clearInterval(pollTimer); pollTimer=null; }
+        },
+        destroy: function() {
+          if (pollTimer) { clearInterval(pollTimer); pollTimer=null; }
+        },
+        menuItems: [
+          { id: 'options',       label: 'Settings' },
+          { id: 'check-updates', label: 'Check for Updates' },
+          { id: 'sep',           label: '-' },
+          { id: 'made-by',       label: 'made by faye', enabled: false },
+        ],
+        invokeMenu: function(id) {
+          if (id === 'options')       _showSettingsModal();
+          if (id === 'check-updates') _checkForUpdates();
+          if (id === 'reset')         _confirmReset();
         },
       },
-    });
-    console.log('[FS] entrypoints.setup complete');
-  } catch(e) {
-    console.error('[FS] entrypoints.setup FAILED:', e);
-  }
+    },
+  });
+  console.log('[FS] entrypoints.setup complete');
+} catch(e) {
+  console.error('[FS] entrypoints.setup FAILED:', e);
 }
+
+// Fallback: if create callback never fires (inline script load), init directly
+setTimeout(function() {
+  if (!_panelCreated) {
+    console.log('[FS] create callback not fired — using fallback init');
+    _directInit();
+  }
+}, 300);
