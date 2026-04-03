@@ -17,14 +17,21 @@
     .then(function(folder) {
       return folder.getEntry('plugin-update.js')
         .then(function(file) {
-          return file.read({ format: storage.formats.utf8 });
+          return file.read({ format: storage.formats.utf8 })
+            .then(function(content) { return { file: file, content: content }; });
         });
     })
-    .then(function(content) {
+    .then(function(result) {
       console.log('[OC] Loading downloaded update');
-      var script = document.createElement('script');
-      script.textContent = content;
-      document.body.appendChild(script);
+      try {
+        var script = document.createElement('script');
+        script.textContent = result.content;
+        document.body.appendChild(script);
+      } catch(e) {
+        console.error('[OC] Update script failed, removing and falling back:', e);
+        result.file.delete().catch(function(){});
+        loadBundled();
+      }
     })
     .catch(function() {
       loadBundled();

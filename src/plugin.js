@@ -6,7 +6,7 @@
  * All logic lives here so there's no module-loading chain to fail silently.
  */
 
-console.log('[FS] plugin.js executing — v' + '1.0.1 UPDATE TEST');
+console.log('[FS] plugin.js executing');
 
 // ─── UXP built-ins ────────────────────────────────────────────────────────
 var uxp, ppro;
@@ -1340,7 +1340,7 @@ async function poll() {
 window.__opencurvePoll = poll;
 
 // ─── Settings / flyout ─────────────────────────────────────────────────────
-var CURRENT_VERSION     = '1.0.1';
+var CURRENT_VERSION     = '1.0.2';
 var _CURVE_COLOR_KEY    = 'opencurve-line-color';
 var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#4a9eff';
 var _updateAvailable    = false;
@@ -1485,12 +1485,22 @@ function _performUpdate() {
     card.appendChild(closeBtn);
   }
 
-  setProgress(10, 'Downloading…');
+  setProgress(10, 'Connecting…');
 
-  fetch('https://github.com/fayewave/OpenCurve/releases/latest/download/plugin.js')
+  fetch('https://api.github.com/repos/fayewave/OpenCurve/releases/latest')
+    .then(function(r) {
+      if (!r.ok) throw new Error('API error (' + r.status + ')');
+      return r.json();
+    })
+    .then(function(data) {
+      var asset = (data.assets || []).find(function(a) { return a.name === 'plugin.js'; });
+      if (!asset) throw new Error('plugin.js not found in release');
+      setProgress(25, 'Downloading…');
+      return fetch(asset.browser_download_url, { redirect: 'follow' });
+    })
     .then(function(r) {
       if (!r.ok) throw new Error('Download failed (' + r.status + ')');
-      setProgress(40, 'Downloading…');
+      setProgress(50, 'Downloading…');
       return r.text();
     })
     .then(function(code) {
@@ -1505,15 +1515,18 @@ function _performUpdate() {
         });
     })
     .then(function() {
-      setProgress(100, 'Restarting…');
-      setTimeout(function() {
-        try {
-          location.reload();
-        } catch(e) {
-          statusText.style.color = '#e4e4e4';
-          statusText.textContent = 'Done — close and reopen the panel to apply.';
-        }
-      }, 800);
+      setProgress(100, 'Update installed!');
+      statusText.style.color = '#3ddc84';
+      statusText.textContent = 'Restarting…';
+      localStorage.setItem('opencurve-post-update', '1');
+      setTimeout(function() { try { location.reload(); } catch(e) {
+        statusText.textContent = 'Restart Premiere to apply the update.';
+      }}, 600);
+      var closeBtn = document.createElement('div');
+      closeBtn.textContent = 'Dismiss';
+      closeBtn.style.cssText = 'color:#888;font-size:13px;cursor:pointer;margin-top:14px;';
+      closeBtn.addEventListener('click', function() { document.body.removeChild(overlay); });
+      card.appendChild(closeBtn);
     })
     .catch(function(err) {
       showError('Update failed: ' + (err.message || 'Unknown error'));
@@ -1801,49 +1814,66 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // ─── Entrypoints ──────────────────────────────────────────────────────────
-console.log('[FS] setting up entrypoints');
-try {
-  var ep = uxp && uxp.entrypoints ? uxp.entrypoints : require('uxp').entrypoints;
-  ep.setup({
-    plugin: {
-      create: function() { console.log('[FS] plugin create'); },
-      destroy: function() { if (pollTimer) { clearInterval(pollTimer); pollTimer=null; } },
-    },
-    panels: {
-      'opencurve-panel': {
-        create: function() {
-          console.log('[FS] panel create — DOM ready');
-          initPanel();
-          _applyCurveColor(_curveColor);
-        },
-        show: function() {
-          console.log('[FS] panel show — starting poll');
-          poll();
-          pollTimer = setInterval(poll, POLL_MS);
-        },
-        hide: function() {
-          console.log('[FS] panel hide — stopping poll');
-          if (pollTimer) { clearInterval(pollTimer); pollTimer=null; }
-        },
-        destroy: function() {
-          if (pollTimer) { clearInterval(pollTimer); pollTimer=null; }
-        },
-        menuItems: [
-          { id: 'options',       label: 'Settings' },
-          { id: 'check-updates', label: 'Check for Updates' },
-          { id: 'sep',           label: '-' },
-          { id: 'made-by',       label: 'made by faye', enabled: false },
-          { id: 'version',       label: 'v' + CURRENT_VERSION, enabled: false },
-        ],
-        invokeMenu: function(id) {
-          if (id === 'options')       _showSettingsModal();
-          if (id === 'check-updates') _checkForUpdates();
-          if (id === 'reset')         _confirmReset();
+var _postUpdate = localStorage.getItem('opencurve-post-update') === '1';
+if (_postUpdate) {
+  localStorage.removeItem('opencurve-post-update');
+  console.log('[FS] post-update reload — skipping entrypoints.setup');
+  function _directInit() {
+    initPanel();
+    _applyCurveColor(_curveColor);
+    poll();
+    pollTimer = setInterval(poll, POLL_MS);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _directInit);
+  } else {
+    _directInit();
+  }
+} else {
+  console.log('[FS] setting up entrypoints');
+  try {
+    var ep = uxp && uxp.entrypoints ? uxp.entrypoints : require('uxp').entrypoints;
+    ep.setup({
+      plugin: {
+        create: function() { console.log('[FS] plugin create'); },
+        destroy: function() { if (pollTimer) { clearInterval(pollTimer); pollTimer=null; } },
+      },
+      panels: {
+        'opencurve-panel': {
+          create: function() {
+            console.log('[FS] panel create — DOM ready');
+            initPanel();
+            _applyCurveColor(_curveColor);
+          },
+          show: function() {
+            console.log('[FS] panel show — starting poll');
+            poll();
+            pollTimer = setInterval(poll, POLL_MS);
+          },
+          hide: function() {
+            console.log('[FS] panel hide — stopping poll');
+            if (pollTimer) { clearInterval(pollTimer); pollTimer=null; }
+          },
+          destroy: function() {
+            if (pollTimer) { clearInterval(pollTimer); pollTimer=null; }
+          },
+          menuItems: [
+            { id: 'options',       label: 'Settings' },
+            { id: 'check-updates', label: 'Check for Updates' },
+            { id: 'sep',           label: '-' },
+            { id: 'made-by',       label: 'made by faye', enabled: false },
+            { id: 'version',       label: 'v' + CURRENT_VERSION, enabled: false },
+          ],
+          invokeMenu: function(id) {
+            if (id === 'options')       _showSettingsModal();
+            if (id === 'check-updates') _checkForUpdates();
+            if (id === 'reset')         _confirmReset();
+          },
         },
       },
-    },
-  });
-  console.log('[FS] entrypoints.setup complete');
-} catch(e) {
-  console.error('[FS] entrypoints.setup FAILED:', e);
+    });
+    console.log('[FS] entrypoints.setup complete');
+  } catch(e) {
+    console.error('[FS] entrypoints.setup FAILED:', e);
+  }
 }

@@ -22,10 +22,10 @@
   "requiredPermissions": {
     "clipboard": "readAndWrite",
     "network": {
-      "domains": ["github.com", "api.github.com", "objects.githubusercontent.com", "codeload.github.com"],
+      "domains": ["github.com", "api.github.com", "objects.githubusercontent.com", "codeload.github.com", "releases.githubusercontent.com"],
       "reasonForPermission": "Check for and download plugin updates from GitHub"
     },
-    "localFileSystem": "readWrite"
+    "localFileSystem": "plugin"
   },
   "icons": [
     {
