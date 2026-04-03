@@ -9,6 +9,10 @@ No purchases. No bloatware. Free forever.
 
 ---
 
+![OpenCurve screenshot](screenshots/2026-04-04_09-45-23.png)
+
+---
+
 ## How it works
 Place your playhead between 2 keyframes, select a property (position, opacity, scale, etc.), and apply your curve. OpenCurve writes the bezier handles directly to your keyframes - no manual handle dragging in the timeline required.
 
