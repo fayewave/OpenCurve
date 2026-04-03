@@ -2,7 +2,7 @@
   "manifestVersion": 5,
   "id": "com.fayelab.opencurve",
   "name": "OpenCurve",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "index.html",
   "host": {
     "app": "premierepro",
@@ -25,7 +25,11 @@
       "domains": ["github.com", "api.github.com", "objects.githubusercontent.com", "codeload.github.com", "releases.githubusercontent.com"],
       "reasonForPermission": "Check for and download plugin updates from GitHub"
     },
-    "localFileSystem": "plugin"
+    "localFileSystem": "request",
+    "launchProcess": {
+      "schemes": ["https"],
+      "extensions": []
+    }
   },
   "icons": [
     {

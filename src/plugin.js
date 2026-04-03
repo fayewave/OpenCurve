@@ -1077,8 +1077,132 @@ function initPanel() {
   _renderPresets();
   _refreshUpdateNotification();
 
+  // Parse cubic-bezier string → curve object or null
+  function _parseCubicBezier(text) {
+    if (!text) return null;
+    var m = text.match(/cubic-bezier\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/i);
+    if (!m) return null;
+    var vals = [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]), parseFloat(m[4])];
+    if (vals.some(isNaN)) return null;
+    return { p1x: vals[0], p1y: vals[1], p2x: vals[2], p2y: vals[3] };
+  }
+
+  // Create a preset from a parsed curve and add it to the list
+  function _createPresetFromCurve(curve) {
+    var list = document.getElementById('all-presets-list');
+    if (!list) return;
+    var preset = {
+      id: 'c' + Date.now(),
+      name: 'Pasted ' + (_presetList.filter(function(p){ return !p.builtIn; }).length + 1),
+      curve: curve,
+    };
+    _presetList.push(preset);
+    _savePresetList(_presetList);
+    var btn = _buildPresetBtn(preset);
+    list.appendChild(btn);
+    var ns = btn.querySelector('.preset-name');
+    if (ns) ns.dispatchEvent(new Event('dblclick'));
+  }
+
+  // Show paste-coordinates input panel
+  function _showPastePanel() {
+    console.log('[OC] _showPastePanel called');
+    var existingOv = document.getElementById('_paste-overlay');
+    if (existingOv) existingOv.parentNode.removeChild(existingOv);
+    var existingBox = document.getElementById('_paste-box');
+    if (existingBox) existingBox.parentNode.removeChild(existingBox);
+
+    var overlay = document.createElement('div');
+    overlay.id = '_paste-overlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:9997;';
+    document.body.appendChild(overlay);
+
+    var boxW = 272;
+    var vw = document.documentElement.clientWidth  || document.body.clientWidth;
+    var vh = document.documentElement.clientHeight || document.body.clientHeight;
+    var boxL = Math.round((vw - boxW) / 2);
+
+    var box = document.createElement('div');
+    box.id = '_paste-box';
+    box.style.cssText = 'position:fixed;top:-9999px;left:'+boxL+'px;width:'+boxW+'px;visibility:hidden;background:#1c1c1c;border:1px solid rgba(255,255,255,0.18);z-index:9998;padding:16px;font-family:system-ui,sans-serif;';
+    document.body.appendChild(box);
+
+    function close() {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      if (box.parentNode) box.parentNode.removeChild(box);
+    }
+    overlay.addEventListener('click', close);
+
+    var title = document.createElement('div');
+    title.textContent = 'Paste Coordinates';
+    title.style.cssText = 'color:#e4e4e4;font-size:14px;font-weight:600;margin-bottom:8px;';
+    box.appendChild(title);
+
+    var desc = document.createElement('div');
+    desc.textContent = 'Paste a cubic-bezier() value:';
+    desc.style.cssText = 'color:#888;font-size:13px;margin-bottom:10px;';
+    box.appendChild(desc);
+
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'cubic-bezier(0.42, 0, 0.58, 1)';
+    input.style.cssText = 'width:100%;background:#1c1c1c;border:1px solid rgba(255,255,255,0.12);color:#e4e4e4;font-size:13px;padding:7px 10px;outline:none;margin-bottom:6px;box-sizing:border-box;font-family:inherit;';
+    box.appendChild(input);
+
+    var err = document.createElement('div');
+    err.style.cssText = 'color:#f06060;font-size:12px;min-height:16px;margin-bottom:10px;';
+    box.appendChild(err);
+
+    var btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:10px;justify-content:flex-end;';
+
+    var cancelBtn = document.createElement('div');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.cssText = 'color:#888;font-size:13px;cursor:pointer;padding:6px 10px;';
+    cancelBtn.addEventListener('mouseenter', function() { cancelBtn.style.color = '#e4e4e4'; });
+    cancelBtn.addEventListener('mouseleave', function() { cancelBtn.style.color = '#888'; });
+    cancelBtn.addEventListener('click', close);
+
+    var addBtn = document.createElement('div');
+    addBtn.textContent = 'Add Preset';
+    addBtn.style.cssText = 'color:#4a9eff;font-size:13px;font-weight:600;cursor:pointer;padding:6px 10px;';
+    addBtn.addEventListener('mouseenter', function() { addBtn.style.color = '#7dc4ff'; });
+    addBtn.addEventListener('mouseleave', function() { addBtn.style.color = '#4a9eff'; });
+    addBtn.addEventListener('click', function() {
+      var curve = _parseCubicBezier(input.value.trim());
+      if (!curve) { err.textContent = 'Invalid format — expected cubic-bezier(x1, y1, x2, y2)'; return; }
+      close();
+      _createPresetFromCurve(curve);
+    });
+
+    btnRow.appendChild(cancelBtn);
+    btnRow.appendChild(addBtn);
+    box.appendChild(btnRow);
+
+    // Position vertically once box has height
+    setTimeout(function() {
+      var bh = box.offsetHeight || 160;
+      var t = Math.max(0, Math.round((vh - bh) / 2));
+      box.style.top = t + 'px';
+      box.style.visibility = 'visible';
+      input.focus();
+    }, 0);
+
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') addBtn.click();
+      if (e.key === 'Escape') close();
+    });
+  }
+
+  // Paste coordinates: always show panel, pre-fill clipboard if valid
+  function _pasteCoordinates() {
+    console.log('[OC] _pasteCoordinates called');
+    _showPastePanel();
+  }
+
   // Mini Settings-only context menu (used in preset list empty space + graph)
   function _showMiniCtxMenu(e) {
+    console.log('[OC] _showMiniCtxMenu called');
     e.preventDefault();
     e.stopPropagation();
     _hideCtxMenu();
@@ -1090,18 +1214,29 @@ function initPanel() {
     mini.id = '_mini-ctx';
     mini.style.display = 'block';
 
-    var item = document.createElement('div');
-    item.className = 'ctx-menu-item';
-    item.textContent = 'Settings';
-    item.addEventListener('click', function(ev) {
+    var pasteItem = document.createElement('div');
+    pasteItem.className = 'ctx-menu-item';
+    pasteItem.textContent = 'Paste Coordinates';
+    pasteItem.addEventListener('click', function(ev) {
+      ev.stopPropagation();
+      if (mini.parentNode) mini.parentNode.removeChild(mini);
+      _pasteCoordinates();
+    });
+    mini.appendChild(pasteItem);
+
+    var settingsItem = document.createElement('div');
+    settingsItem.className = 'ctx-menu-item';
+    settingsItem.textContent = 'Settings';
+    settingsItem.addEventListener('click', function(ev) {
       ev.stopPropagation();
       if (mini.parentNode) mini.parentNode.removeChild(mini);
       _showSettingsModal();
     });
-    mini.appendChild(item);
+    mini.appendChild(settingsItem);
+
     document.body.appendChild(mini);
 
-    var mw = 170, mh = 36;
+    var mw = 170, mh = 72;
     var ww = document.documentElement.clientWidth  || document.body.clientWidth;
     var wh = document.documentElement.clientHeight || document.body.clientHeight;
     var x = Math.min(e.clientX, ww - mw);
@@ -1340,13 +1475,12 @@ async function poll() {
 window.__opencurvePoll = poll;
 
 // ─── Settings / flyout ─────────────────────────────────────────────────────
-var CURRENT_VERSION     = '1.0.8';
+var CURRENT_VERSION     = '1.0.1';
 var _CURVE_COLOR_KEY    = 'opencurve-line-color';
 var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#4a9eff';
 var _updateAvailable    = false;
 var _latestVersion      = null;
 var _updateDismissed    = false;
-var _pendingRestart     = false;
 var _UPDATE_NOTIF_KEY   = 'opencurve-update-notif';
 var _updateNotifsOn     = localStorage.getItem(_UPDATE_NOTIF_KEY) !== 'off';
 
@@ -1410,6 +1544,10 @@ function _refreshUpdateNotification() {
   delBtn.style.opacity = '0';
   notif.addEventListener('mouseenter', function() { delBtn.style.opacity = '1'; notif.style.background = 'rgba(240,180,0,0.15)'; });
   notif.addEventListener('mouseleave', function() { delBtn.style.opacity = '0'; notif.style.background = 'rgba(240,180,0,0.08)'; });
+  notif.addEventListener('click', function(e) {
+    if (e.target === delBtn) return;
+    _openReleasesPage();
+  });
   delBtn.addEventListener('click', function(e) {
     e.stopPropagation();
     _updateDismissed = true;
@@ -1423,11 +1561,7 @@ function _refreshUpdateNotification() {
 function _applyUpdateBtnState(btn, label) {
   var old = btn.querySelector('._update-icon');
   if (old) btn.removeChild(old);
-  if (_pendingRestart) {
-    btn.style.background = 'rgba(61,220,132,0.08)';
-    label.textContent = 'Pending Restart';
-    label.style.color = '#3ddc84';
-  } else if (_updateAvailable) {
+  if (_updateAvailable) {
     btn.style.background = 'rgba(240,180,0,0.08)';
     label.textContent = 'Update Available';
     label.style.color = '#e6b800';
@@ -1443,103 +1577,14 @@ function _applyUpdateBtnState(btn, label) {
   }
 }
 
-function _performUpdate() {
-  var overlay = document.createElement('div');
-  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.75);z-index:99999;display:flex;align-items:center;justify-content:center;';
-
-  var card = document.createElement('div');
-  card.style.cssText = 'background:#1c1c1c;border:1px solid rgba(255,255,255,0.18);width:260px;padding:20px;font-family:system-ui,sans-serif;';
-
-  var title = document.createElement('div');
-  title.textContent = 'Updating OpenCurve';
-  title.style.cssText = 'color:#e4e4e4;font-size:14px;font-weight:600;margin-bottom:12px;';
-
-  var statusText = document.createElement('div');
-  statusText.style.cssText = 'color:#888;font-size:13px;margin-bottom:12px;';
-  statusText.textContent = 'Connecting…';
-
-  var barBg = document.createElement('div');
-  barBg.style.cssText = 'background:rgba(255,255,255,0.08);height:3px;width:100%;';
-  var bar = document.createElement('div');
-  bar.style.cssText = 'height:3px;width:0%;background:#4a9eff;transition:width 0.4s;';
-  barBg.appendChild(bar);
-
-  card.appendChild(title);
-  card.appendChild(statusText);
-  card.appendChild(barBg);
-  overlay.appendChild(card);
-  document.body.appendChild(overlay);
-
-  function setProgress(pct, text) {
-    bar.style.width = pct + '%';
-    statusText.textContent = text;
-  }
-
-  function showError(msg) {
-    bar.style.background = '#f06060';
-    bar.style.width = '100%';
-    statusText.style.color = '#f06060';
-    statusText.textContent = msg;
-    var closeBtn = document.createElement('div');
-    closeBtn.textContent = 'Close';
-    closeBtn.style.cssText = 'color:#888;font-size:13px;cursor:pointer;margin-top:14px;';
-    closeBtn.addEventListener('click', function() { document.body.removeChild(overlay); });
-    card.appendChild(closeBtn);
-  }
-
-  setProgress(10, 'Connecting…');
-
-  fetch('https://api.github.com/repos/fayewave/OpenCurve/releases/latest')
-    .then(function(r) {
-      if (!r.ok) throw new Error('API error (' + r.status + ')');
-      return r.json();
-    })
-    .then(function(data) {
-      var asset = (data.assets || []).find(function(a) { return a.name === 'plugin.js'; });
-      if (!asset) throw new Error('plugin.js not found in release');
-      setProgress(25, 'Downloading…');
-      return fetch(asset.browser_download_url, { redirect: 'follow' });
-    })
-    .then(function(r) {
-      if (!r.ok) throw new Error('Download failed (' + r.status + ')');
-      setProgress(50, 'Downloading…');
-      return r.text();
-    })
-    .then(function(code) {
-      setProgress(70, 'Installing…');
-      var uxpStorage = require('uxp').storage;
-      return uxpStorage.localFileSystem.getDataFolder()
-        .then(function(folder) {
-          return folder.createFile('plugin-update.js', { overwrite: true })
-            .then(function(file) {
-              return file.write(code, { format: uxpStorage.formats.utf8 });
-            });
-        });
-    })
-    .then(function() {
-      setProgress(100, 'Update installed!');
-      statusText.style.color = '#3ddc84';
-      statusText.style.color = '#3ddc84';
-      statusText.textContent = 'Update installed!';
-      setTimeout(function() {
-        statusText.style.color = '#888';
-        statusText.textContent = 'Restart Premiere Pro to apply.';
-        _updateDismissed = true;
-        _pendingRestart = true;
-        _refreshUpdateNotification();
-        var btn = document.getElementById('_updates-row');
-        var lbl = document.getElementById('_updates-label');
-        if (btn && lbl) _applyUpdateBtnState(btn, lbl);
-      }, 1200);
-      var closeBtn = document.createElement('div');
-      closeBtn.textContent = 'Dismiss';
-      closeBtn.style.cssText = 'color:#888;font-size:13px;cursor:pointer;margin-top:14px;';
-      closeBtn.addEventListener('click', function() { document.body.removeChild(overlay); });
-      card.appendChild(closeBtn);
-    })
-    .catch(function(err) {
-      showError('Update failed: ' + (err.message || 'Unknown error'));
+function _openReleasesPage() {
+  var url = 'https://github.com/fayewave/OpenCurve/releases/latest';
+  require('uxp').shell.openExternal(url).catch(function(e) {
+    console.error('[OC] openExternal failed:', e);
+    navigator.clipboard.writeText(url).then(function() {
+      _showCopyToast('Link copied — paste in browser', '#e6b800');
     });
+  });
 }
 
 function _checkForUpdates() {
@@ -1741,16 +1786,10 @@ function _showSettingsModal() {
     document.body.removeChild(modal);
     document.body.removeChild(overlay);
     if (_updateAvailable) {
-      _performUpdate();
+      _openReleasesPage();
     } else {
       _checkForUpdates();
     }
-  });
-  updatesRow.addEventListener('contextmenu', function(e) {
-    e.preventDefault();
-    _updateAvailable = !_updateAvailable;
-    _applyUpdateBtnState(updatesRow, updatesLabel);
-    _refreshUpdateNotification();
   });
   content.appendChild(updatesRow);
 
