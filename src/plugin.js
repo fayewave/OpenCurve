@@ -1340,7 +1340,7 @@ async function poll() {
 window.__opencurvePoll = poll;
 
 // ─── Settings / flyout ─────────────────────────────────────────────────────
-var CURRENT_VERSION     = '1.0.6';
+var CURRENT_VERSION     = '1.0.7';
 var _CURVE_COLOR_KEY    = 'opencurve-line-color';
 var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#4a9eff';
 var _updateAvailable    = false;
@@ -1517,11 +1517,12 @@ function _performUpdate() {
     .then(function() {
       setProgress(100, 'Update installed!');
       statusText.style.color = '#3ddc84';
-      statusText.textContent = 'Restarting…';
-      localStorage.setItem('opencurve-post-update', '1');
-      setTimeout(function() { try { location.reload(); } catch(e) {
-        statusText.textContent = 'Restart Premiere to apply the update.';
-      }}, 600);
+      statusText.style.color = '#3ddc84';
+      statusText.textContent = 'Update installed!';
+      setTimeout(function() {
+        statusText.style.color = '#888';
+        statusText.textContent = 'Restart Premiere Pro to apply.';
+      }, 1200);
       var closeBtn = document.createElement('div');
       closeBtn.textContent = 'Dismiss';
       closeBtn.style.cssText = 'color:#888;font-size:13px;cursor:pointer;margin-top:14px;';
@@ -1814,24 +1815,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // ─── Entrypoints ──────────────────────────────────────────────────────────
-var _postUpdate = localStorage.getItem('opencurve-post-update') === '1';
-if (_postUpdate) localStorage.removeItem('opencurve-post-update');
-
 var _panelCreated = false;
-
-function _directInit() {
-  if (_panelCreated) return;
-  _panelCreated = true;
-  console.log('[FS] directInit');
-  initPanel();
-  _applyCurveColor(_curveColor);
-  if (!pollTimer) { poll(); pollTimer = setInterval(poll, POLL_MS); }
-  if (_postUpdate) {
-    setTimeout(function() {
-      _showCopyToast('Updated to v' + CURRENT_VERSION, '#3ddc84');
-    }, 500);
-  }
-}
 
 console.log('[FS] setting up entrypoints');
 try {
@@ -1848,7 +1832,8 @@ try {
           _panelCreated = true;
           initPanel();
           _applyCurveColor(_curveColor);
-          if (_postUpdate) {
+          if (localStorage.getItem('opencurve-post-update') === '1') {
+            localStorage.removeItem('opencurve-post-update');
             setTimeout(function() {
               _showCopyToast('Updated to v' + CURRENT_VERSION, '#3ddc84');
             }, 500);
@@ -1885,10 +1870,3 @@ try {
   console.error('[FS] entrypoints.setup FAILED:', e);
 }
 
-// Fallback: if create callback never fires (inline script load), init directly
-setTimeout(function() {
-  if (!_panelCreated) {
-    console.log('[FS] create callback not fired — using fallback init');
-    _directInit();
-  }
-}, 300);
