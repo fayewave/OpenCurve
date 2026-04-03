@@ -20,7 +20,12 @@
     }
   ],
   "requiredPermissions": {
-    "clipboard": "readAndWrite"
+    "clipboard": "readAndWrite",
+    "network": {
+      "domains": ["github.com", "api.github.com", "objects.githubusercontent.com", "codeload.github.com"],
+      "reasonForPermission": "Check for and download plugin updates from GitHub"
+    },
+    "localFileSystem": "readWrite"
   },
   "icons": [
     {

@@ -6,7 +6,7 @@
  * All logic lives here so there's no module-loading chain to fail silently.
  */
 
-console.log('[FS] plugin.js executing');
+console.log('[FS] plugin.js executing — v' + '1.0.1 UPDATE TEST');
 
 // ─── UXP built-ins ────────────────────────────────────────────────────────
 var uxp, ppro;
@@ -902,22 +902,6 @@ function initPanel() {
     if (t.btn && t.btn.parentNode) t.btn.parentNode.removeChild(t.btn);
   });
 
-  function _showCopyToast(msg) {
-    var toast = document.createElement('div');
-    toast.textContent = msg;
-    toast.style.cssText = [
-      'position:fixed', 'top:10px', 'left:50%', 'transform:translateX(-50%)',
-      'background:#252525', 'border:1px solid rgba(255,255,255,0.12)',
-      'color:#e4e4e4', 'font-size:15px', 'padding:7px 14px',
-      'border-radius:0', 'pointer-events:none', 'z-index:99999',
-      'white-space:nowrap', 'max-width:320px', 'overflow:hidden',
-      'text-overflow:ellipsis', 'opacity:1', 'transition:opacity 0.3s',
-    ].join(';');
-    document.body.appendChild(toast);
-    setTimeout(function() { toast.style.opacity = '0'; }, 1800);
-    setTimeout(function() { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 2200);
-  }
-
   function _showCtxMenu(preset, btn, startRename, e) {
     _ctxTarget = { preset: preset, btn: btn, startRename: startRename };
     var mw = 170;
@@ -956,7 +940,7 @@ function initPanel() {
     thumb.setAttribute('class', 'preset-thumb');
     thumb.setAttribute('width', '28'); thumb.setAttribute('height', '28');
     var tp = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    tp.setAttribute('fill', 'none'); tp.setAttribute('stroke', '#4a9eff');
+    tp.setAttribute('fill', 'none'); tp.setAttribute('stroke', _curveColor);
     tp.setAttribute('stroke-width', '2'); tp.setAttribute('stroke-linecap', 'round');
     tp.setAttribute('d', _thumbPathD(preset.curve));
     thumb.appendChild(tp); btn.appendChild(thumb);
@@ -1091,6 +1075,68 @@ function initPanel() {
   }
 
   _renderPresets();
+  _refreshUpdateNotification();
+
+  // Mini Settings-only context menu (used in preset list empty space + graph)
+  function _showMiniCtxMenu(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    _hideCtxMenu();
+    var existing = document.getElementById('_mini-ctx');
+    if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+
+    var mini = document.createElement('div');
+    mini.className = 'ctx-menu';
+    mini.id = '_mini-ctx';
+    mini.style.display = 'block';
+
+    var item = document.createElement('div');
+    item.className = 'ctx-menu-item';
+    item.textContent = 'Settings';
+    item.addEventListener('click', function(ev) {
+      ev.stopPropagation();
+      if (mini.parentNode) mini.parentNode.removeChild(mini);
+      _showSettingsModal();
+    });
+    mini.appendChild(item);
+    document.body.appendChild(mini);
+
+    var mw = 170, mh = 36;
+    var ww = document.documentElement.clientWidth  || document.body.clientWidth;
+    var wh = document.documentElement.clientHeight || document.body.clientHeight;
+    var x = Math.min(e.clientX, ww - mw);
+    var y = e.clientY + mh > wh ? e.clientY - mh : e.clientY;
+    mini.style.left = Math.max(0, x) + 'px';
+    mini.style.top  = Math.max(0, y) + 'px';
+
+    function removeMini(ev) {
+      if (!mini.contains(ev.target)) {
+        if (mini.parentNode) mini.parentNode.removeChild(mini);
+        window.removeEventListener('pointerdown', removeMini);
+      }
+    }
+    window.addEventListener('pointerdown', removeMini);
+  }
+
+  // Right-click on empty space in preset list
+  (function() {
+    var list = document.getElementById('all-presets-list');
+    if (!list) return;
+    list.addEventListener('contextmenu', function(e) {
+      var onPreset = e.target.closest && e.target.closest('.preset-btn');
+      if (onPreset) return;
+      _showMiniCtxMenu(e);
+    });
+  })();
+
+  // Right-click on graph editor
+  (function() {
+    var graph = document.getElementById('bezier-svg');
+    if (!graph) return;
+    graph.addEventListener('contextmenu', function(e) {
+      _showMiniCtxMenu(e);
+    });
+  })();
 
   // Build the New Preset button using identical DOM structure to preset buttons
   (function() {
@@ -1293,6 +1339,467 @@ async function poll() {
 }
 window.__opencurvePoll = poll;
 
+// ─── Settings / flyout ─────────────────────────────────────────────────────
+var CURRENT_VERSION     = '1.0.1';
+var _CURVE_COLOR_KEY    = 'opencurve-line-color';
+var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#4a9eff';
+var _updateAvailable    = false;
+var _latestVersion      = null;
+var _updateDismissed    = false;
+var _UPDATE_NOTIF_KEY   = 'opencurve-update-notif';
+var _updateNotifsOn     = localStorage.getItem(_UPDATE_NOTIF_KEY) !== 'off';
+
+function _applyCurveColor(color) {
+  _curveColor = color;
+  var el = document.getElementById('sg-curve');
+  if (el) el.setAttribute('stroke', color);
+  var ep0 = document.getElementById('sg-ep0');
+  if (ep0) ep0.setAttribute('stroke', color);
+  var ep3 = document.getElementById('sg-ep3');
+  if (ep3) ep3.setAttribute('stroke', color);
+  document.querySelectorAll('.preset-thumb path').forEach(function(p) {
+    p.setAttribute('stroke', color);
+  });
+}
+
+function _showCopyToast(msg, color) {
+  var toast = document.createElement('div');
+  toast.textContent = msg;
+  toast.style.cssText = [
+    'position:fixed', 'top:10px', 'left:50%', 'transform:translateX(-50%)',
+    'background:#252525', 'border:1px solid rgba(255,255,255,0.12)',
+    'color:'+(color||'#e4e4e4'), 'font-size:15px', 'padding:7px 14px',
+    'border-radius:0', 'pointer-events:none', 'z-index:99999',
+    'white-space:nowrap', 'max-width:320px', 'overflow:hidden',
+    'text-overflow:ellipsis', 'opacity:1', 'transition:opacity 0.3s',
+  ].join(';');
+  document.body.appendChild(toast);
+  var delay = color ? 2800 : 1800;
+  setTimeout(function() { toast.style.opacity = '0'; }, delay);
+  setTimeout(function() { if (toast.parentNode) toast.parentNode.removeChild(toast); }, delay + 400);
+}
+
+function _refreshUpdateNotification() {
+  var list = document.getElementById('all-presets-list');
+  if (!list) return;
+  var existing = document.getElementById('_update-notif');
+  if (existing) existing.parentNode.removeChild(existing);
+  if (!_updateAvailable || _updateDismissed || !_updateNotifsOn) return;
+
+  var notif = document.createElement('div');
+  notif.id = '_update-notif';
+  notif.className = 'preset-btn';
+  notif.style.color = '#e6b800';
+  notif.style.background = 'rgba(240,180,0,0.08)';
+
+  // Icon area (same 28x28 space as thumbnail)
+  var iconWrap = document.createElement('span');
+  iconWrap.style.cssText = 'width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:8px;font-size:16px;opacity:0.9;';
+  iconWrap.textContent = '⚠';
+  notif.appendChild(iconWrap);
+
+  var nameSpan = document.createElement('span');
+  nameSpan.className = 'preset-name';
+  nameSpan.textContent = 'Update Available';
+  notif.appendChild(nameSpan);
+
+  var delBtn = document.createElement('div');
+  delBtn.className = 'preset-delete';
+  delBtn.textContent = '×';
+  delBtn.style.opacity = '0';
+  notif.addEventListener('mouseenter', function() { delBtn.style.opacity = '1'; notif.style.background = 'rgba(240,180,0,0.15)'; });
+  notif.addEventListener('mouseleave', function() { delBtn.style.opacity = '0'; notif.style.background = 'rgba(240,180,0,0.08)'; });
+  delBtn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    _updateDismissed = true;
+    _refreshUpdateNotification();
+  });
+  notif.appendChild(delBtn);
+
+  list.insertBefore(notif, list.firstChild);
+}
+
+function _applyUpdateBtnState(btn, label) {
+  if (_updateAvailable) {
+    btn.style.background = 'rgba(240,180,0,0.08)';
+    label.textContent = 'Update Available';
+    label.style.color = '#e6b800';
+    var existing = btn.querySelector('._update-icon');
+    if (!existing) {
+      var icon = document.createElement('span');
+      icon.className = '_update-icon';
+      icon.textContent = '⚠';
+      icon.style.cssText = 'color:#e6b800;font-size:14px;margin-left:6px;';
+      btn.appendChild(icon);
+    }
+  } else {
+    btn.style.background = '';
+    label.textContent = 'Check for Updates';
+    label.style.color = '#b0b0b0';
+    var old = btn.querySelector('._update-icon');
+    if (old) btn.removeChild(old);
+  }
+}
+
+function _performUpdate() {
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.75);z-index:99999;display:flex;align-items:center;justify-content:center;';
+
+  var card = document.createElement('div');
+  card.style.cssText = 'background:#1c1c1c;border:1px solid rgba(255,255,255,0.18);width:260px;padding:20px;font-family:system-ui,sans-serif;';
+
+  var title = document.createElement('div');
+  title.textContent = 'Updating OpenCurve';
+  title.style.cssText = 'color:#e4e4e4;font-size:14px;font-weight:600;margin-bottom:12px;';
+
+  var statusText = document.createElement('div');
+  statusText.style.cssText = 'color:#888;font-size:13px;margin-bottom:12px;';
+  statusText.textContent = 'Connecting…';
+
+  var barBg = document.createElement('div');
+  barBg.style.cssText = 'background:rgba(255,255,255,0.08);height:3px;width:100%;';
+  var bar = document.createElement('div');
+  bar.style.cssText = 'height:3px;width:0%;background:#4a9eff;transition:width 0.4s;';
+  barBg.appendChild(bar);
+
+  card.appendChild(title);
+  card.appendChild(statusText);
+  card.appendChild(barBg);
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+
+  function setProgress(pct, text) {
+    bar.style.width = pct + '%';
+    statusText.textContent = text;
+  }
+
+  function showError(msg) {
+    bar.style.background = '#f06060';
+    bar.style.width = '100%';
+    statusText.style.color = '#f06060';
+    statusText.textContent = msg;
+    var closeBtn = document.createElement('div');
+    closeBtn.textContent = 'Close';
+    closeBtn.style.cssText = 'color:#888;font-size:13px;cursor:pointer;margin-top:14px;';
+    closeBtn.addEventListener('click', function() { document.body.removeChild(overlay); });
+    card.appendChild(closeBtn);
+  }
+
+  setProgress(10, 'Downloading…');
+
+  fetch('https://github.com/fayewave/OpenCurve/releases/latest/download/plugin.js')
+    .then(function(r) {
+      if (!r.ok) throw new Error('Download failed (' + r.status + ')');
+      setProgress(40, 'Downloading…');
+      return r.text();
+    })
+    .then(function(code) {
+      setProgress(70, 'Installing…');
+      var uxpStorage = require('uxp').storage;
+      return uxpStorage.localFileSystem.getDataFolder()
+        .then(function(folder) {
+          return folder.createFile('plugin-update.js', { overwrite: true })
+            .then(function(file) {
+              return file.write(code, { format: uxpStorage.formats.utf8 });
+            });
+        });
+    })
+    .then(function() {
+      setProgress(100, 'Restarting…');
+      setTimeout(function() {
+        try {
+          location.reload();
+        } catch(e) {
+          statusText.style.color = '#e4e4e4';
+          statusText.textContent = 'Done — close and reopen the panel to apply.';
+        }
+      }, 800);
+    })
+    .catch(function(err) {
+      showError('Update failed: ' + (err.message || 'Unknown error'));
+    });
+}
+
+function _checkForUpdates() {
+  _updateDismissed = false;
+  _showCopyToast('Checking for updates…');
+  fetch('https://api.github.com/repos/fayewave/OpenCurve/releases/latest')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var latest = (data.tag_name || '').replace(/^v/, '');
+      if (!latest) { _showCopyToast('No releases found on GitHub'); return; }
+      _latestVersion = latest;
+      if (latest === CURRENT_VERSION) {
+        _updateAvailable = false;
+        _showCopyToast('OpenCurve is up to date (v' + CURRENT_VERSION + ')');
+      } else {
+        _updateAvailable = true;
+        _showCopyToast('Update available: v' + latest + ' — you have v' + CURRENT_VERSION);
+      }
+      // Refresh button if modal is open
+      var btn = document.getElementById('_updates-row');
+      var lbl = document.getElementById('_updates-label');
+      if (btn && lbl) _applyUpdateBtnState(btn, lbl);
+      _refreshUpdateNotification();
+    })
+    .catch(function() { _showCopyToast('Could not reach GitHub'); });
+}
+
+function _confirmReset() {
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.65);z-index:99998;display:flex;align-items:center;justify-content:center;';
+
+  var box = document.createElement('div');
+  box.style.cssText = 'background:#1c1c1c;border:1px solid rgba(255,255,255,0.18);padding:20px;width:260px;font-family:system-ui,sans-serif;';
+
+  var title = document.createElement('div');
+  title.textContent = 'Reset All Settings';
+  title.style.cssText = 'color:#e4e4e4;font-size:14px;font-weight:600;margin-bottom:8px;';
+
+  var msg = document.createElement('div');
+  msg.textContent = 'This will clear all saved presets, the graph line colour, and reset the curve. This cannot be undone.';
+  msg.style.cssText = 'color:#888;font-size:13px;margin-bottom:16px;line-height:1.5;';
+
+  var btns = document.createElement('div');
+  btns.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
+
+  var cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.style.cssText = 'background:transparent;border:1px solid rgba(255,255,255,0.12);color:#888;font-size:13px;padding:5px 12px;cursor:pointer;';
+  cancelBtn.addEventListener('click', function() { document.body.removeChild(overlay); });
+
+  var resetBtn = document.createElement('button');
+  resetBtn.textContent = 'Reset';
+  resetBtn.style.cssText = 'background:#f06060;border:none;color:#fff;font-size:13px;padding:5px 12px;cursor:pointer;font-weight:600;';
+  resetBtn.addEventListener('click', function() {
+    localStorage.removeItem('opencurve-presets-v10');
+    localStorage.removeItem('opencurve-sidebar-width');
+    localStorage.removeItem(_CURVE_COLOR_KEY);
+    _applyCurveColor('#4a9eff');
+    setState({ curve: { p1x: 0.625, p1y: 0.000, p2x: 0.375, p2y: 1.000 } });
+    document.body.removeChild(overlay);
+    _showCopyToast('Reset all settings');
+    try { location.reload(); } catch(e) {}
+  });
+
+  btns.appendChild(cancelBtn);
+  btns.appendChild(resetBtn);
+  box.appendChild(title);
+  box.appendChild(msg);
+  box.appendChild(btns);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+}
+
+function _showSettingsModal() {
+  var overlay = document.createElement('div');
+  overlay.id = 'settings-overlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:9997;';
+  overlay.addEventListener('click', function() {
+    document.body.removeChild(modal);
+    document.body.removeChild(overlay);
+  });
+  document.body.appendChild(overlay);
+
+  var modal = document.createElement('div');
+  modal.id = 'settings-modal';
+  var modalW = 280;
+  var vw = document.documentElement.clientWidth  || document.body.clientWidth;
+  var vh = document.documentElement.clientHeight || document.body.clientHeight;
+  var modalL = Math.round((vw - modalW) / 2);
+  modal.style.cssText = 'position:fixed;top:-9999px;left:'+modalL+'px;width:'+modalW+'px;visibility:hidden;background:#1c1c1c;border:1px solid rgba(255,255,255,0.18);z-index:9998;display:flex;flex-direction:column;font-family:system-ui,sans-serif;';
+
+  // Header
+  var header = document.createElement('div');
+  header.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);flex-shrink:0;';
+  var headerTitle = document.createElement('span');
+  headerTitle.textContent = 'Settings';
+  headerTitle.style.cssText = 'color:#e4e4e4;font-size:14px;font-weight:600;flex:1;';
+  var closeBtn = document.createElement('div');
+  closeBtn.textContent = '✕';
+  closeBtn.style.cssText = 'color:#888;font-size:13px;cursor:pointer;padding:4px 6px;';
+  closeBtn.addEventListener('mouseenter', function() { closeBtn.style.color='#e4e4e4'; });
+  closeBtn.addEventListener('mouseleave', function() { closeBtn.style.color='#888'; });
+  closeBtn.addEventListener('click', function() {
+    document.body.removeChild(modal);
+    document.body.removeChild(overlay);
+  });
+  header.appendChild(headerTitle);
+  header.appendChild(closeBtn);
+
+  // Content
+  var content = document.createElement('div');
+  content.style.cssText = 'flex:1;overflow-y:auto;';
+
+  // Graph line colour section
+  var colorSection = document.createElement('div');
+  colorSection.style.cssText = 'padding:10px 12px 12px;border-bottom:1px solid rgba(255,255,255,0.07);';
+
+  var colorLabel = document.createElement('div');
+  colorLabel.textContent = 'Graph line colour';
+  colorLabel.style.cssText = 'color:#b0b0b0;font-size:14px;margin-bottom:10px;';
+  colorSection.appendChild(colorLabel);
+
+  // Swatches
+  var swatchColors = ['#4a9eff','#3ddc84','#f06060','#f0a030','#c97ff0','#ff6eb4','#ffffff','#aaaaaa'];
+  var swatchRow = document.createElement('div');
+  swatchRow.style.cssText = 'display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;';
+  swatchColors.forEach(function(col) {
+    var sw = document.createElement('div');
+    sw.style.cssText = 'width:22px;height:22px;background:'+col+';cursor:pointer;border:2px solid '+(col===_curveColor?'#fff':'transparent')+';flex-shrink:0;';
+    sw.addEventListener('mouseenter', function() {
+      if (sw.style.borderColor !== '#ffffff') sw.style.borderColor = 'rgba(255,255,255,0.45)';
+    });
+    sw.addEventListener('mouseleave', function() {
+      if (sw.style.borderColor !== '#ffffff') sw.style.borderColor = 'transparent';
+    });
+    sw.addEventListener('click', function() {
+      _applyCurveColor(col);
+      localStorage.setItem(_CURVE_COLOR_KEY, col);
+      hexInput.value = col.toUpperCase();
+      hexPreview.style.background = col;
+      swatchRow.querySelectorAll('div').forEach(function(s){ s.style.borderColor='transparent'; });
+      sw.style.borderColor = '#fff';
+    });
+    swatchRow.appendChild(sw);
+  });
+  colorSection.appendChild(swatchRow);
+
+  // Hex input
+  var hexRow = document.createElement('div');
+  hexRow.style.cssText = 'display:flex;align-items:center;gap:8px;';
+  var hexLabel = document.createElement('span');
+  hexLabel.textContent = 'Hex';
+  hexLabel.style.cssText = 'color:#888;font-size:13px;';
+  var hexInput = document.createElement('input');
+  hexInput.type = 'text';
+  hexInput.value = _curveColor.toUpperCase();
+  hexInput.maxLength = 7;
+  hexInput.style.cssText = 'background:#252525;border:1px solid rgba(255,255,255,0.12);color:#e4e4e4;font-size:13px;padding:3px 8px;width:90px;outline:none;font-family:monospace;';
+  var hexPreview = document.createElement('div');
+  hexPreview.style.cssText = 'width:20px;height:20px;background:'+_curveColor+';flex-shrink:0;border:1px solid rgba(255,255,255,0.12);';
+  hexInput.addEventListener('input', function() {
+    var val = hexInput.value;
+    // Strip anything that isn't # or hex digits
+    val = val.toUpperCase().replace(/[^#0-9A-F]/g, '');
+    // Ensure it starts with #
+    if (val.charAt(0) !== '#') val = '#' + val;
+    // Cap at 7 chars
+    val = val.slice(0, 7);
+    hexInput.value = val;
+    // Apply immediately once we have a full valid code
+    if (/^#[0-9A-F]{6}$/.test(val)) {
+      hexPreview.style.background = val;
+      _applyCurveColor(val);
+      localStorage.setItem(_CURVE_COLOR_KEY, val);
+      swatchRow.querySelectorAll('div').forEach(function(s){ s.style.borderColor='transparent'; });
+    }
+  });
+  hexInput.addEventListener('blur', function() {
+    if (!/^#[0-9A-F]{6}$/.test(hexInput.value)) hexInput.value = _curveColor.toUpperCase();
+  });
+  hexRow.appendChild(hexLabel);
+  hexRow.appendChild(hexInput);
+  hexRow.appendChild(hexPreview);
+  colorSection.appendChild(hexRow);
+  content.appendChild(colorSection);
+
+  // Check for updates row
+  var updatesRow = document.createElement('div');
+  updatesRow.id = '_updates-row';
+  updatesRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);cursor:pointer;';
+  var updatesLabel = document.createElement('span');
+  updatesLabel.id = '_updates-label';
+  updatesLabel.style.cssText = 'font-size:14px;flex:1;';
+  updatesRow.appendChild(updatesLabel);
+  _applyUpdateBtnState(updatesRow, updatesLabel);
+  updatesRow.addEventListener('mouseenter', function() { if (!_updateAvailable) updatesRow.style.background='rgba(255,255,255,0.04)'; });
+  updatesRow.addEventListener('mouseleave', function() { if (!_updateAvailable) updatesRow.style.background=''; });
+  updatesRow.addEventListener('click', function() {
+    document.body.removeChild(modal);
+    document.body.removeChild(overlay);
+    if (_updateAvailable) {
+      _performUpdate();
+    } else {
+      _checkForUpdates();
+    }
+  });
+  updatesRow.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+    _updateAvailable = !_updateAvailable;
+    _applyUpdateBtnState(updatesRow, updatesLabel);
+    _refreshUpdateNotification();
+  });
+  content.appendChild(updatesRow);
+
+  // Update notifications toggle row
+  var notifRow = document.createElement('div');
+  notifRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);cursor:pointer;';
+  var notifLabel = document.createElement('span');
+  notifLabel.style.cssText = 'font-size:14px;flex:1;color:#b0b0b0;';
+  function _updateNotifLabel() {
+    notifLabel.textContent = 'Update Notifications ' + (_updateNotifsOn ? 'On' : 'Off');
+  }
+  _updateNotifLabel();
+  notifRow.appendChild(notifLabel);
+  notifRow.addEventListener('mouseenter', function() { notifRow.style.background='rgba(255,255,255,0.04)'; });
+  notifRow.addEventListener('mouseleave', function() { notifRow.style.background=''; });
+  notifRow.addEventListener('click', function() {
+    _updateNotifsOn = !_updateNotifsOn;
+    localStorage.setItem(_UPDATE_NOTIF_KEY, _updateNotifsOn ? 'on' : 'off');
+    _updateNotifLabel();
+    _refreshUpdateNotification();
+  });
+  content.appendChild(notifRow);
+
+  // Reset row
+  var resetRow = document.createElement('div');
+  resetRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);cursor:pointer;';
+  var resetLabel = document.createElement('span');
+  resetLabel.textContent = 'Reset All Settings';
+  resetLabel.style.cssText = 'color:#f06060;font-size:14px;flex:1;';
+  resetRow.appendChild(resetLabel);
+  resetRow.addEventListener('mouseenter', function() { resetRow.style.background='rgba(240,96,96,0.08)'; });
+  resetRow.addEventListener('mouseleave', function() { resetRow.style.background=''; });
+  resetRow.addEventListener('click', function() {
+    document.body.removeChild(modal);
+    document.body.removeChild(overlay);
+    _confirmReset();
+  });
+  content.appendChild(resetRow);
+
+  // Footer
+  var footer = document.createElement('div');
+  footer.style.cssText = 'padding:12px 12px 14px;border-top:1px solid rgba(255,255,255,0.07);flex-shrink:0;';
+  var madeBy = document.createElement('div');
+  madeBy.textContent = 'made by faye';
+  madeBy.style.cssText = 'color:#555;font-size:12px;margin-bottom:6px;';
+  var ghLink = document.createElement('div');
+  ghLink.textContent = 'github.com/fayewave/OpenCurve';
+  ghLink.style.cssText = 'color:#4a9eff;font-size:12px;cursor:pointer;';
+  ghLink.addEventListener('click', function() {
+    try { require('uxp').shell.openExternal('https://github.com/fayewave/OpenCurve'); } catch(e) {}
+  });
+  footer.appendChild(madeBy);
+  footer.appendChild(ghLink);
+
+  modal.appendChild(header);
+  modal.appendChild(content);
+  modal.appendChild(footer);
+  document.body.appendChild(modal);
+  setTimeout(function() {
+    var h = modal.offsetHeight;
+    var modalT = h > 0 ? Math.round((vh - h) / 2) : Math.round((vh - 320) / 2);
+    modal.style.top = Math.max(0, modalT) + 'px';
+    modal.style.visibility = 'visible';
+  }, 0);
+}
+
+// Apply saved curve colour on load
+document.addEventListener('DOMContentLoaded', function() {
+  _applyCurveColor(_curveColor);
+});
+
 // ─── Entrypoints ──────────────────────────────────────────────────────────
 console.log('[FS] setting up entrypoints');
 try {
@@ -1307,6 +1814,7 @@ try {
         create: function() {
           console.log('[FS] panel create — DOM ready');
           initPanel();
+          _applyCurveColor(_curveColor);
         },
         show: function() {
           console.log('[FS] panel show — starting poll');
@@ -1319,6 +1827,18 @@ try {
         },
         destroy: function() {
           if (pollTimer) { clearInterval(pollTimer); pollTimer=null; }
+        },
+        menuItems: [
+          { id: 'options',       label: 'Settings' },
+          { id: 'check-updates', label: 'Check for Updates' },
+          { id: 'sep',           label: '-' },
+          { id: 'made-by',       label: 'made by faye', enabled: false },
+          { id: 'version',       label: 'v' + CURRENT_VERSION, enabled: false },
+        ],
+        invokeMenu: function(id) {
+          if (id === 'options')       _showSettingsModal();
+          if (id === 'check-updates') _checkForUpdates();
+          if (id === 'reset')         _confirmReset();
         },
       },
     },
