@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+  <div id="app">
+    <div class="main-row">
+
+      <!-- Left column: graph + status -->
+      <div class="left-col">
+        <div class="graph-section">
+          <div class="graph-canvas-wrap">
+            <svg id="bezier-svg" xmlns="http://www.w3.org/2000/svg">
+              <rect id="sg-bg" x="0" y="0" width="100%" height="100%" fill="#111111"/>
+              <g id="sg-content">
+                <rect id="sg-range-bg" fill="#1e1e1e"/>
+                <rect id="sg-range-outline" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+                <g id="sg-grid" stroke-width="1"></g>
+                <line id="sg-diag" stroke="rgba(255,255,255,0.07)" stroke-width="1" stroke-dasharray="3,4"/>
+                <line id="sg-tan1" stroke="rgba(255,255,255,0.18)" stroke-width="4"/>
+                <line id="sg-tan2" stroke="rgba(255,255,255,0.18)" stroke-width="4"/>
+                <path id="sg-curve" fill="none" stroke="#4a9eff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle id="sg-ep0" r="4" fill="#1e1e1e" stroke="#4a9eff" stroke-width="2"/>
+                <circle id="sg-ep3" r="4" fill="#1e1e1e" stroke="#4a9eff" stroke-width="2"/>
+                <g id="sg-h1">
+                  <circle r="7" fill="rgba(74,158,255,0.12)"/>
+                  <circle r="5" fill="#fff" stroke="#fff" stroke-width="1.5"/>
+                </g>
+                <g id="sg-h2">
+                  <circle r="7" fill="rgba(74,158,255,0.12)"/>
+                  <circle r="5" fill="#fff" stroke="#fff" stroke-width="1.5"/>
+                </g>
+              </g>
+            </svg>
+            <div id="graph-coords" class="graph-coords"></div>
+            <div class="zoom-btns">
+              <div id="zoom-in"  class="zoom-btn">+</div>
+              <div id="zoom-out" class="zoom-btn">−</div>
+            </div>
+          </div>
+        </div>
+        <div id="status-strip" class="status-strip status-idle">
+          <div class="status-dot"></div>
+          <span id="status-text" class="status-text">Select a clip</span>
+        </div>
+      </div>
+
+      <!-- Resize handle -->
+      <div id="resize-handle" class="resize-handle"></div>
+
+      <!-- Right column: controls + go -->
+      <div id="right-col" class="right-col">
+        <div class="controls-panel">
+          <div id="all-presets-list"></div>
+          <div class="bottom-group">
+            <div id="prop-btns" class="prop-btns"></div>
+          </div>
+        </div>
+        <div id="go-btn" class="btn btn-primary btn-disabled">
+          <svg id="go-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <path d="M13 2L4.5 13.5H12L11 22L19.5 10.5H12L13 2Z" fill="currentColor" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span id="go-spinner" class="spinner" style="display:none"></span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    window.onerror = function(msg, src, line, col, err) {
+      console.error('[FS] Uncaught error:', msg, 'at', src + ':' + line, err);
+    };
+    window.onunhandledrejection = function(e) {
+      console.error('[FS] Unhandled rejection:', e.reason);
+    };
+    console.log('[FS] HTML loaded, about to load plugin.js');
+  </script>
+  <script src="src/plugin.js"></script>
+</body>
+</html>
