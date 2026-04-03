@@ -1340,12 +1340,13 @@ async function poll() {
 window.__opencurvePoll = poll;
 
 // ─── Settings / flyout ─────────────────────────────────────────────────────
-var CURRENT_VERSION     = '1.0.7';
+var CURRENT_VERSION     = '1.0.8';
 var _CURVE_COLOR_KEY    = 'opencurve-line-color';
 var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#4a9eff';
 var _updateAvailable    = false;
 var _latestVersion      = null;
 var _updateDismissed    = false;
+var _pendingRestart     = false;
 var _UPDATE_NOTIF_KEY   = 'opencurve-update-notif';
 var _updateNotifsOn     = localStorage.getItem(_UPDATE_NOTIF_KEY) !== 'off';
 
@@ -1420,24 +1421,25 @@ function _refreshUpdateNotification() {
 }
 
 function _applyUpdateBtnState(btn, label) {
-  if (_updateAvailable) {
+  var old = btn.querySelector('._update-icon');
+  if (old) btn.removeChild(old);
+  if (_pendingRestart) {
+    btn.style.background = 'rgba(61,220,132,0.08)';
+    label.textContent = 'Pending Restart';
+    label.style.color = '#3ddc84';
+  } else if (_updateAvailable) {
     btn.style.background = 'rgba(240,180,0,0.08)';
     label.textContent = 'Update Available';
     label.style.color = '#e6b800';
-    var existing = btn.querySelector('._update-icon');
-    if (!existing) {
-      var icon = document.createElement('span');
-      icon.className = '_update-icon';
-      icon.textContent = '⚠';
-      icon.style.cssText = 'color:#e6b800;font-size:14px;margin-left:6px;';
-      btn.appendChild(icon);
-    }
+    var icon = document.createElement('span');
+    icon.className = '_update-icon';
+    icon.textContent = '⚠';
+    icon.style.cssText = 'color:#e6b800;font-size:14px;margin-left:6px;';
+    btn.appendChild(icon);
   } else {
     btn.style.background = '';
     label.textContent = 'Check for Updates';
     label.style.color = '#b0b0b0';
-    var old = btn.querySelector('._update-icon');
-    if (old) btn.removeChild(old);
   }
 }
 
@@ -1522,6 +1524,12 @@ function _performUpdate() {
       setTimeout(function() {
         statusText.style.color = '#888';
         statusText.textContent = 'Restart Premiere Pro to apply.';
+        _updateDismissed = true;
+        _pendingRestart = true;
+        _refreshUpdateNotification();
+        var btn = document.getElementById('_updates-row');
+        var lbl = document.getElementById('_updates-label');
+        if (btn && lbl) _applyUpdateBtnState(btn, lbl);
       }, 1200);
       var closeBtn = document.createElement('div');
       closeBtn.textContent = 'Dismiss';
