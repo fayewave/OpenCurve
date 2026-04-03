@@ -1,5 +1,5 @@
 <p align="left">
-  <img src="img/OpenCurve Logo3.png" alt="OpenCurve" width="400"/>
+  <img src="img/OpenCurve Logo4.png" alt="OpenCurve" width="400"/>
 </p>
 
 A bezier curve editor to add custom easing to your keyframes in Premiere Pro.
