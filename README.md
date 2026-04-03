@@ -1,5 +1,9 @@
 # OpenCurve
 
+<p align="center">
+  <img src="img/OpenCurve Logo3.png" alt="OpenCurve" width="320"/>
+</p>
+
 A bezier curve editor to add custom easing to your keyframes in Premiere Pro.
 
 No purchases. No bloatware. Free forever.
@@ -9,7 +13,7 @@ No purchases. No bloatware. Free forever.
 
 ---
 
-![OpenCurve screenshot](screenshots/2026-04-04_09-45-23.png)
+![OpenCurve screenshot](img/2026-04-04_09-45-23.png)
 
 ---
 
