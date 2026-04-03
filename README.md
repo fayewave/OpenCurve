@@ -9,7 +9,7 @@ No purchases. No bloatware. Free forever.
 ---
 
 ## How it works
-Place your playhead between 2 keyframes, select a property (position, opacity, scale, etc.), and apply your curve. OpenCurve writes the bezier handles directly to your keyframes — no manual handle dragging in the timeline required.
+Place your playhead between 2 keyframes, select a property (position, opacity, scale, etc.), and apply your curve. OpenCurve writes the bezier handles directly to your keyframes - no manual handle dragging in the timeline required.
 
 ### Features
 - **Works anywhere** — Use it directly on clips, on the Transform effect, on Adjustment Layers, anywhere you need it.
