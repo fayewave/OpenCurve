@@ -26,7 +26,22 @@
       try {
         localStorage.setItem('opencurve-post-update', '1');
         var script = document.createElement('script');
-        script.textContent = result.content;
+        // Try blob URL first so it loads like an external script
+        try {
+          var blob = new Blob([result.content], { type: 'text/javascript' });
+          var blobUrl = URL.createObjectURL(blob);
+          script.src = blobUrl;
+          script.onload = function() { URL.revokeObjectURL(blobUrl); };
+          script.onerror = function() {
+            // Blob URL failed, fall back to inline
+            URL.revokeObjectURL(blobUrl);
+            var s2 = document.createElement('script');
+            s2.textContent = result.content;
+            document.body.appendChild(s2);
+          };
+        } catch(blobErr) {
+          script.textContent = result.content;
+        }
         document.body.appendChild(script);
       } catch(e) {
         console.error('[OC] Update script failed, removing and falling back:', e);
