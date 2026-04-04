@@ -43,7 +43,7 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 
 ### Requirements
 
-- Adobe Premiere Pro 2024 or later
+- Adobe Premiere Pro 2025 or later
 
 ---
 
