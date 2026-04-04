@@ -18,6 +18,8 @@ No purchases. No bloatware. Free forever.
 ## How it works
 Place your playhead between 2 keyframes, select a property (position, opacity, scale, etc.), and apply your curve. OpenCurve writes the bezier handles directly to your keyframes - no manual handle dragging in the timeline required.
 
+![OpenCurve how it works](img/opencurve_gif3.gif)
+
 ### Features
 - **Works anywhere** — Use it directly on clips, on the Transform effect, on Adjustment Layers, anywhere you need it.
 - **Presets** — Save any curve as a named preset with a single click. Presets are persistent across sessions and can be reordered by drag.
@@ -41,6 +43,3 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 - Adobe Premiere Pro 2024 or later
 
 ---
-
-
-
