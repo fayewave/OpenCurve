@@ -37,8 +37,8 @@
             </svg>
             <div id="graph-coords" class="graph-coords"></div>
             <div class="zoom-btns">
-              <div id="zoom-in"  class="zoom-btn">+</div>
-              <div id="zoom-out" class="zoom-btn">−</div>
+              <div id="zoom-in" class="zoom-btn"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><line x1="6" y1="1" x2="6" y2="11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="1" y1="6" x2="11" y2="6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+              <div id="zoom-out" class="zoom-btn"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><line x1="1" y1="6" x2="11" y2="6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div>
             </div>
           </div>
         </div>
@@ -63,6 +63,7 @@
           <svg id="go-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none">
             <path d="M13 2L4.5 13.5H12L11 22L19.5 10.5H12L13 2Z" fill="currentColor" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
+          <span id="go-label" style="margin-left:5px;font-size:13px;font-weight:600;">Go</span>
           <span id="go-spinner" class="spinner" style="display:none"></span>
         </div>
       </div>
@@ -79,6 +80,6 @@
     };
     console.log('[FS] HTML loaded, about to load plugin.js');
   </script>
-  <script src="src/loader.js"></script>
+  <script src="src/plugin.js"></script>
 </body>
 </html>
