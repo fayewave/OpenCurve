@@ -1,6 +1,9 @@
 /**
  * ui-controller.js
  *
+ * ⚠️  DEPRECATED — This file is part of the unused ES modules version.
+ *     The active implementation is src/plugin.js. See main.js for details.
+ *
  * Wires DOM elements to plugin state.
  * Called from main.js once the panel DOM is ready.
  *
@@ -225,6 +228,7 @@ async function _handleGo() {
       isBaking: false,
       status: 'error',
       errorMessage: err && err.message ? err.message : String(err),
+      _errorUntil: Date.now() + 3000, // keep error visible for 3 seconds
     });
   }
 }

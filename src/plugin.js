@@ -201,12 +201,19 @@ function _tForX(x, p1x, p2x) {
   var t = x;
   for (var i = 0; i < 12; i++) {
     var err = _bx(t, p1x, p2x) - x;
-    if (Math.abs(err) < 1e-8) break;
+    if (Math.abs(err) < 1e-8) return t;
     var d = _bxd(t, p1x, p2x);
-    if (Math.abs(d) < 1e-8) break;
+    if (Math.abs(d) < 1e-8) break; // derivative too small — fall through to binary search
     t = Math.max(0, Math.min(1, t - err / d));
   }
-  return t;
+  // Binary search fallback for when Newton-Raphson doesn't converge
+  var lo = 0, hi = 1;
+  for (var j = 0; j < 20; j++) {
+    var mid = (lo + hi) / 2;
+    if (_bx(mid, p1x, p2x) < x) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
 }
 function sampleBezier(x, curve) {
   var cx = Math.max(0, Math.min(1, x));
@@ -215,6 +222,14 @@ function sampleBezier(x, curve) {
   var t = _tForX(cx, curve.p1x, curve.p2x);
   return _by(t, curve.p1y, curve.p2y);
 }
+
+// ─── Constants ────────────────────────────────────────────────────────────
+var FALLBACK_FPS        = 30;   // used when sequence frame rate can't be detected
+var DONE_DISPLAY_MS     = 1000; // how long "Done!" status shows after bake
+var ERROR_DISPLAY_MS    = 3000; // how long error status persists before poll resumes
+var HIT_TOLERANCE       = 6;    // extra px around handle for hit detection
+var Y_CLAMP_MIN         = -1.0; // min Y value for control point dragging
+var Y_CLAMP_MAX         =  2.0; // max Y value for control point dragging
 
 // ─── SVG graph editor ─────────────────────────────────────────────────────
 var PAD = 16, HANDLE_R = 5;
@@ -343,8 +358,8 @@ function initGraphEditor(svg) {
     var c    = liveCurve || getState().curve;
     var p1c  = normToSVG(c.p1x, c.p1y, _svgW, _svgH);
     var p2c  = normToSVG(c.p2x, c.p2y, _svgW, _svgH);
-    if (Math.hypot(raw.cx - p1c.cx, raw.cy - p1c.cy) <= HANDLE_R + 6) return 'p1';
-    if (Math.hypot(raw.cx - p2c.cx, raw.cy - p2c.cy) <= HANDLE_R + 6) return 'p2';
+    if (Math.hypot(raw.cx - p1c.cx, raw.cy - p1c.cy) <= HANDLE_R + HIT_TOLERANCE) return 'p1';
+    if (Math.hypot(raw.cx - p2c.cx, raw.cy - p2c.cy) <= HANDLE_R + HIT_TOLERANCE) return 'p2';
     return null;
   }
 
@@ -363,7 +378,7 @@ function initGraphEditor(svg) {
       hit = (d1 <= d2) ? 'p1' : 'p2';
       var n  = svgToNorm(raw.cx, raw.cy, _svgW, _svgH);
       var sx = Math.max(0, Math.min(1, n.nx));
-      var sy = Math.max(-0.6, Math.min(1.6, n.ny));
+      var sy = Math.max(Y_CLAMP_MIN, Math.min(Y_CLAMP_MAX, n.ny));
       var snap = {};
       if (hit === 'p1') { snap.p1x = sx; snap.p1y = sy; }
       else              { snap.p2x = sx; snap.p2y = sy; }
@@ -413,7 +428,7 @@ function initGraphEditor(svg) {
     var raw = _unscale(e.clientX - dragRect.left, e.clientY - dragRect.top);
     var n   = svgToNorm(raw.cx, raw.cy, _svgW, _svgH);
     var x   = Math.max(0,    Math.min(1,   n.nx));
-    var y   = Math.max(-0.6, Math.min(1.6, n.ny));
+    var y   = Math.max(Y_CLAMP_MIN, Math.min(Y_CLAMP_MAX, n.ny));
     if (e.shiftKey) { x = Math.round(x * 8) / 8; y = Math.round(y * 8) / 8; }
     if (dragging === 'p1') { liveCurve.p1x = x; liveCurve.p1y = y; }
     else                   { liveCurve.p2x = x; liveCurve.p2y = y; }
@@ -489,13 +504,44 @@ async function _call(obj, method) {
   return (r && typeof r.then === 'function') ? await r : r;
 }
 
-async function _fps(sequence) {
+async function _fpsDetect(sequence) {
+  var TICKS_PER_SEC = 254016000000; // Premiere Pro's internal tick rate
+
+  // Primary: sequence.getTimebase() returns ticks-per-frame as a string
+  try {
+    if (typeof sequence.getTimebase === 'function') {
+      var tb = await sequence.getTimebase();
+      var ticksPerFrame = parseInt(tb, 10);
+      if (ticksPerFrame > 0) {
+        var fps = TICKS_PER_SEC / ticksPerFrame;
+        console.log('[FS] fps from getTimebase:', fps, '(' + tb + ' ticks/frame)');
+        return fps;
+      }
+    }
+  } catch(_) {}
+
+  // Fallback: getSettings().videoFrameRate (TickTime with .seconds)
   try {
     var settings = await sequence.getSettings();
     var fd = settings.videoFrameRate;
     if (fd && fd.seconds > 0) return 1 / fd.seconds;
-  } catch(e) { console.log('[FS] fps error:', e.message); }
-  return 25;
+    if (fd && fd.ticks > 0) return TICKS_PER_SEC / fd.ticks;
+  } catch(_) {}
+
+  console.warn('[FS] Could not detect sequence frame rate — defaulting to ' + FALLBACK_FPS + ' fps.');
+  return FALLBACK_FPS;
+}
+
+async function _fps(sequence) {
+  var now = Date.now();
+  // Return cached fps if still fresh
+  if (_cache.fps !== null && (now - _cache.fpsCheckedAt) < FPS_RECHECK_MS) {
+    return _cache.fps;
+  }
+  var fps = await _fpsDetect(sequence);
+  _cache.fps = fps;
+  _cache.fpsCheckedAt = now;
+  return fps;
 }
 
 // Known param display names: component matchName → { paramIndex: displayName }
@@ -531,82 +577,115 @@ function _extractValue(v) {
   return null;
 }
 
-async function _clipAtPlayhead(sequence, ph) {
-  // ── Strategy A: iterate video tracks (preferred — doesn't need clip selected) ──
-  try {
-    var vg        = await sequence.getVideoTrackGroup();
-    var numTracks = await _call(vg, 'getTrackCount');
-    var phTime    = ppro.TickTime.createWithSeconds(ph);
-
-    for (var t = 0; t < numTracks; t++) {
-      var track = await _call(vg, 'getTrackAt', t);
-      if (!track) continue;
-
-      var items = null;
-      // Try precise range query first
-      try {
-        items = await track.getTrackItemsInteractingWithRange(
-          phTime, phTime,
-          ppro.Constants && ppro.Constants.TrackItemType
-            ? ppro.Constants.TrackItemType.CLIP : undefined,
-          false
-        );
-      } catch(_) {}
-
-      // Fallback: all items on track, filter by time
-      if (!items || items.length === 0) {
-        try {
-          var all = await _call(track, 'getTrackItems');
-          items = (all || []).filter(function(item) {
-            try {
-              var s = item.startTime ? item.startTime.seconds : -1;
-              var e = item.endTime   ? item.endTime.seconds   : -1;
-              return ph >= s && ph <= e;
-            } catch(_) { return false; }
-          });
-        } catch(_) {}
-      }
-
-      for (var k = 0; k < (items || []).length; k++) {
-        try {
-          var chain = await items[k].getComponentChain();
-          if (chain) {
-            var cs = await _clipStart(items[k]);
-            return { clip: items[k], chain: chain, clipStart: cs };
-          }
-        } catch(_) {}
-      }
+// Fast selection item fetch — caches which getTrackItems signature works
+async function _getSelectionItems(sequence) {
+  var sel = await sequence.getSelection();
+  if (!sel) return null;
+  var items = null;
+  if (_cache.selTrackItemSig === 'noargs') {
+    items = await _call(sel, 'getTrackItems');
+  } else if (_cache.selTrackItemSig === 'typed') {
+    items = await _call(sel, 'getTrackItems', 1, false);
+  } else {
+    // First call — discover which signature works
+    try { items = await _call(sel, 'getTrackItems'); _cache.selTrackItemSig = 'noargs'; }
+    catch(_) {}
+    if (!items) {
+      try { items = await _call(sel, 'getTrackItems', 1, false); _cache.selTrackItemSig = 'typed'; }
+      catch(_) {}
     }
-  } catch(_) { /* getVideoTrackGroup not available — fall through to selection */ }
+  }
+  return items;
+}
 
-  // ── Strategy B: use timeline selection (requires clip to be selected) ──
-  try {
-    var sel      = await sequence.getSelection();
-    var selItems = await _call(sel, 'getTrackItems');
-    for (var si = 0; si < (selItems || []).length; si++) {
+// Composite clip identity: name + start + end — unique even for same-named stacked clips
+async function _clipIdentity(item) {
+  var n = '', s = '', e = '';
+  try { n = await item.getName(); } catch(_) {}
+  try { var st = await item.getStartTime(); s = st && typeof st.seconds === 'number' ? st.seconds : ''; } catch(_) {}
+  try { var et = await item.getEndTime();   e = et && typeof et.seconds === 'number' ? et.seconds : ''; } catch(_) {}
+  return n + '|' + s + '|' + e;
+}
+
+// Returns ALL clips at the playhead across all video tracks (topmost first)
+async function _clipsViaTrackScan(sequence, ph) {
+  var numTracks;
+  try { numTracks = await sequence.getVideoTrackCount(); }
+  catch(_) { return []; }
+  if (!numTracks || numTracks <= 0) return [];
+
+  var results = [];
+
+  // Iterate top-down (highest track = topmost visible clip in timeline)
+  for (var t = numTracks - 1; t >= 0; t--) {
+    var track;
+    try { track = await sequence.getVideoTrack(t); } catch(_) { continue; }
+    if (!track) continue;
+
+    var all = null;
+    try { all = await track.getTrackItems(1, false); } catch(_) {}
+    if (!all || all.length === 0) continue;
+
+    for (var i = 0; i < all.length; i++) {
       try {
-        var ch2 = await selItems[si].getComponentChain();
-        if (ch2) {
-          var cs2 = await _clipStart(selItems[si]);
-          return { clip: selItems[si], chain: ch2, clipStart: cs2 };
+        var item = all[i];
+        var st = await item.getStartTime();
+        var et = await item.getEndTime();
+        var s = st && typeof st.seconds === 'number' ? st.seconds : -1;
+        var e = et && typeof et.seconds === 'number' ? et.seconds : -1;
+        if (ph >= s && ph <= e) {
+          var chain = await item.getComponentChain();
+          if (chain) {
+            results.push({ clip: item, chain: chain, clipStart: s });
+          }
         }
       } catch(_) {}
     }
-  } catch(_) {}
+  }
+  return results;
+}
 
+async function _clipViaSelection(sequence) {
+  var selItems = await _getSelectionItems(sequence);
+  for (var si = 0; si < (selItems || []).length; si++) {
+    try {
+      var ch = await selItems[si].getComponentChain();
+      if (ch) {
+        var cs = await _clipStart(selItems[si]);
+        return { clip: selItems[si], chain: ch, clipStart: cs, viaSelection: true };
+      }
+    } catch(_) {}
+  }
   return null;
+}
+
+// Returns array of all clips at playhead.
+// Selected clip goes FIRST so it takes priority (user override).
+// Track-scanned clips fill in the rest (auto-detection).
+async function _clipsAtPlayhead(sequence, ph) {
+  var clips = [];
+
+  // 1. Selected clip first — user's explicit choice takes priority
+  var sel = null;
+  try { sel = await _clipViaSelection(sequence); } catch(_) {}
+  if (sel) clips.push(sel);
+
+  // 2. Track scan for all other clips at playhead
+  var scanned = [];
+  try { scanned = await _clipsViaTrackScan(sequence, ph); } catch(_) {}
+
+  // Add scanned clips, skipping any that match the selected clip
+  for (var i = 0; i < scanned.length; i++) {
+    if (sel && scanned[i].clipStart === sel.clipStart) continue;
+    clips.push(scanned[i]);
+  }
+
+  return clips;
 }
 
 // Get clip start time in sequence (seconds). Keyframe times are clip-local,
 // so we need this to convert the sequence playhead into clip-local time.
 async function _clipStart(clip) {
-  // Try sync property first
-  try {
-    if (clip.startTime && typeof clip.startTime.seconds === 'number') {
-      return clip.startTime.seconds;
-    }
-  } catch(_) {}
-  // Try async method
   try {
     var st = await clip.getStartTime();
     if (st && typeof st.seconds === 'number') return st.seconds;
@@ -617,9 +696,6 @@ async function _clipStart(clip) {
 // Clip's in-point in media time. KF times from getKeyframeListAsTickTimes() are
 // in media time, so we need this to convert the sequence playhead to media time.
 async function _clipInPoint(clip) {
-  try {
-    if (clip.inPoint && typeof clip.inPoint.seconds === 'number') return clip.inPoint.seconds;
-  } catch(_) {}
   try {
     var ip = await clip.getInPoint();
     if (ip && typeof ip.seconds === 'number') return ip.seconds;
@@ -680,78 +756,143 @@ async function _findQualifiedParams(chain, phLocal) {
 }
 
 // ─── detectContext ────────────────────────────────────────────────────────
+async function _detectContextFull(project, sequence, ph) {
+  var allClips = await _clipsAtPlayhead(sequence, ph);
+  if (allClips.length === 0) {
+    _cache.clipStartSec = null;
+    return { status: 'no-clip', availableParams: [], hint: 'No video clip found at playhead position' };
+  }
+
+  // Try each clip at the playhead — pick the first with qualifying keyframes
+  var bestQualified = null;
+  var bestFound     = null;
+
+  for (var ci = 0; ci < allClips.length; ci++) {
+    var found = allClips[ci];
+    var clipStart   = found.clipStart || 0;
+    var clipInPoint = await _clipInPoint(found.clip);
+    var phLocal     = (ph - clipStart) + clipInPoint;
+    var qualifiedParams = await _findQualifiedParams(found.chain, phLocal);
+
+    if (qualifiedParams.length > 0) {
+      bestQualified = qualifiedParams;
+      bestFound     = found;
+      break; // use the first clip that has keyframes
+    }
+  }
+
+  if (!bestQualified) {
+    return { status: 'no-keyframes', availableParams: [], hint: 'No property with 2+ keyframes found on clips at playhead.' };
+  }
+
+  var found = bestFound;
+  _cache.clipStartSec = found.clipStart || 0;
+
+  var paramList   = bestQualified.map(function(p){ return { key: p.key, displayName: p.displayName }; });
+  var validParams = bestQualified.filter(function(p){ return !p.isOutside; });
+
+  if (validParams.length === 0) {
+    var first = bestQualified[0];
+    return {
+      status: 'outside', availableParams: paramList, validParamKeys: [],
+      hint: 'Move playhead between keyframes (' + first.kf0.seconds.toFixed(2) + 's – ' + first.kf1.seconds.toFixed(2) + 's)',
+    };
+  }
+
+  var fps = await _fps(sequence);
+  var paramContexts = {};
+  for (var vi = 0; vi < validParams.length; vi++) {
+    var vp   = validParams[vi];
+    var val0 = _extractValue(await _getValue(vp.param, vp.kf0));
+    var val1 = _extractValue(await _getValue(vp.param, vp.kf1));
+    var fc   = Math.round((vp.kf1.seconds - vp.kf0.seconds) * fps);
+    paramContexts[vp.key] = {
+      param: vp.param, kf0: vp.kf0, kf1: vp.kf1,
+      val0: val0, val1: val1, frameCount: fc,
+      project: project, sequence: sequence, clip: found.clip, fps: fps,
+    };
+  }
+
+  var validParamKeys = validParams
+    .filter(function(p){ return paramContexts[p.key] && paramContexts[p.key].frameCount >= 2; })
+    .map(function(p){ return p.key; });
+
+  var firstCtx  = validParamKeys.length > 0 ? paramContexts[validParamKeys[0]] : null;
+  var hintFrames = firstCtx ? firstCtx.frameCount + ' frames' : '';
+  var selectionHint = found.viaSelection ? ' (selected clip)' : '';
+
+  return {
+    status: 'valid',
+    availableParams: paramList,
+    validParamKeys: validParamKeys,
+    paramContexts: paramContexts,
+    hint: hintFrames + selectionHint,
+  };
+}
+
 async function detectContext() {
   try {
     if (!ppro) return { status: 'error', availableParams: [], hint: 'premierepro module not loaded' };
 
     var project = await ppro.Project.getActiveProject();
-    if (!project) return { status: 'no-project', availableParams: [], hint: '' };
+    if (!project) { _invalidateCache(); return { status: 'no-project', availableParams: [], hint: '' }; }
 
     var sequence = await project.getActiveSequence();
-    if (!sequence) return { status: 'no-sequence', availableParams: [], hint: '' };
+    if (!sequence) { _invalidateCache(); return { status: 'no-sequence', availableParams: [], hint: '' }; }
+
+    // Invalidate caches if the active sequence changed
+    var seqGuid = sequence.guid || null;
+    if (seqGuid !== _cache.sequenceGuid) {
+      console.log('[FS] sequence changed:', _cache.sequenceGuid, '→', seqGuid);
+      _invalidateCache();
+      _cache.sequenceGuid = seqGuid;
+      _cache.fps = null; // force fps re-detection for new sequence
+    }
 
     var playerPos = await sequence.getPlayerPosition();
     var ph = playerPos.seconds;
 
-    var found = await _clipAtPlayhead(sequence, ph);
-    if (!found) {
-      return { status: 'no-clip', availableParams: [], hint: 'No video clip found at playhead position' };
+    // If playhead hasn't moved, check if selection changed before returning cache
+    _cache.pollCount++;
+    if (_cache.playhead === ph && _cache.lastResult && _cache.pollCount < HEARTBEAT_POLLS) {
+      // Fast selection identity check — composite name|start|end distinguishes any clip
+      var selChanged = false;
+      try {
+        var selItems = await _getSelectionItems(sequence);
+        var selCount = selItems ? selItems.length : 0;
+        if (selCount !== _cache.selItemCount) {
+          selChanged = true;
+        } else if (selCount > 0) {
+          var clipId = await _clipIdentity(selItems[0]);
+          if (clipId !== _cache.selClipId) selChanged = true;
+        }
+      } catch(_) {}
+      if (!selChanged) return _cache.lastResult;
+      _cache.pollCount = 0;
     }
 
-    var clipStart   = found.clipStart || 0;
-    var clipInPoint = await _clipInPoint(found.clip);
-    var phLocal     = (ph - clipStart) + clipInPoint;
+    _cache.playhead = ph;
+    _cache.pollCount = 0;
 
-    var qualifiedParams = await _findQualifiedParams(found.chain, phLocal);
-
-    if (qualifiedParams.length === 0) {
-      return { status: 'no-keyframes', availableParams: [], hint: 'No property with 2+ keyframes found on this clip.' };
+    // Snapshot selection identity for future change detection
+    try {
+      var selSnap = await _getSelectionItems(sequence);
+      var snapCount = selSnap ? selSnap.length : 0;
+      _cache.selItemCount = snapCount;
+      _cache.selClipId    = snapCount > 0 ? await _clipIdentity(selSnap[0]) : null;
+    } catch(_) {
+      _cache.selItemCount = 0;
+      _cache.selClipId    = null;
     }
 
-    var paramList  = qualifiedParams.map(function(p){ return { key: p.key, displayName: p.displayName }; });
-    var validParams = qualifiedParams.filter(function(p){ return !p.isOutside; });
-
-    if (validParams.length === 0) {
-      var first = qualifiedParams[0];
-      return {
-        status: 'outside', availableParams: paramList, validParamKeys: [],
-        hint: 'Move playhead between keyframes (' + first.kf0.seconds.toFixed(2) + 's – ' + first.kf1.seconds.toFixed(2) + 's)',
-      };
-    }
-
-    var fps = await _fps(sequence);
-    var paramContexts = {};
-    for (var vi = 0; vi < validParams.length; vi++) {
-      var vp   = validParams[vi];
-      var val0 = _extractValue(await _getValue(vp.param, vp.kf0));
-      var val1 = _extractValue(await _getValue(vp.param, vp.kf1));
-      var fc   = Math.round((vp.kf1.seconds - vp.kf0.seconds) * fps);
-      paramContexts[vp.key] = {
-        param: vp.param, kf0: vp.kf0, kf1: vp.kf1,
-        val0: val0, val1: val1, frameCount: fc,
-        project: project, sequence: sequence, clip: found.clip, fps: fps,
-      };
-    }
-
-    // Exclude params where the bracket is less than 2 frames apart — already baked
-    var validParamKeys = validParams
-      .filter(function(p){ return paramContexts[p.key] && paramContexts[p.key].frameCount >= 2; })
-      .map(function(p){ return p.key; });
-    console.log('[FS] VALID — params:', validParamKeys.join(', '));
-
-    var firstCtx  = validParamKeys.length > 0 ? paramContexts[validParamKeys[0]] : null;
-    var hintFrames = firstCtx ? firstCtx.frameCount + ' frames' : '';
-
-    return {
-      status: 'valid',
-      availableParams: paramList,
-      validParamKeys: validParamKeys,
-      paramContexts: paramContexts,
-      hint: hintFrames,
-    };
+    var result = await _detectContextFull(project, sequence, ph);
+    _cache.lastResult   = result;
+    _cache.lastResultAt = Date.now();
+    return result;
 
   } catch(err) {
     console.error('[FS] detectContext threw:', err);
+    _invalidateCache();
     return { status: 'error', availableParams: [], hint: err && err.message ? err.message : String(err) };
   }
 }
@@ -1564,7 +1705,8 @@ function initPanel() {
       setState({ isBaking: true, status: 'baking' });
       try {
         await bakeKeyframes(contexts, s.curve);
-        _skipPollUntil = Date.now() + 1000;
+        _invalidateCache(); // keyframes changed — force full re-scan on next poll
+        _skipPollUntil = Date.now() + DONE_DISPLAY_MS;
         var newBaked = (s.bakedParamKeys || []).concat(bakedKeys.filter(function(k){ return (s.bakedParamKeys || []).indexOf(k) < 0; }));
         setState({
           isBaking: false, status: 'done',
@@ -1574,9 +1716,10 @@ function initPanel() {
         setTimeout(function() {
           _lastStatus = '';
           setState({ status: 'idle' });
-        }, 1000);
+        }, DONE_DISPLAY_MS);
       } catch(err) {
         console.error('[FS] bake error:', err);
+        _skipPollUntil = Date.now() + ERROR_DISPLAY_MS;
         setState({ isBaking: false, status: 'error', hint: err && err.message ? err.message : String(err) });
       }
     });
@@ -1586,6 +1729,34 @@ function initPanel() {
   stateListeners.push(renderUI);
   renderUI(getState());
   setPresetActive('s-curve');
+}
+
+// ─── Detection cache ─────────────────────────────────────────────────────
+var _cache = {
+  playhead:       null,   // last playhead seconds
+  sequenceGuid:   null,   // guid of active sequence
+  fps:            null,   // cached fps for current sequence
+  fpsCheckedAt:   0,      // timestamp of last fps detection
+  clipStrategy:   null,   // 'track' | 'selection' — whichever worked last
+  clipStartSec:   null,   // start time of last detected clip (identity key)
+  selClipId:      null,   // composite identity string: name|start|end
+  selItemCount:   0,      // number of selected items (fast identity check)
+  selTrackItemSig: null,  // 'noargs' | 'typed' — which getTrackItems call works on selection
+  lastResult:     null,   // full detectContext result
+  lastResultAt:   0,      // timestamp of last full detection
+  pollCount:      0,      // polls since last full detection
+};
+
+var FPS_RECHECK_MS     = 30000; // re-detect fps every 30s to catch mid-session changes
+var HEARTBEAT_POLLS    = 15;    // force full re-scan every N polls even if playhead is static
+
+function _invalidateCache() {
+  _cache.playhead      = null;
+  _cache.clipStartSec  = null;
+  _cache.selClipId     = null;
+  _cache.selItemCount  = 0;
+  _cache.lastResult    = null;
+  _cache.pollCount     = 0;
 }
 
 // ─── Polling ──────────────────────────────────────────────────────────────
@@ -1661,7 +1832,7 @@ async function poll() {
 window.__opencurvePoll = poll;
 
 // ─── Settings / flyout ─────────────────────────────────────────────────────
-var CURRENT_VERSION     = '1.0.5';
+var CURRENT_VERSION     = '1.1.0';
 var _CURVE_COLOR_KEY    = 'opencurve-line-color';
 var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#4a9eff';
 var _updateAvailable    = false;
@@ -1803,10 +1974,22 @@ function _checkForUpdates(silent) {
   _updateDismissed = false;
   if (!silent) _showCopyToast('Checking for updates…');
   fetch('https://api.github.com/repos/fayewave/OpenCurve/releases/latest')
-    .then(function(r) { return r.json(); })
+    .then(function(r) {
+      if (!r.ok) throw new Error('GitHub API returned ' + r.status);
+      return r.json();
+    })
     .then(function(data) {
+      // Validate the response is from the expected repository
+      if (!data || typeof data !== 'object' || !data.tag_name) {
+        if (!silent) _showCopyToast('Unexpected response from GitHub');
+        return;
+      }
+      if (data.html_url && data.html_url.indexOf('fayewave/OpenCurve') === -1) {
+        console.warn('[OC] Update response URL mismatch — ignoring');
+        return;
+      }
       var latest = (data.tag_name || '').replace(/^v/, '');
-      if (!latest) { if (!silent) _showCopyToast('No releases found on GitHub'); return; }
+      if (!latest || !/^\d+\.\d+\.\d+/.test(latest)) { if (!silent) _showCopyToast('No valid releases found on GitHub'); return; }
       _latestVersion = latest;
       if (latest === CURRENT_VERSION) {
         _updateAvailable = false;
@@ -2217,7 +2400,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // ─── Entrypoints ──────────────────────────────────────────────────────────
-var _panelCreated = false;
+var _panelInitialised = false;
 
 console.log('[FS] setting up entrypoints');
 try {
@@ -2236,7 +2419,11 @@ try {
       'opencurve-panel': {
         create: function() {
           console.log('[FS] panel create — DOM ready');
-          _panelCreated = true;
+          if (_panelInitialised) {
+            console.log('[FS] panel already initialised — skipping duplicate create');
+            return;
+          }
+          _panelInitialised = true;
           initPanel();
           _applyCurveColor(_curveColor);
           if (localStorage.getItem('opencurve-post-update') === '1') {

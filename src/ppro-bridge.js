@@ -1,6 +1,9 @@
 /**
  * ppro-bridge.js  —  All Premiere Pro UXP API interactions.
  *
+ * ⚠️  DEPRECATED — This file is part of the unused ES modules version.
+ *     The active implementation is src/plugin.js. See main.js for details.
+ *
  * Detection strategy:
  *   1. Get playhead position from active sequence.
  *   2. Iterate every video track to find a clip that spans the playhead.
@@ -100,6 +103,11 @@ export async function detectContext(selectedParamKey) {
 // ─── bakeKeyframes ─────────────────────────────────────────────────────────
 
 export async function bakeKeyframes(context, curve) {
+  if (!context || !context.project || !context.param || !context.kf0 || !context.kf1
+      || typeof context.val0 === 'undefined' || typeof context.val1 === 'undefined' || !context.fps) {
+    throw new Error('Invalid bake context — missing required fields.');
+  }
+
   const { project, param, kf0, kf1, val0, val1, fps } = context;
 
   const startSec    = kf0.seconds;
@@ -107,7 +115,8 @@ export async function bakeKeyframes(context, curve) {
   const totalFrames = Math.round((endSec - startSec) * fps);
 
   if (totalFrames < 2) {
-    throw new Error('Keyframes are less than 2 frames apart — nothing to bake.');
+    _dbg('Keyframes are less than 2 frames apart — skipping (already baked or too close).');
+    return;
   }
 
   _dbg(`baking ${totalFrames - 1} keyframes at ${fps} fps`);
@@ -203,7 +212,7 @@ async function _clipAtPlayhead(sequence, ph) {
         if (ph >= s && ph <= e) {
           const chain = await item.getComponentChain();
           if (chain) {
-            _dbg('found clip via selection fallback');
+            _dbg('found clip via selection fallback (track scan found nothing at playhead)');
             return { clip: item, chain };
           }
         }
@@ -303,13 +312,31 @@ async function _scalarValue(param, tickTime) {
 }
 
 async function _fps(sequence) {
+  const TICKS_PER_SEC = 254016000000; // Premiere Pro's internal tick rate
+
+  // Primary: sequence.getTimebase() returns ticks-per-frame as a string
+  try {
+    if (typeof sequence.getTimebase === 'function') {
+      const tb = await sequence.getTimebase();
+      const ticksPerFrame = parseInt(tb, 10);
+      if (ticksPerFrame > 0) {
+        const fps = TICKS_PER_SEC / ticksPerFrame;
+        _dbg('fps from getTimebase:', fps, '(' + tb + ' ticks/frame)');
+        return fps;
+      }
+    }
+  } catch (_) {}
+
+  // Fallback: getSettings().videoFrameRate (TickTime with .seconds)
   try {
     const settings = await sequence.getSettings();
-    // videoFrameRate is a TickTime representing one frame's duration
     const fd = settings.videoFrameRate;
     if (fd && fd.seconds > 0) return 1 / fd.seconds;
+    if (fd && fd.ticks > 0) return TICKS_PER_SEC / fd.ticks;
   } catch (_) {}
-  return 25; // PAL fallback
+
+  _dbg('WARNING: Could not detect sequence frame rate — defaulting to 30 fps');
+  return 30;
 }
 
 function _r(status, availableParams = [], selectedKey = null, hint = '') {

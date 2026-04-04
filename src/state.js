@@ -1,6 +1,9 @@
 /**
  * Shared plugin state — simple pub/sub store.
  * Import { getState, setState, subscribe } wherever needed.
+ *
+ * ⚠️  DEPRECATED — This file is part of the unused ES modules version.
+ *     The active implementation is src/plugin.js. See main.js for details.
  */
 
 const _state = {
