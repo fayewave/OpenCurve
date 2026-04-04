@@ -11,7 +11,7 @@ No purchases. No bloatware. Free forever.
 
 ---
 
-![OpenCurve screenshot](img/2026-04-04_09-45-23.png)
+![OpenCurve screenshot](img/opencurve_gif1.gif)
 
 ---
 
@@ -41,4 +41,5 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 - Adobe Premiere Pro 2024 or later
 
 ---
+
 
