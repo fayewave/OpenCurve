@@ -35,7 +35,7 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 ### Installation
 
 1. Download the [latest release](https://github.com/fayewave/OpenCurve/releases/latest)
-2. Double-click the `.ccx` file
+2. Open the `.ccx` file
 3. Creative Cloud will prompt you to confirm — click **Install**
 4. Open Premiere Pro and find OpenCurve under **Window → Extensions**
 
