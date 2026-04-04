@@ -30,7 +30,6 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 - **Undo and redo** — Supports Premiere's history system for full undo/redo support
 - **Spell Book support** — Fully supports Spell Book, allowing keyboard shortcuts
 - **Themes** — Change the colour of the graph line and control points to suit your workspace
-- **Update notifications** — Get notified inside the plugin when a new version is available
 
 ---
 
