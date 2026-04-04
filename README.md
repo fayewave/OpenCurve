@@ -22,6 +22,7 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 
 ### Features
 - **Works anywhere** — Use on clips, nests, the Transform effect, Adjustment Layers, anywhere with keyframes
+- **Auto-detects keyframes** — OpenCurve finds keyframes on clips at the playhead without requiring you to select them first
 - **Presets** — Save any curve as a named preset and share them easily
 - **Snap to grid** — Hold shift to snap the bezier handles to the grid
 - **Undo and redo** — Supports Premiere's history system for full undo/redo support
