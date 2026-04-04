@@ -438,9 +438,9 @@ html, body {
 /* State variants */
 .status-idle .status-dot     { background: var(--text-faint); }
 
-.status-valid { background: var(--green-dim); }
-.status-valid .status-dot    { background: var(--green); }
-.status-valid .status-text   { color: var(--green); }
+.status-valid { background: var(--accent-dim); }
+.status-valid .status-dot    { background: var(--accent); }
+.status-valid .status-text   { color: var(--accent); }
 
 .status-warn  { background: var(--amber-dim); }
 .status-warn .status-dot     { background: var(--amber); }

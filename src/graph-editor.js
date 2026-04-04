@@ -1,6 +1,9 @@
 /**
  * graph-editor.js
  *
+ * ⚠️  DEPRECATED — This file is part of the unused ES modules version.
+ *     The active implementation is src/plugin.js. See main.js for details.
+ *
  * Canvas-based cubic bezier easing curve editor.
  * The curve is defined by P0=(0,0) and P3=(1,1) (fixed endpoints)
  * with two draggable control points P1 and P2.
@@ -40,12 +43,19 @@ function _tForX(x, p1x, p2x) {
   let t = x; // good initial guess for near-linear curves
   for (let i = 0; i < 12; i++) {
     const err = _bx(t, p1x, p2x) - x;
-    if (Math.abs(err) < 1e-8) break;
+    if (Math.abs(err) < 1e-8) return t;
     const d = _bxd(t, p1x, p2x);
-    if (Math.abs(d) < 1e-8) break;
+    if (Math.abs(d) < 1e-8) break; // derivative too small — fall through to binary search
     t = Math.max(0, Math.min(1, t - err / d));
   }
-  return t;
+  // Binary search fallback for when Newton-Raphson doesn't converge
+  let lo = 0, hi = 1;
+  for (let j = 0; j < 20; j++) {
+    const mid = (lo + hi) / 2;
+    if (_bx(mid, p1x, p2x) < x) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
 }
 
 /**
@@ -281,7 +291,7 @@ export function init(canvas, getCurve, onCurveChange) {
     const { cx, cy } = getMouseCanvas(e);
     const norm = canvasToNorm(cx, cy, canvas.width, canvas.height);
     pendingX = Math.max(0,    Math.min(1,   norm.nx));
-    pendingY = Math.max(-0.6, Math.min(1.6, norm.ny));
+    pendingY = Math.max(-1.0, Math.min(2.0, norm.ny));
 
     if (rafId !== null) return;
     rafId = requestAnimationFrame(() => {

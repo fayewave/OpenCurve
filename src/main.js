@@ -1,5 +1,10 @@
 /**
- * main.js — Plugin entry point
+ * main.js — Plugin entry point (ES modules version)
+ *
+ * ⚠️  DEPRECATED — This file is NOT loaded by the plugin.
+ *     The active implementation is src/plugin.js (monolithic, non-module).
+ *     This modular version is kept for reference only. Do not modify
+ *     unless you are migrating back to ES modules.
  *
  * Sets up UXP entrypoints and manages the polling loop that continuously
  * checks Premiere's state (playhead, selection, keyframes) while the panel
@@ -25,6 +30,8 @@ async function poll() {
   const state = getState();
   // Don't interrupt an active bake
   if (state.isBaking) return;
+  // Don't overwrite error status until the display timeout expires
+  if (state._errorUntil && Date.now() < state._errorUntil) return;
 
   try {
     const result = await detectContext(state.selectedParamKey);
