@@ -25,7 +25,7 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 - **Presets** — Save any curve as a named preset with a single click. Presets are persistent across sessions and can be reordered by drag.
 - **Snap to grid** — Hold shift to snap the bezier handles to the grid.
 - **Undo and redo** — Supports Premiere's history system for full redo/undo support.
-- **Keyboard shortcuts** — Rebind any of the default shortcuts
+- **Spell Book support** — Fully supports Spell Book, allowing full shortcut remapping
 - **Themes** — Change the colour of the graph line and control points to suit your workspace.
 - **Update notifications** — Get notified inside the plugin when a new version is available.
 
