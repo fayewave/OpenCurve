@@ -2,9 +2,7 @@
   <img src="img/OpenCurve Logo6.png" alt="OpenCurve" width="400"/>
 </p>
 
-A bezier curve editor to add custom easing to your keyframes in Premiere Pro.
-
-No purchases. No bloatware. Free forever.
+A bezier curve editor to add custom easing to your keyframes in Adobe Premiere Pro.
 
 ![OpenCurve](https://img.shields.io/badge/Premiere%20Pro-UXP%20Plugin-blue)
 ![Version](https://img.shields.io/badge/version-1.0.1-lightgrey)
@@ -16,7 +14,7 @@ No purchases. No bloatware. Free forever.
 ---
 
 ## How it works
-Place your playhead between 2 keyframes, select a property (position, opacity, scale, etc.), and apply your curve. OpenCurve writes the bezier handles directly to your keyframes - no manual handle dragging in the timeline required.
+Place your playhead between 2 keyframes, select a property (position, opacity, scale, etc.), and apply your curve. OpenCurve writes the bezier handles directly to your keyframes.
 
 ![OpenCurve how it works](img/opencurve_gif3.gif)
 
