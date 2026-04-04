@@ -21,10 +21,10 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 ---
 
 ### Features
-- **Works anywhere** — Use directly on clips, on the Transform effect, on Adjustment Layers, etc
+- **Works anywhere** — Use on clips, nests, the Transform effect, Adjustment Layers, anywhere with keyframes
 - **Presets** — Save any curve as a named preset and share them easily
 - **Snap to grid** — Hold shift to snap the bezier handles to the grid
-- **Undo and redo** — Supports Premiere's history system for full redo/undo support
+- **Undo and redo** — Supports Premiere's history system for full undo/redo support
 - **Spell Book support** — Fully supports Spell Book, allowing keyboard shortcuts
 - **Themes** — Change the colour of the graph line and control points to suit your workspace
 - **Update notifications** — Get notified inside the plugin when a new version is available
