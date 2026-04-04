@@ -1,5 +1,5 @@
 <p align="left">
-  <img src="img/OpenCurve Logo6.png" alt="OpenCurve" width="400"/>
+  <img src="img/OpenCurve Logo7.png" alt="OpenCurve" width="400"/>
 </p>
 
 A bezier curve editor to add custom easing to your keyframes in Adobe Premiere Pro.
@@ -42,3 +42,4 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 - Adobe Premiere Pro 2024 or later
 
 ---
+
