@@ -1661,7 +1661,7 @@ async function poll() {
 window.__opencurvePoll = poll;
 
 // ─── Settings / flyout ─────────────────────────────────────────────────────
-var CURRENT_VERSION     = '1.0.4';
+var CURRENT_VERSION     = '1.0.5';
 var _CURVE_COLOR_KEY    = 'opencurve-line-color';
 var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#4a9eff';
 var _updateAvailable    = false;
@@ -1889,7 +1889,7 @@ function _showSettingsModal() {
   var logoWrap = document.createElement('div');
   logoWrap.style.cssText = 'flex:1;display:flex;align-items:center;justify-content:center;';
   var logo = document.createElement('img');
-  logo.src = 'img/OpenCurve Logo12.png';
+  logo.src = 'img/OpenCurve_Logo13.png';
   logo.style.cssText = 'height:26px;opacity:0.9;';
   logoWrap.appendChild(logo);
   var closeBtn = document.createElement('div');
