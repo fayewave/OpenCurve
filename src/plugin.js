@@ -23,6 +23,115 @@ try {
   console.error('[FS] FATAL: could not load premierepro:', e);
 }
 
+// ─── Spellbook (inlined from @knights-of-the-editing-table/spell-book-uxp) ──
+var _SpellbookClass = (function() {
+  function SBEmitter() { this._events = {}; }
+  SBEmitter.prototype.on = function(name, fn) {
+    if (!this._events[name]) this._events[name] = [];
+    this._events[name].push(fn); return this;
+  };
+  SBEmitter.prototype.emit = function(name) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    (this._events[name] || []).forEach(function(fn) { try { fn.apply(null, args); } catch(_) {} });
+    return this;
+  };
+  function Spellbook(pluginName, pluginID, commands) {
+    SBEmitter.call(this);
+    this._spellbookID = 'knights_of_the_editing_table.spell_book';
+    this.pluginName   = pluginName;
+    this.pluginID     = pluginID;
+    this._commands    = commands || [];
+    this._listen      = false; // start() called manually after entrypoints.setup()
+  }
+  Spellbook.prototype = Object.create(SBEmitter.prototype);
+  Spellbook.prototype.constructor = Spellbook;
+  Spellbook.prototype.plugin = function(data, args) {
+    _appendLog('plugin() called, msg type: ' + (args && args[0] && args[0].type));
+    if (!args) return;
+    var msg = args[0];
+    if (msg.type === 'app.opened') {
+      _appendLog('app.opened received — registering commands');
+      this._addCommands({ pluginID: this.pluginID, name: this.pluginName, commands: this._commands });
+    } else if (msg.type === 'command.triggered' && this._listen) {
+      var cmd = this._find(msg.commandID);
+      if (cmd && typeof cmd.action === 'function') {
+        cmd.action();
+        this.emit(msg.commandID, msg.commandID);
+      }
+    }
+  };
+  Spellbook.prototype.start = function() {
+    _appendLog('start() called — now listening for command.triggered');
+    this._listen = true;
+  };
+  Spellbook.prototype.register = function() {
+    _appendLog('register() called');
+    this._addCommands({ pluginID: this.pluginID, name: this.pluginName, commands: this._commands });
+  };
+  Spellbook.prototype.stop  = function() { this._listen = false; };
+  Spellbook.prototype._find = function(id) {
+    return (this._commands || []).find(function(c) { return c.commandID === id; });
+  };
+  Spellbook.prototype._addCommands = function(data) {
+    try {
+      var pm = require('uxp').pluginManager;
+      var all = Array.from(pm.plugins);
+      var ids = all.map(function(p) { return p.id; });
+      _appendLog('pluginManager plugins (' + ids.length + '): ' + ids.join(', '));
+      var sb = all.find(function(p) { return p.id === 'knights_of_the_editing_table.spell_book'; });
+      _appendLog('Spell Book found: ' + !!sb);
+      if (sb) {
+        sb.invokeCommand('commands.add', {
+          pluginID:  data.pluginID,
+          name:      data.name,
+          commands:  data.commands.map(function(c) {
+            return { commandID: c.commandID, name: c.name, group: c.group };
+          })
+        });
+        _appendLog('commands.add sent OK');
+      }
+      return { ids: ids, found: !!sb };
+    } catch(e) {
+      _appendLog('_addCommands error: ' + e.message);
+      return { ids: [], found: false, error: e.message };
+    }
+  };
+  return Spellbook;
+})();
+
+// ─── Debug logger ─────────────────────────────────────────────────────────────
+var _debugLog  = [];
+var _debugPath = '(not yet written)';
+
+function _appendLog(msg) {
+  var ts = new Date().toISOString().replace('T', ' ').substr(0, 23);
+  var line = '[' + ts + '] ' + msg;
+  _debugLog.push(line);
+  console.log('[OC-DEBUG] ' + msg);
+  try {
+    var storage = require('uxp').storage;
+    storage.localFileSystem.getDataFolder().then(function(folder) {
+      _debugPath = (folder.nativePath || '(unknown)') + '\\opencurve-debug.log';
+      return folder.createFile('opencurve-debug.log', { overwrite: true });
+    }).then(function(file) {
+      return file.write(_debugLog.join('\n') + '\n');
+    }).catch(function(e) { console.log('[OC-DEBUG] file write fail:', e && e.message); });
+  } catch(e) { console.log('[OC-DEBUG] log error:', e && e.message); }
+}
+
+// Spell Book action refs — populated inside initPanel() once DOM is ready
+var _sbGo             = function() {};
+var _sbZoomIn         = function() {};
+var _sbZoomOut        = function() {};
+var _sbSelectAllProps  = function() {};
+var _sbDeselectAllProps = function() {};
+
+var _spellbook = new _SpellbookClass('OpenCurve', 'com.fayelab.opencurve', [
+  { commandID: 'opencurve.go',               name: 'Go',                        group: 'OpenCurve', action: function() { _sbGo();             } },
+  { commandID: 'opencurve.select-all-props',   name: 'Enable All Properties',   group: 'OpenCurve', action: function() { _sbSelectAllProps();   } },
+  { commandID: 'opencurve.deselect-all-props', name: 'Disable All Properties',  group: 'OpenCurve', action: function() { _sbDeselectAllProps(); } },
+]);
+
 // ─── State ────────────────────────────────────────────────────────────────
 var state = {
   status:           'idle',
@@ -46,6 +155,33 @@ function setState(updates) {
   if (updates.curve) Object.assign(state.curve, updates.curve);
   var snap = getState();
   stateListeners.forEach(function(fn) { try { fn(snap); } catch(_) {} });
+}
+
+// ─── Curve animation ─────────────────────────────────────────────────────
+var _curveAnimRaf = null;
+function _animateToCurve(target, onUpdate) {
+  if (!_animationsOn) { setState({ curve: Object.assign({}, target) }); onUpdate(target); return; }
+  if (_curveAnimRaf) { cancelAnimationFrame(_curveAnimRaf); _curveAnimRaf = null; }
+  var from = Object.assign({}, getState().curve);
+  var duration = 200;
+  var start = null;
+  function easeInOut(t) { return t < 0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
+  function step(ts) {
+    if (!start) start = ts;
+    var p = Math.min((ts - start) / duration, 1);
+    var e = easeInOut(p);
+    var cur = {
+      p1x: from.p1x + (target.p1x - from.p1x) * e,
+      p1y: from.p1y + (target.p1y - from.p1y) * e,
+      p2x: from.p2x + (target.p2x - from.p2x) * e,
+      p2y: from.p2y + (target.p2y - from.p2y) * e,
+    };
+    setState({ curve: cur });
+    onUpdate(cur);
+    if (p < 1) { _curveAnimRaf = requestAnimationFrame(step); }
+    else { setState({ curve: Object.assign({}, target) }); onUpdate(target); _curveAnimRaf = null; }
+  }
+  _curveAnimRaf = requestAnimationFrame(step);
 }
 
 // ─── Bezier math (CSS cubic-bezier) ──────────────────────────────────────
@@ -812,7 +948,9 @@ function renderUI(s) {
     });
     var enabled = s.status === 'valid' && activeContexts.length > 0 && !s.isBaking;
     goBtn.classList.toggle('btn-disabled', !enabled);
+    var goLabel = document.getElementById('go-label');
     if (goArrow)   goArrow.style.display   = s.isBaking ? 'none' : 'inline';
+    if (goLabel)   goLabel.style.display   = s.isBaking ? 'none' : 'inline';
     if (goSpinner) goSpinner.style.display = s.isBaking ? 'inline-block' : 'none';
   }
 }
@@ -832,8 +970,44 @@ function initPanel() {
     _zoom = Math.max(0.25, Math.min(1.0, _zoom + delta));
     _updateContentTransform();
   }
-  if (zoomIn)  zoomIn.addEventListener('click',  function() { applyZoom( 0.1); });
-  if (zoomOut) zoomOut.addEventListener('click',  function() { applyZoom(-0.1); });
+  _sbZoomIn         = function() { applyZoom( 0.1); };
+  _sbZoomOut        = function() { applyZoom(-0.1); };
+  _sbGo             = function() { var b = document.getElementById('go-btn'); if (b && !b.classList.contains('btn-disabled')) b.click(); };
+  _sbSelectAllProps = function() {
+    var s = getState();
+    var allKeys = (s.availableParams || []).map(function(p) { return p.key; });
+    if (allKeys.length > 0) setState({ selectedParamKeys: allKeys });
+  };
+  _sbDeselectAllProps = function() {
+    setState({ selectedParamKeys: [] });
+  };
+  var _zoomTimer = null;
+  var _zoomInterval = null;
+  function _stopZoom(btn) {
+    clearTimeout(_zoomTimer);
+    clearInterval(_zoomInterval);
+    _zoomTimer = null; _zoomInterval = null;
+    if (btn) { btn.style.background = ''; btn.style.color = ''; }
+  }
+  function addHoldZoom(btn, delta) {
+    if (!btn) return;
+    btn.addEventListener('pointerdown', function(e) {
+      e.preventDefault();
+      _stopZoom(zoomIn === btn ? zoomOut : zoomIn);
+      btn.style.background = 'rgba(255,255,255,0.22)';
+      btn.style.color = '#ffffff';
+      applyZoom(delta);
+      _zoomTimer = setTimeout(function() {
+        _zoomInterval = setInterval(function() { applyZoom(delta); }, 80);
+      }, 600);
+    });
+    function stop() { _stopZoom(btn); }
+    btn.addEventListener('pointerup',     stop);
+    btn.addEventListener('pointerleave',  stop);
+    btn.addEventListener('pointercancel', stop);
+  }
+  addHoldZoom(zoomIn,   0.1);
+  addHoldZoom(zoomOut, -0.1);
 
   // ── Unified preset system ─────────────────────────────────────
   var _STORAGE_KEY  = 'opencurve-presets-v10';
@@ -894,6 +1068,15 @@ function initPanel() {
       }
     } catch(e) { /* navigator.clipboard not available */ }
     if (!copied) { _showCopyToast(text); }
+  });
+  _ctxItem('Apply Current Curve', false, function(t) {
+    if (!t) return;
+    var c = getState().curve;
+    t.preset.curve = { p1x: c.p1x, p1y: c.p1y, p2x: c.p2x, p2y: c.p2y };
+    _savePresetList(_presetList);
+    var thumb = t.btn.querySelector('.preset-thumb path');
+    if (thumb) thumb.setAttribute('d', _thumbPathD(t.preset.curve));
+    _showCopyToast('Preset updated');
   });
   _ctxItem('Delete', true, function(t) {
     if (!t) return;
@@ -960,9 +1143,10 @@ function initPanel() {
     // Apply curve on click
     btn.addEventListener('click', function(e) {
       if (e.target === delBtn) return;
-      setState({ curve: Object.assign({}, preset.curve) });
-      updateDynamicSVG(getState().curve, _svgW, _svgH);
       setPresetActive(preset.id);
+      _animateToCurve(preset.curve, function(cur) {
+        updateDynamicSVG(cur, _svgW, _svgH);
+      });
     });
 
     // Rename: dblclick or right-click
@@ -1154,20 +1338,13 @@ function initPanel() {
     box.appendChild(err);
 
     var btnRow = document.createElement('div');
-    btnRow.style.cssText = 'display:flex;gap:10px;justify-content:flex-end;';
-
-    var cancelBtn = document.createElement('div');
-    cancelBtn.textContent = 'Cancel';
-    cancelBtn.style.cssText = 'color:#888;font-size:13px;cursor:pointer;padding:6px 10px;';
-    cancelBtn.addEventListener('mouseenter', function() { cancelBtn.style.color = '#e4e4e4'; });
-    cancelBtn.addEventListener('mouseleave', function() { cancelBtn.style.color = '#888'; });
-    cancelBtn.addEventListener('click', close);
+    btnRow.style.cssText = 'display:flex;justify-content:flex-start;';
 
     var addBtn = document.createElement('div');
     addBtn.textContent = 'Add Preset';
-    addBtn.style.cssText = 'color:#4a9eff;font-size:13px;font-weight:600;cursor:pointer;padding:6px 10px;';
-    addBtn.addEventListener('mouseenter', function() { addBtn.style.color = '#7dc4ff'; });
-    addBtn.addEventListener('mouseleave', function() { addBtn.style.color = '#4a9eff'; });
+    addBtn.style.cssText = 'color:#4a9eff;font-size:13px;font-weight:600;cursor:pointer;padding:5px 12px;border:2px solid rgba(74,158,255,0.4);margin-right:10px;';
+    addBtn.addEventListener('mouseenter', function() { addBtn.style.color='#7dc4ff'; addBtn.style.borderColor='rgba(74,158,255,0.8)'; });
+    addBtn.addEventListener('mouseleave', function() { addBtn.style.color='#4a9eff'; addBtn.style.borderColor='rgba(74,158,255,0.4)'; });
     addBtn.addEventListener('click', function() {
       var curve = _parseCubicBezier(input.value.trim());
       if (!curve) { err.textContent = 'Invalid format — expected cubic-bezier(x1, y1, x2, y2)'; return; }
@@ -1175,14 +1352,21 @@ function initPanel() {
       _createPresetFromCurve(curve);
     });
 
-    btnRow.appendChild(cancelBtn);
+    var cancelBtn = document.createElement('div');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.cssText = 'color:#888;font-size:13px;cursor:pointer;padding:5px 12px;border:2px solid rgba(255,255,255,0.12);';
+    cancelBtn.addEventListener('mouseenter', function() { cancelBtn.style.color='#e4e4e4'; cancelBtn.style.borderColor='rgba(255,255,255,0.25)'; });
+    cancelBtn.addEventListener('mouseleave', function() { cancelBtn.style.color='#888'; cancelBtn.style.borderColor='rgba(255,255,255,0.12)'; });
+    cancelBtn.addEventListener('click', close);
+
     btnRow.appendChild(addBtn);
+    btnRow.appendChild(cancelBtn);
     box.appendChild(btnRow);
 
     // Position vertically once box has height
     setTimeout(function() {
       var bh = box.offsetHeight || 160;
-      var t = Math.max(0, Math.round((vh - bh) / 2));
+      var t = Math.max(0, Math.round((vh - bh) / 5));
       box.style.top = t + 'px';
       box.style.visibility = 'visible';
       input.focus();
@@ -1201,7 +1385,7 @@ function initPanel() {
   }
 
   // Mini Settings-only context menu (used in preset list empty space + graph)
-  function _showMiniCtxMenu(e) {
+  function _showMiniCtxMenu(e, showPaste) {
     console.log('[OC] _showMiniCtxMenu called');
     e.preventDefault();
     e.stopPropagation();
@@ -1214,16 +1398,6 @@ function initPanel() {
     mini.id = '_mini-ctx';
     mini.style.display = 'block';
 
-    var pasteItem = document.createElement('div');
-    pasteItem.className = 'ctx-menu-item';
-    pasteItem.textContent = 'Paste Coordinates';
-    pasteItem.addEventListener('click', function(ev) {
-      ev.stopPropagation();
-      if (mini.parentNode) mini.parentNode.removeChild(mini);
-      _pasteCoordinates();
-    });
-    mini.appendChild(pasteItem);
-
     var settingsItem = document.createElement('div');
     settingsItem.className = 'ctx-menu-item';
     settingsItem.textContent = 'Settings';
@@ -1234,9 +1408,21 @@ function initPanel() {
     });
     mini.appendChild(settingsItem);
 
+    if (showPaste) {
+      var pasteItem = document.createElement('div');
+      pasteItem.className = 'ctx-menu-item';
+      pasteItem.textContent = 'Paste Coordinates';
+      pasteItem.addEventListener('click', function(ev) {
+        ev.stopPropagation();
+        if (mini.parentNode) mini.parentNode.removeChild(mini);
+        _pasteCoordinates();
+      });
+      mini.appendChild(pasteItem);
+    }
+
     document.body.appendChild(mini);
 
-    var mw = 170, mh = 72;
+    var mw = 170, mh = showPaste ? 72 : 36;
     var ww = document.documentElement.clientWidth  || document.body.clientWidth;
     var wh = document.documentElement.clientHeight || document.body.clientHeight;
     var x = Math.min(e.clientX, ww - mw);
@@ -1260,7 +1446,7 @@ function initPanel() {
     list.addEventListener('contextmenu', function(e) {
       var onPreset = e.target.closest && e.target.closest('.preset-btn');
       if (onPreset) return;
-      _showMiniCtxMenu(e);
+      _showMiniCtxMenu(e, true);
     });
   })();
 
@@ -1269,7 +1455,7 @@ function initPanel() {
     var graph = document.getElementById('bezier-svg');
     if (!graph) return;
     graph.addEventListener('contextmenu', function(e) {
-      _showMiniCtxMenu(e);
+      _showMiniCtxMenu(e, false);
     });
   })();
 
@@ -1475,7 +1661,7 @@ async function poll() {
 window.__opencurvePoll = poll;
 
 // ─── Settings / flyout ─────────────────────────────────────────────────────
-var CURRENT_VERSION     = '1.0.1';
+var CURRENT_VERSION     = '1.0.3';
 var _CURVE_COLOR_KEY    = 'opencurve-line-color';
 var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#4a9eff';
 var _updateAvailable    = false;
@@ -1483,6 +1669,13 @@ var _latestVersion      = null;
 var _updateDismissed    = false;
 var _UPDATE_NOTIF_KEY   = 'opencurve-update-notif';
 var _updateNotifsOn     = localStorage.getItem(_UPDATE_NOTIF_KEY) !== 'off';
+var _ANIM_KEY           = 'opencurve-animations';
+var _animationsOn       = localStorage.getItem(_ANIM_KEY) !== 'off';
+
+function _hexToRgba(hex, alpha) {
+  var r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return 'rgba('+r+','+g+','+b+','+alpha+')';
+}
 
 function _applyCurveColor(color) {
   _curveColor = color;
@@ -1495,6 +1688,15 @@ function _applyCurveColor(color) {
   document.querySelectorAll('.preset-thumb path').forEach(function(p) {
     p.setAttribute('stroke', color);
   });
+  // Update active preset button theme colours
+  if (/^#[0-9a-fA-F]{6}$/.test(color)) {
+    var bg  = _hexToRgba(color, 0.15);
+    var bg2 = _hexToRgba(color, 0.28);
+    var root = document.documentElement;
+    root.style.setProperty('--oc-active-color', color);
+    root.style.setProperty('--oc-active-bg',    bg);
+    root.style.setProperty('--oc-active-bg2',   bg2);
+  }
 }
 
 function _showCopyToast(msg, color) {
@@ -1561,25 +1763,35 @@ function _refreshUpdateNotification() {
 function _applyUpdateBtnState(btn, label) {
   var old = btn.querySelector('._update-icon');
   if (old) btn.removeChild(old);
+  var oldLeft = btn.querySelector('._update-left-icon');
+  if (oldLeft) btn.removeChild(oldLeft);
+  var leftIcon = document.createElement('span');
+  leftIcon.className = '_update-left-icon';
+  leftIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
   if (_updateAvailable) {
     btn.style.background = 'rgba(240,180,0,0.08)';
     label.textContent = 'Update Available';
     label.style.color = '#e6b800';
+    leftIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill="none" d="M13.5 8a5.5 5.5 0 11-1.5-3.8" stroke="#e6b800" stroke-width="1.6" stroke-linecap="round"/><polyline fill="none" points="12,2 12,5.5 8.5,5.5" stroke="#e6b800" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     var icon = document.createElement('span');
     icon.className = '_update-icon';
-    icon.textContent = '⚠';
-    icon.style.cssText = 'color:#e6b800;font-size:14px;margin-left:6px;';
+    icon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
+    icon.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2L13 12H1L7 2Z" stroke="#e6b800" stroke-width="1.5" stroke-linejoin="round"/><line x1="7" y1="6" x2="7" y2="9" stroke="#e6b800" stroke-width="1.5" stroke-linecap="round"/><circle cx="7" cy="10.5" r="0.75" fill="#e6b800"/></svg>';
     btn.appendChild(icon);
   } else {
-    btn.style.background = '';
+    btn.style.background = 'rgba(230,184,0,0.08)';
     label.textContent = 'Check for Updates';
     label.style.color = '#b0b0b0';
+    leftIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill="none" d="M13.5 8a5.5 5.5 0 11-1.5-3.8" stroke="#e6b800" stroke-width="1.6" stroke-linecap="round"/><polyline fill="none" points="12,2 12,5.5 8.5,5.5" stroke="#e6b800" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   }
+  btn.insertBefore(leftIcon, btn.firstChild);
 }
 
 function _openReleasesPage() {
   var url = 'https://github.com/fayewave/OpenCurve/releases/latest';
-  require('uxp').shell.openExternal(url).catch(function(e) {
+  require('uxp').shell.openExternal(url).then(function() {
+    _showCopyToast('Opened link in browser', '#e6b800');
+  }).catch(function(e) {
     console.error('[OC] openExternal failed:', e);
     navigator.clipboard.writeText(url).then(function() {
       _showCopyToast('Link copied — paste in browser', '#e6b800');
@@ -1587,29 +1799,28 @@ function _openReleasesPage() {
   });
 }
 
-function _checkForUpdates() {
+function _checkForUpdates(silent) {
   _updateDismissed = false;
-  _showCopyToast('Checking for updates…');
+  if (!silent) _showCopyToast('Checking for updates…');
   fetch('https://api.github.com/repos/fayewave/OpenCurve/releases/latest')
     .then(function(r) { return r.json(); })
     .then(function(data) {
       var latest = (data.tag_name || '').replace(/^v/, '');
-      if (!latest) { _showCopyToast('No releases found on GitHub'); return; }
+      if (!latest) { if (!silent) _showCopyToast('No releases found on GitHub'); return; }
       _latestVersion = latest;
       if (latest === CURRENT_VERSION) {
         _updateAvailable = false;
-        _showCopyToast('OpenCurve is up to date (v' + CURRENT_VERSION + ')');
+        if (!silent) _showCopyToast('OpenCurve is up to date (v' + CURRENT_VERSION + ')');
       } else {
         _updateAvailable = true;
-        _showCopyToast('Update available: v' + latest + ' — you have v' + CURRENT_VERSION);
+        if (!silent) _showCopyToast('Update available: v' + latest + ' — you have v' + CURRENT_VERSION);
       }
-      // Refresh button if modal is open
       var btn = document.getElementById('_updates-row');
       var lbl = document.getElementById('_updates-label');
       if (btn && lbl) _applyUpdateBtnState(btn, lbl);
       _refreshUpdateNotification();
     })
-    .catch(function() { _showCopyToast('Could not reach GitHub'); });
+    .catch(function() { if (!silent) _showCopyToast('Could not reach GitHub'); });
 }
 
 function _confirmReset() {
@@ -1630,14 +1841,18 @@ function _confirmReset() {
   var btns = document.createElement('div');
   btns.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
 
-  var cancelBtn = document.createElement('button');
+  var cancelBtn = document.createElement('div');
   cancelBtn.textContent = 'Cancel';
   cancelBtn.style.cssText = 'background:transparent;border:1px solid rgba(255,255,255,0.12);color:#888;font-size:13px;padding:5px 12px;cursor:pointer;';
+  cancelBtn.addEventListener('mouseenter', function() { cancelBtn.style.color='#e4e4e4'; cancelBtn.style.borderColor='rgba(255,255,255,0.25)'; });
+  cancelBtn.addEventListener('mouseleave', function() { cancelBtn.style.color='#888'; cancelBtn.style.borderColor='rgba(255,255,255,0.12)'; });
   cancelBtn.addEventListener('click', function() { document.body.removeChild(overlay); });
 
-  var resetBtn = document.createElement('button');
+  var resetBtn = document.createElement('div');
   resetBtn.textContent = 'Reset';
   resetBtn.style.cssText = 'background:#f06060;border:none;color:#fff;font-size:13px;padding:5px 12px;cursor:pointer;font-weight:600;';
+  resetBtn.addEventListener('mouseenter', function() { resetBtn.style.background='#f27878'; });
+  resetBtn.addEventListener('mouseleave', function() { resetBtn.style.background='#f06060'; });
   resetBtn.addEventListener('click', function() {
     localStorage.removeItem('opencurve-presets-v10');
     localStorage.removeItem('opencurve-sidebar-width');
@@ -1659,51 +1874,53 @@ function _confirmReset() {
 }
 
 function _showSettingsModal() {
-  var overlay = document.createElement('div');
-  overlay.id = 'settings-overlay';
-  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:9997;';
-  overlay.addEventListener('click', function() {
-    document.body.removeChild(modal);
-    document.body.removeChild(overlay);
-  });
-  document.body.appendChild(overlay);
 
   var modal = document.createElement('div');
   modal.id = 'settings-modal';
-  var modalW = 280;
   var vw = document.documentElement.clientWidth  || document.body.clientWidth;
   var vh = document.documentElement.clientHeight || document.body.clientHeight;
-  var modalL = Math.round((vw - modalW) / 2);
-  modal.style.cssText = 'position:fixed;top:-9999px;left:'+modalL+'px;width:'+modalW+'px;visibility:hidden;background:#1c1c1c;border:1px solid rgba(255,255,255,0.18);z-index:9998;display:flex;flex-direction:column;font-family:system-ui,sans-serif;';
+  modal.style.cssText = 'position:fixed;top:0;left:0;width:'+vw+'px;height:'+vh+'px;background:#1c1c1c;z-index:9998;display:flex;flex-direction:column;font-family:system-ui,sans-serif;';
 
-  // Header
+  // Logo + close row
   var header = document.createElement('div');
-  header.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);flex-shrink:0;';
-  var headerTitle = document.createElement('span');
-  headerTitle.textContent = 'Settings';
-  headerTitle.style.cssText = 'color:#e4e4e4;font-size:14px;font-weight:600;flex:1;';
+  header.style.cssText = 'display:flex;align-items:center;padding:10px 8px 10px 12px;border-bottom:1px solid rgba(255,255,255,0.07);flex-shrink:0;';
+  var logoSpacer = document.createElement('div');
+  logoSpacer.style.cssText = 'width:24px;flex-shrink:0;';
+  var logoWrap = document.createElement('div');
+  logoWrap.style.cssText = 'flex:1;display:flex;align-items:center;justify-content:center;';
+  var logo = document.createElement('img');
+  logo.src = 'img/OpenCurve Logo8.png';
+  logo.style.cssText = 'height:26px;opacity:0.9;';
+  logoWrap.appendChild(logo);
   var closeBtn = document.createElement('div');
   closeBtn.textContent = '✕';
-  closeBtn.style.cssText = 'color:#888;font-size:13px;cursor:pointer;padding:4px 6px;';
+  closeBtn.style.cssText = 'color:#888;font-size:13px;cursor:pointer;padding:4px 6px;flex-shrink:0;';
   closeBtn.addEventListener('mouseenter', function() { closeBtn.style.color='#e4e4e4'; });
   closeBtn.addEventListener('mouseleave', function() { closeBtn.style.color='#888'; });
   closeBtn.addEventListener('click', function() {
-    document.body.removeChild(modal);
-    document.body.removeChild(overlay);
+    modal.remove();
   });
-  header.appendChild(headerTitle);
+  header.appendChild(logoSpacer);
+  header.appendChild(logoWrap);
   header.appendChild(closeBtn);
 
   // Content
   var content = document.createElement('div');
-  content.style.cssText = 'flex:1;overflow-y:auto;';
+  var dualCol = vw >= 300;
+  content.style.cssText = dualCol
+    ? 'flex:1;overflow-y:auto;display:flex;flex-direction:row;'
+    : 'flex:1;overflow-y:auto;';
+  var rowsCol = document.createElement('div');
+  rowsCol.style.cssText = dualCol ? 'flex:1;display:flex;flex-direction:column;' : '';
 
   // Graph line colour section
   var colorSection = document.createElement('div');
-  colorSection.style.cssText = 'padding:10px 12px 12px;border-bottom:1px solid rgba(255,255,255,0.07);';
+  colorSection.style.cssText = dualCol
+    ? 'padding:10px 12px 12px;width:50%;box-sizing:border-box;border-left:1px solid rgba(255,255,255,0.07);'
+    : 'padding:10px 12px 12px;border-top:1px solid rgba(255,255,255,0.07);';
 
   var colorLabel = document.createElement('div');
-  colorLabel.textContent = 'Graph line colour';
+  colorLabel.textContent = 'Theme';
   colorLabel.style.cssText = 'color:#b0b0b0;font-size:14px;margin-bottom:10px;';
   colorSection.appendChild(colorLabel);
 
@@ -1769,91 +1986,229 @@ function _showSettingsModal() {
   hexRow.appendChild(hexInput);
   hexRow.appendChild(hexPreview);
   colorSection.appendChild(hexRow);
-  content.appendChild(colorSection);
+  // Shortcuts section (Spell Book)
+  var shortcutsSection = document.createElement('div');
+  shortcutsSection.style.cssText = 'padding:10px 0 0;margin-top:10px;border-top:1px solid rgba(255,255,255,0.07);';
+  var shortcutsLabel = document.createElement('div');
+  shortcutsLabel.textContent = 'Shortcuts';
+  shortcutsLabel.style.cssText = 'color:#b0b0b0;font-size:14px;margin-bottom:6px;';
+  var shortcutsSub = document.createElement('div');
+  shortcutsSub.textContent = 'Assign keys via Spell Book';
+  shortcutsSub.style.cssText = 'font-size:11px;color:#555;margin-bottom:10px;';
+  shortcutsSection.appendChild(shortcutsLabel);
+  shortcutsSection.appendChild(shortcutsSub);
+  [
+    { id: 'opencurve.go',               label: 'Go'                    },
+    { id: 'opencurve.select-all-props',   label: 'Enable All Properties'  },
+    { id: 'opencurve.deselect-all-props', label: 'Disable All Properties' },
+  ].forEach(function(s) {
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;';
+    var labelSpan = document.createElement('span');
+    labelSpan.textContent = s.label;
+    labelSpan.style.cssText = 'font-size:13px;color:#888;';
+    var idSpan = document.createElement('span');
+    idSpan.textContent = s.id;
+    idSpan.style.cssText = 'font-size:11px;color:#555;font-family:monospace;';
+    row.appendChild(labelSpan);
+    row.appendChild(idSpan);
+    shortcutsSection.appendChild(row);
+  });
+  // Divider
+  var sbDivider = document.createElement('div');
+  sbDivider.style.cssText = 'border-top:1px solid rgba(255,255,255,0.07);margin-top:10px;';
+  shortcutsSection.appendChild(sbDivider);
+
+  // Debug row
+  var sbDebugRow = document.createElement('div');
+  sbDebugRow.style.cssText = 'margin-top:10px;display:flex;flex-direction:column;gap:10px;';
+
+  var sbPathEl = document.createElement('div');
+  sbPathEl.style.cssText = 'font-size:10px;color:#444;word-break:break-all;line-height:1.4;cursor:pointer;';
+  sbPathEl.textContent = 'Log: ' + _debugPath;
+  sbPathEl.addEventListener('mouseenter', function() { sbPathEl.style.color = '#4a9eff'; });
+  sbPathEl.addEventListener('mouseleave', function() { sbPathEl.style.color = '#444'; });
+  sbPathEl.addEventListener('click', function() {
+    navigator.clipboard.writeText(_debugPath).then(function() {
+      _showCopyToast('Path copied — paste in Explorer address bar');
+    });
+  });
+  sbDebugRow.appendChild(sbPathEl);
+
+  var sbBtnRow = document.createElement('div');
+  sbBtnRow.style.cssText = 'display:flex;gap:6px;margin-top:8px;';
+
+var sbCopyBtn = document.createElement('div');
+  sbCopyBtn.textContent = 'Copy Log';
+  sbCopyBtn.style.cssText = 'font-size:12px;color:#555;cursor:pointer;padding:4px 8px;border:1px solid rgba(255,255,255,0.08);';
+  sbCopyBtn.addEventListener('mouseenter', function() { sbCopyBtn.style.color='#888'; sbCopyBtn.style.borderColor='rgba(255,255,255,0.18)'; });
+  sbCopyBtn.addEventListener('mouseleave', function() { sbCopyBtn.style.color='#555'; sbCopyBtn.style.borderColor='rgba(255,255,255,0.08)'; });
+  sbCopyBtn.addEventListener('click', function() {
+    var text = _debugLog.join('\n');
+    if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function() {
+        _showCopyToast('Log copied!', '#3ddc84');
+      }).catch(function() { _showCopyToast('Copy failed — open log file manually'); });
+    } else {
+      _showCopyToast('Copy not available — open log file manually');
+    }
+  });
+
+  sbBtnRow.appendChild(sbCopyBtn);
+  sbDebugRow.appendChild(sbBtnRow);
+  shortcutsSection.appendChild(sbDebugRow);
+  colorSection.appendChild(shortcutsSection);
 
   // Check for updates row
   var updatesRow = document.createElement('div');
   updatesRow.id = '_updates-row';
-  updatesRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);cursor:pointer;';
+  updatesRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);cursor:pointer;background:rgba(230,184,0,0.08);';
   var updatesLabel = document.createElement('span');
   updatesLabel.id = '_updates-label';
   updatesLabel.style.cssText = 'font-size:14px;flex:1;';
   updatesRow.appendChild(updatesLabel);
   _applyUpdateBtnState(updatesRow, updatesLabel);
-  updatesRow.addEventListener('mouseenter', function() { if (!_updateAvailable) updatesRow.style.background='rgba(255,255,255,0.04)'; });
-  updatesRow.addEventListener('mouseleave', function() { if (!_updateAvailable) updatesRow.style.background=''; });
+  updatesRow.addEventListener('mouseenter', function() { updatesRow.style.background='rgba(230,184,0,0.15)'; });
+  updatesRow.addEventListener('mouseleave', function() { updatesRow.style.background='rgba(230,184,0,0.08)'; });
   updatesRow.addEventListener('click', function() {
-    document.body.removeChild(modal);
-    document.body.removeChild(overlay);
     if (_updateAvailable) {
+      modal.remove();
       _openReleasesPage();
     } else {
       _checkForUpdates();
     }
   });
-  content.appendChild(updatesRow);
+  rowsCol.appendChild(updatesRow);
 
   // Update notifications toggle row
   var notifRow = document.createElement('div');
   notifRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);cursor:pointer;';
   var notifLabel = document.createElement('span');
   notifLabel.style.cssText = 'font-size:14px;flex:1;color:#b0b0b0;';
-  function _updateNotifLabel() {
-    notifLabel.textContent = 'Update Notifications ' + (_updateNotifsOn ? 'On' : 'Off');
+  notifLabel.textContent = 'Update Notifications';
+  var notifCheck = document.createElement('span');
+  notifCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
+  var _svgCheck = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><polyline points="1.5,6 4.5,9 10.5,3" stroke="#3ddc84" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var _svgCross = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><line x1="2" y1="2" x2="10" y2="10" stroke="#f06060" stroke-width="1.8" stroke-linecap="round"/><line x1="10" y1="2" x2="2" y2="10" stroke="#f06060" stroke-width="1.8" stroke-linecap="round"/></svg>';
+  function _updateNotifCheck() {
+    notifCheck.innerHTML = _updateNotifsOn ? _svgCheck : _svgCross;
+    notifRow.style.background = _updateNotifsOn ? 'rgba(61,220,132,0.08)' : 'rgba(240,96,96,0.08)';
   }
-  _updateNotifLabel();
+  var notifIcon = document.createElement('span');
+  notifIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
+  notifIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill="none" d="M8 2a4.5 4.5 0 014.5 4.5v3l1 1.5H2.5l1-1.5V6.5A4.5 4.5 0 018 2z" stroke="#b0b0b0" stroke-width="1.5" stroke-linejoin="round"/><path fill="none" d="M6 12.5a2 2 0 004 0" stroke="#b0b0b0" stroke-width="1.5" stroke-linecap="round"/></svg>';
+  _updateNotifCheck();
+  notifRow.appendChild(notifIcon);
   notifRow.appendChild(notifLabel);
-  notifRow.addEventListener('mouseenter', function() { notifRow.style.background='rgba(255,255,255,0.04)'; });
-  notifRow.addEventListener('mouseleave', function() { notifRow.style.background=''; });
+  notifRow.appendChild(notifCheck);
+  notifRow.addEventListener('mouseenter', function() { notifRow.style.background = _updateNotifsOn ? 'rgba(61,220,132,0.15)' : 'rgba(240,96,96,0.15)'; });
+  notifRow.addEventListener('mouseleave', function() { notifRow.style.background = _updateNotifsOn ? 'rgba(61,220,132,0.08)' : 'rgba(240,96,96,0.08)'; });
   notifRow.addEventListener('click', function() {
     _updateNotifsOn = !_updateNotifsOn;
     localStorage.setItem(_UPDATE_NOTIF_KEY, _updateNotifsOn ? 'on' : 'off');
-    _updateNotifLabel();
+    _updateNotifCheck();
     _refreshUpdateNotification();
   });
-  content.appendChild(notifRow);
+  rowsCol.appendChild(notifRow);
 
-  // Reset row
-  var resetRow = document.createElement('div');
-  resetRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);cursor:pointer;';
-  var resetLabel = document.createElement('span');
-  resetLabel.textContent = 'Reset All Settings';
-  resetLabel.style.cssText = 'color:#f06060;font-size:14px;flex:1;';
-  resetRow.appendChild(resetLabel);
-  resetRow.addEventListener('mouseenter', function() { resetRow.style.background='rgba(240,96,96,0.08)'; });
-  resetRow.addEventListener('mouseleave', function() { resetRow.style.background=''; });
-  resetRow.addEventListener('click', function() {
-    document.body.removeChild(modal);
-    document.body.removeChild(overlay);
-    _confirmReset();
+  var animRow = document.createElement('div');
+  animRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);cursor:pointer;';
+  var animLabel = document.createElement('span');
+  animLabel.style.cssText = 'font-size:14px;flex:1;color:#b0b0b0;';
+  animLabel.textContent = 'Animations';
+  var animCheck = document.createElement('span');
+  animCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
+  function _updateAnimCheck() {
+    animCheck.innerHTML = _animationsOn ? _svgCheck : _svgCross;
+    animRow.style.background = _animationsOn ? 'rgba(61,220,132,0.08)' : 'rgba(240,96,96,0.08)';
+  }
+  var animIcon = document.createElement('span');
+  animIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
+  animIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill="none" d="M8 2l1.2 3L13 6l-2.5 2.5.6 3.5L8 10.5 4.9 12l.6-3.5L3 6l3.8-1z" stroke="#b0b0b0" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+  _updateAnimCheck();
+  animRow.appendChild(animIcon);
+  animRow.appendChild(animLabel);
+  animRow.appendChild(animCheck);
+  animRow.addEventListener('mouseenter', function() { animRow.style.background = _animationsOn ? 'rgba(61,220,132,0.15)' : 'rgba(240,96,96,0.15)'; });
+  animRow.addEventListener('mouseleave', function() { animRow.style.background = _animationsOn ? 'rgba(61,220,132,0.08)' : 'rgba(240,96,96,0.08)'; });
+  animRow.addEventListener('click', function() {
+    _animationsOn = !_animationsOn;
+    localStorage.setItem(_ANIM_KEY, _animationsOn ? 'on' : 'off');
+    _updateAnimCheck();
   });
-  content.appendChild(resetRow);
+  rowsCol.appendChild(animRow);
+
+  content.appendChild(rowsCol);
+  content.appendChild(colorSection);
 
   // Footer
   var footer = document.createElement('div');
-  footer.style.cssText = 'padding:12px 12px 14px;border-top:1px solid rgba(255,255,255,0.07);flex-shrink:0;';
+  footer.style.cssText = 'border-top:1px solid rgba(255,255,255,0.07);flex-shrink:0;';
+  var footerRow = document.createElement('div');
+  footerRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 12px;';
+
+  var footerLeft = document.createElement('div');
   var madeBy = document.createElement('div');
   madeBy.textContent = 'made by faye  ·  v' + CURRENT_VERSION;
-  madeBy.style.cssText = 'color:#555;font-size:12px;margin-bottom:6px;';
+  madeBy.style.cssText = 'color:#888;font-size:12px;margin-bottom:4px;';
   var ghLink = document.createElement('div');
   ghLink.textContent = 'github.com/fayewave/OpenCurve';
-  ghLink.style.cssText = 'color:#4a9eff;font-size:12px;cursor:pointer;';
+  ghLink.style.cssText = 'color:#555;font-size:12px;cursor:pointer;';
+  ghLink.addEventListener('mouseenter', function() { ghLink.style.color = '#4a9eff'; });
+  ghLink.addEventListener('mouseleave', function() { ghLink.style.color = '#555'; });
   ghLink.addEventListener('click', function() {
     try { require('uxp').shell.openExternal('https://github.com/fayewave/OpenCurve'); } catch(e) {}
   });
-  footer.appendChild(madeBy);
-  footer.appendChild(ghLink);
+  footerLeft.appendChild(madeBy);
+  footerLeft.appendChild(ghLink);
+
+  var resetRow = document.createElement('div');
+  resetRow.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 10px;cursor:pointer;color:#f06060;font-size:13px;background:rgba(240,96,96,0.08);flex-shrink:0;';
+  var resetIcon = document.createElement('span');
+  resetIcon.style.cssText = 'display:flex;align-items:center;';
+  resetIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill="none" d="M3 5h10M6 5V4h4v1M6.5 7.5v4M9.5 7.5v4M4.5 5l.5 8h6l.5-8" stroke="#f06060" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var resetLabel = document.createElement('span');
+  resetLabel.textContent = 'Reset All Settings';
+  resetRow.appendChild(resetIcon);
+  resetRow.appendChild(resetLabel);
+  resetRow.addEventListener('mouseenter', function() { resetRow.style.background='rgba(240,96,96,0.15)'; });
+  resetRow.addEventListener('mouseleave', function() { resetRow.style.background='rgba(240,96,96,0.08)'; });
+  resetRow.addEventListener('click', function() {
+    modal.remove();
+    _confirmReset();
+  });
+
+  footerRow.appendChild(footerLeft);
+  footerRow.appendChild(resetRow);
+  footer.appendChild(footerRow);
 
   modal.appendChild(header);
   modal.appendChild(content);
   modal.appendChild(footer);
   document.body.appendChild(modal);
-  setTimeout(function() {
-    var h = modal.offsetHeight;
-    var modalT = h > 0 ? Math.round((vh - h) / 2) : Math.round((vh - 320) / 2);
-    modal.style.top = Math.max(0, modalT) + 'px';
-    modal.style.visibility = 'visible';
-  }, 0);
+
+  // Resize with the panel
+  var _settingsRO = new ResizeObserver(function() {
+    var nvw = document.documentElement.clientWidth  || document.body.clientWidth;
+    var nvh = document.documentElement.clientHeight || document.body.clientHeight;
+    modal.style.width  = nvw + 'px';
+    modal.style.height = nvh + 'px';
+    var nowDual = nvw >= 300;
+    if (nowDual !== dualCol) {
+      dualCol = nowDual;
+      content.style.flexDirection = nowDual ? 'row' : 'column';
+      colorSection.style.cssText = nowDual
+        ? 'padding:10px 12px 12px;width:50%;box-sizing:border-box;border-left:1px solid rgba(255,255,255,0.07);'
+        : 'padding:10px 12px 12px;border-top:1px solid rgba(255,255,255,0.07);';
+      rowsCol.style.cssText = nowDual
+        ? 'flex:1;display:flex;flex-direction:column;'
+        : '';
+    }
+  });
+  _settingsRO.observe(document.body);
+
+  var _origRemove = modal.remove.bind(modal);
+  modal.remove = function() { _settingsRO.disconnect(); _origRemove(); };
 }
 
 // Apply saved curve colour on load
@@ -1871,6 +2226,11 @@ try {
     plugin: {
       create: function() { console.log('[FS] plugin create'); },
       destroy: function() { if (pollTimer) { clearInterval(pollTimer); pollTimer=null; } },
+    },
+    commands: {
+      'spellbook.plugin': {
+        run: function(data, args) { _spellbook.plugin(data, args); },
+      },
     },
     panels: {
       'opencurve-panel': {
@@ -1890,6 +2250,8 @@ try {
           console.log('[FS] panel show — starting poll');
           poll();
           pollTimer = setInterval(poll, POLL_MS);
+          if (_updateNotifsOn) _checkForUpdates(true);
+          _spellbook.register();
         },
         hide: function() {
           console.log('[FS] panel hide — stopping poll');
@@ -1913,6 +2275,7 @@ try {
     },
   });
   console.log('[FS] entrypoints.setup complete');
+  _spellbook.start();
 } catch(e) {
   console.error('[FS] entrypoints.setup FAILED:', e);
 }

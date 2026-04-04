@@ -10,8 +10,11 @@
   --text:       #e4e4e4;
   --text-dim:   #888;
   --text-faint: #555;
-  --accent:     #4a9eff;
-  --accent-dim: rgba(74,158,255,0.15);
+  --accent:           #4a9eff;
+  --accent-dim:       rgba(74,158,255,0.15);
+  --oc-active-color:  #6cb8ff;
+  --oc-active-bg:     rgba(74,158,255,0.15);
+  --oc-active-bg2:    rgba(74,158,255,0.28);
   --green:      #3ddc84;
   --green-dim:  rgba(61,220,132,0.15);
   --amber:      #f0a030;
@@ -186,25 +189,34 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 0;
+  z-index: 10;
 }
 
 .zoom-btn {
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: rgba(255,255,255,0.06);
   color: var(--text-dim);
-  font-size: 16px;
+  font-size: 20px;
   cursor: pointer;
   user-select: none;
-  line-height: 1;
+  line-height: 28px;
+  text-align: center;
+  padding: 0;
+  box-sizing: border-box;
 }
 
 .zoom-btn:hover {
   background: rgba(255,255,255,0.12);
   color: var(--text);
+}
+
+.zoom-btn:active {
+  background: rgba(255,255,255,0.22);
+  color: #ffffff;
 }
 
 
@@ -271,13 +283,13 @@ html, body {
 
 .preset-btn[data-active="true"],
 .preset-btn.active {
-  color: #6cb8ff;
-  background: var(--accent-dim);
+  color: var(--oc-active-color);
+  background: var(--oc-active-bg);
 }
 .preset-btn[data-active="true"]:hover,
 .preset-btn.active:hover {
-  background: rgba(74,158,255,0.28);
-  color: #7dc4ff;
+  background: var(--oc-active-bg2);
+  color: var(--oc-active-color);
 }
 
 .preset-name {
