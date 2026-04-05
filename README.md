@@ -4,8 +4,6 @@
 
 A free bezier curve editor plugin to add custom easing to your keyframes in Adobe Premiere Pro.
 
-Mac & PC compatible. Premiere 2025 and above.
-
 **Download the** [**latest release.**](https://github.com/fayewave/OpenCurve/releases/latest)
 
 ![OpenCurve](https://img.shields.io/badge/Premiere%20Pro-UXP%20Plugin-blue)
@@ -48,6 +46,7 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 ### Requirements
 
 - Adobe Premiere 2025 or later
+- Mac & PC compatible
 
 ---
 
