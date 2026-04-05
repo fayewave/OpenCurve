@@ -1,3 +1,6 @@
+![OpenCurve](https://img.shields.io/badge/Premiere%20Pro-UXP%20Plugin-blue)
+![Version](https://img.shields.io/badge/version-1.1.0-lightgrey)
+
 <p align="left">
   <img src="img/OpenCurve_Logo14.png" alt="OpenCurve" width="400"/>
 </p>
@@ -5,9 +8,6 @@
 A free bezier curve editor plugin to add custom easing to your keyframes in Adobe Premiere Pro.
 
 **Download the** [**latest release.**](https://github.com/fayewave/OpenCurve/releases/latest)
-
-![OpenCurve](https://img.shields.io/badge/Premiere%20Pro-UXP%20Plugin-blue)
-![Version](https://img.shields.io/badge/version-1.1.0-lightgrey)
 
 ---
 
