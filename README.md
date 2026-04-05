@@ -3,6 +3,7 @@
 </p>
 
 A free bezier curve editor plugin to add custom easing to your keyframes in Adobe Premiere Pro.
+Mac & PC compatible. Premiere 2025 and above.
 
 **Download the** [**latest release.**](https://github.com/fayewave/OpenCurve/releases/latest)
 
@@ -28,8 +29,9 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 - **Presets** — Save any curve as a named preset and share them easily
 - **Snap to grid** — Hold shift to snap the bezier handles to the grid
 - **Undo and redo** — Supports Premiere's history system for full undo/redo support
-- **Spell Book support** — Fully supports Spell Book, allowing keyboard shortcuts
+- **Spell Book support** — Fully supports Spell Book, allowing global keyboard shortcuts
 - **Themes** — Change the colour of the graph line and control points to suit your workspace
+- **Free forever** — No bloat, no logins. Made by an actual video editor for the editing community
 
 ---
 
