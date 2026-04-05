@@ -50,4 +50,7 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 
 ---
 
+<a href="https://www.buymeacoffee.com/fayewave">
+  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="60" />
+</a>
 
