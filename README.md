@@ -24,11 +24,11 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 
 ### Features
 - **Works anywhere** — Use on clips, nests, the Transform effect, Adjustment Layers
-- **Auto-detects keyframes** — OpenCurve finds keyframes on clips at the playhead without requiring you to select them first
+- **Auto-detects keyframes** — finds keyframes on clips at the playhead without requiring you to select them first
 - **Presets** — Save any curve as a named preset and share them easily
 - **Snap to grid** — Hold shift to snap the bezier handles to the grid
 - **Undo and redo** — Supports Premiere's history system for full undo/redo support
-- **Spell Book support** — Fully supports Spell Book, allowing global keyboard shortcuts
+- **Spell Book** — supports global keyboard shortcuts with Spell Book
 - **Themes** — Change the colour of the graph line and control points to suit your workspace
 - **Free forever** — No bloat, no logins. Made by an actual video editor for the editing community
 
