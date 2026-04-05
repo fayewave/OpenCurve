@@ -73,6 +73,17 @@ html, body {
   cursor: col-resize;
   background: transparent;
   transition: background 0.15s;
+  position: relative;
+}
+
+.resize-handle::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -6px;
+  right: -6px;
+  cursor: col-resize;
 }
 
 .resize-handle:hover {
@@ -105,7 +116,9 @@ html, body {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  contain: layout style;
 }
+
 
 
 /* ─── Select dropdown ───────────────────────────────────────── */
@@ -442,10 +455,10 @@ html, body {
 .status-valid .status-dot    { background: var(--accent); }
 .status-valid .status-text   { color: var(--accent); }
 
-.status-warn  { background: var(--amber-dim); }
-.status-warn .status-dot     { background: var(--amber); }
-.status-warn .status-text    { color: var(--amber); }
-.status-warn:hover           { background: rgba(240,160,48,0.28); }
+.status-warn  { background: transparent; }
+.status-warn .status-dot     { background: var(--text-faint); }
+.status-warn .status-text    { color: var(--text-dim); }
+.status-warn:hover           { background: rgba(255,255,255,0.04); }
 
 .status-error { background: var(--red-dim); }
 .status-error .status-dot    { background: var(--red); }

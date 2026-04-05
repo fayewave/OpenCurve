@@ -163,7 +163,7 @@ function _animateToCurve(target, onUpdate) {
   if (!_animationsOn) { setState({ curve: Object.assign({}, target) }); onUpdate(target); return; }
   if (_curveAnimRaf) { cancelAnimationFrame(_curveAnimRaf); _curveAnimRaf = null; }
   var from = Object.assign({}, getState().curve);
-  var duration = 200;
+  var duration = 150;
   var start = null;
   function easeInOut(t) { return t < 0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
   function step(ts) {
@@ -308,16 +308,18 @@ function updateStaticSVG(W, H) {
     rangeOutline.setAttribute('width', rw); rangeOutline.setAttribute('height', rh);
   }
 
-  // Grid lines — positioned in value space via normToSVG
-  for (var j = 1; j <= 7; j++) {
-    var yc = normToSVG(0, j/8, W, H).cy;
+  // Grid lines — dynamic count based on _gridSize
+  var gridGroup = document.getElementById('sg-grid');
+  if (gridGroup) while (gridGroup.firstChild) gridGroup.removeChild(gridGroup.firstChild);
+  for (var j = 1; j < _gridSize; j++) {
+    var yc = normToSVG(0, j/_gridSize, W, H).cy;
     var lh = _makeLine('sg-gh'+j);
     lh.setAttribute('stroke', '#ffffff');
     lh.setAttribute('stroke-opacity', '0.055');
     _setLine('sg-gh'+j, rx, yc, rx + rw, yc);
   }
-  for (var i = 1; i <= 7; i++) {
-    var xc = normToSVG(i/8, 0, W, H).cx;
+  for (var i = 1; i < _gridSize; i++) {
+    var xc = normToSVG(i/_gridSize, 0, W, H).cx;
     var lv = _makeLine('sg-gv'+i);
     lv.setAttribute('stroke', '#ffffff');
     lv.setAttribute('stroke-opacity', '0.055');
@@ -429,7 +431,7 @@ function initGraphEditor(svg) {
     var n   = svgToNorm(raw.cx, raw.cy, _svgW, _svgH);
     var x   = Math.max(0,    Math.min(1,   n.nx));
     var y   = Math.max(Y_CLAMP_MIN, Math.min(Y_CLAMP_MAX, n.ny));
-    if (e.shiftKey) { x = Math.round(x * 8) / 8; y = Math.round(y * 8) / 8; }
+    if (e.shiftKey) { x = Math.round(x * _gridSize) / _gridSize; y = Math.round(y * _gridSize) / _gridSize; }
     if (dragging === 'p1') { liveCurve.p1x = x; liveCurve.p1y = y; }
     else                   { liveCurve.p2x = x; liveCurve.p2y = y; }
     _setSnapBg(e.shiftKey);
@@ -443,7 +445,7 @@ function initGraphEditor(svg) {
       bg.setAttribute('fill', snap ? '#4a9eff' : '#1e1e1e');
       bg.setAttribute('fill-opacity', snap ? '0.07' : '1');
     }
-    for (var gi = 1; gi <= 7; gi++) {
+    for (var gi = 1; gi < _gridSize; gi++) {
       var gh = document.getElementById('sg-gh' + gi);
       var gv = document.getElementById('sg-gv' + gi);
       if (gh) { gh.setAttribute('stroke', snap ? '#a8d4ff' : '#ffffff'); gh.setAttribute('stroke-opacity', snap ? '0.12' : '0.055'); }
@@ -1174,10 +1176,20 @@ function initPanel() {
 
   var _ctxTarget = null; // { preset, btn, startRename }
 
-  function _ctxItem(label, danger, onClick) {
+  function _ctxItem(label, danger, onClick, icon) {
     var item = document.createElement('div');
     item.className = 'ctx-menu-item' + (danger ? ' ctx-menu-item-danger' : '');
-    item.textContent = label;
+    item.style.display = 'flex';
+    item.style.alignItems = 'center';
+    if (icon) {
+      var iconSpan = document.createElement('span');
+      iconSpan.style.cssText = 'display:flex;align-items:center;flex-shrink:0;opacity:0.7;margin-right:10px;';
+      iconSpan.innerHTML = icon;
+      item.appendChild(iconSpan);
+    }
+    var labelSpan = document.createElement('span');
+    labelSpan.textContent = label;
+    item.appendChild(labelSpan);
     item.addEventListener('click', function(e) {
       e.stopPropagation();
       var t = _ctxTarget; // capture before hide nulls it
@@ -1187,10 +1199,15 @@ function initPanel() {
     _ctxMenu.appendChild(item);
   }
 
+  var _icRename = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path fill="none" d="M8.5 2.5l3 3M2 9l6.5-6.5 3 3L5 12H2V9z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var _icCopy = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><rect x="4.5" y="4.5" width="7" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path fill="none" d="M9.5 4.5V3a1 1 0 00-1-1H3a1 1 0 00-1 1v5.5a1 1 0 001 1h1.5" stroke="currentColor" stroke-width="1.3"/></svg>';
+  var _icOverwrite = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path fill="none" d="M7 2v7M4.5 6.5L7 9l2.5-2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path fill="none" d="M2 11h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+  var _icDelete = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path fill="none" d="M3 4h8M5.5 4V3a1 1 0 011-1h1a1 1 0 011 1v1M4.5 4l.5 7.5a1 1 0 001 .5h2a1 1 0 001-.5L9.5 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
   _ctxItem('Rename', false, function(t) {
     if (t) t.startRename();
-  });
-  _ctxItem('Copy Coordinates', false, function(t) {
+  }, _icRename);
+  _ctxItem('Copy Preset', false, function(t) {
     if (!t) return;
     var c = t.preset.curve;
     var text = 'cubic-bezier(' + c.p1x + ', ' + c.p1y + ', ' + c.p2x + ', ' + c.p2y + ')';
@@ -1209,8 +1226,8 @@ function initPanel() {
       }
     } catch(e) { /* navigator.clipboard not available */ }
     if (!copied) { _showCopyToast(text); }
-  });
-  _ctxItem('Apply Current Curve', false, function(t) {
+  }, _icCopy);
+  _ctxItem('Overwrite with current', false, function(t) {
     if (!t) return;
     var c = getState().curve;
     t.preset.curve = { p1x: c.p1x, p1y: c.p1y, p2x: c.p2x, p2y: c.p2y };
@@ -1218,25 +1235,29 @@ function initPanel() {
     var thumb = t.btn.querySelector('.preset-thumb path');
     if (thumb) thumb.setAttribute('d', _thumbPathD(t.preset.curve));
     _showCopyToast('Preset updated');
-  });
+  }, _icOverwrite);
   _ctxItem('Delete', true, function(t) {
     if (!t) return;
     _presetList = _presetList.filter(function(p) { return p.id !== t.preset.id; });
     _savePresetList(_presetList);
     if (t.btn && t.btn.parentNode) t.btn.parentNode.removeChild(t.btn);
-  });
+  }, _icDelete);
 
   function _showCtxMenu(preset, btn, startRename, e) {
+    var existingMini = document.getElementById('_mini-ctx');
+    if (existingMini && existingMini.parentNode) existingMini.parentNode.removeChild(existingMini);
     _ctxTarget = { preset: preset, btn: btn, startRename: startRename };
-    var mw = 170;
-    var mh = 112;
+    _ctxMenu.style.left = '0px';
+    _ctxMenu.style.top = '0px';
+    _ctxMenu.style.display = 'block';
+    var mw = _ctxMenu.offsetWidth;
+    var mh = _ctxMenu.offsetHeight;
     var ww = document.documentElement.clientWidth  || document.body.clientWidth;
     var wh = document.documentElement.clientHeight || document.body.clientHeight;
     var x = Math.min(e.clientX, ww - mw);
     var y = e.clientY + mh > wh ? e.clientY - mh : e.clientY;
     _ctxMenu.style.left = Math.max(0, x) + 'px';
     _ctxMenu.style.top  = Math.max(0, y) + 'px';
-    _ctxMenu.style.display = 'block';
   }
   function _hideCtxMenu() {
     _ctxMenu.style.display = 'none';
@@ -1262,7 +1283,7 @@ function initPanel() {
     // Thumbnail
     var thumb = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     thumb.setAttribute('class', 'preset-thumb');
-    thumb.setAttribute('width', '28'); thumb.setAttribute('height', '28');
+    thumb.setAttribute('width', '28'); thumb.setAttribute('height', '28'); thumb.setAttribute('viewBox', '0 0 28 28');
     var tp = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     tp.setAttribute('fill', 'none'); tp.setAttribute('stroke', _curveColor);
     tp.setAttribute('stroke-width', '2'); tp.setAttribute('stroke-linecap', 'round');
@@ -1275,15 +1296,8 @@ function initPanel() {
     nameSpan.textContent = preset.name;
     btn.appendChild(nameSpan);
 
-    // Delete button
-    var delBtn = document.createElement('div');
-    delBtn.className = 'preset-delete';
-    delBtn.textContent = '×';
-    btn.appendChild(delBtn);
-
     // Apply curve on click
     btn.addEventListener('click', function(e) {
-      if (e.target === delBtn) return;
       setPresetActive(preset.id);
       _animateToCurve(preset.curve, function(cur) {
         updateDynamicSVG(cur, _svgW, _svgH);
@@ -1295,6 +1309,12 @@ function initPanel() {
       var input = document.createElement('input');
       input.type = 'text'; input.value = preset.name;
       input.className = 'preset-rename-input';
+      if (_presetLayout === 'grid') {
+        input.style.width = '100%';
+        input.style.maxWidth = '100%';
+        input.style.textAlign = 'center';
+        input.style.boxSizing = 'border-box';
+      }
       btn.replaceChild(input, nameSpan);
       input.focus(); input.select();
       function commit() {
@@ -1312,14 +1332,6 @@ function initPanel() {
     nameSpan.addEventListener('dblclick', function(e) { e.stopPropagation(); startRename(); });
     btn.addEventListener('contextmenu', function(e) { e.preventDefault(); _showCtxMenu(preset, btn, startRename, e); });
 
-    // Delete
-    delBtn.addEventListener('click', function(e) {
-      e.stopPropagation();
-      _presetList = _presetList.filter(function(p) { return p.id !== preset.id; });
-      _savePresetList(_presetList);
-      if (btn.parentNode) btn.parentNode.removeChild(btn);
-    });
-
     return btn;
   }
 
@@ -1335,7 +1347,6 @@ function initPanel() {
         btn = btn.parentNode;
       }
       if (!btn || btn === container) return;
-      if (e.target.classList && e.target.classList.contains('preset-delete')) return;
       if (e.target.classList && e.target.classList.contains('preset-rename-input')) return;
 
       // If this is a rapid second press on the same button, let dblclick fire instead
@@ -1394,13 +1405,22 @@ function initPanel() {
   function _renderPresets() {
     var list = document.getElementById('all-presets-list');
     if (!list) return;
+    // Preserve the New Preset button if it exists
+    var newBtn = document.getElementById('new-preset-btn');
     list.innerHTML = '';
     _presetList.forEach(function(p) { list.appendChild(_buildPresetBtn(p)); });
+    if (newBtn) list.appendChild(newBtn);
     _initDragSort(list);
   }
 
   _renderPresets();
   _refreshUpdateNotification();
+
+  _applyPresetLayout(true);
+  var _presetListEl = document.getElementById('all-presets-list');
+  if (_presetListEl && typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(_updateGridCols).observe(_presetListEl);
+  }
 
   // Parse cubic-bezier string → curve object or null
   function _parseCubicBezier(text) {
@@ -1424,7 +1444,9 @@ function initPanel() {
     _presetList.push(preset);
     _savePresetList(_presetList);
     var btn = _buildPresetBtn(preset);
-    list.appendChild(btn);
+    var newPBtn = document.getElementById('new-preset-btn');
+    if (newPBtn) list.insertBefore(btn, newPBtn); else list.appendChild(btn);
+    _applyPresetLayout(true);
     var ns = btn.querySelector('.preset-name');
     if (ns) ns.dispatchEvent(new Event('dblclick'));
   }
@@ -1459,7 +1481,7 @@ function initPanel() {
     overlay.addEventListener('click', close);
 
     var title = document.createElement('div');
-    title.textContent = 'Paste Coordinates';
+    title.textContent = 'Paste Preset';
     title.style.cssText = 'color:#e4e4e4;font-size:14px;font-weight:600;margin-bottom:8px;';
     box.appendChild(title);
 
@@ -1526,7 +1548,7 @@ function initPanel() {
   }
 
   // Mini Settings-only context menu (used in preset list empty space + graph)
-  function _showMiniCtxMenu(e, showPaste) {
+  function _showMiniCtxMenu(e, showPaste, showLayout, showGrid) {
     console.log('[OC] _showMiniCtxMenu called');
     e.preventDefault();
     e.stopPropagation();
@@ -1539,31 +1561,91 @@ function initPanel() {
     mini.id = '_mini-ctx';
     mini.style.display = 'block';
 
-    var settingsItem = document.createElement('div');
-    settingsItem.className = 'ctx-menu-item';
-    settingsItem.textContent = 'Settings';
-    settingsItem.addEventListener('click', function(ev) {
-      ev.stopPropagation();
-      if (mini.parentNode) mini.parentNode.removeChild(mini);
-      _showSettingsModal();
-    });
-    mini.appendChild(settingsItem);
+    var _icSettings = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="4" cy="8" r="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="8" r="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="12" cy="8" r="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>';
+    var _icGrid = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="1.5" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="8" y="1.5" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="1.5" y="8" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="8" y="8" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>';
+    var _icList = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><line x1="1.5" y1="3.5" x2="12.5" y2="3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="1.5" y1="7" x2="12.5" y2="7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="1.5" y1="10.5" x2="12.5" y2="10.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+    var _icPaste = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><rect x="3" y="2" width="8" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path fill="none" d="M5.5 2V1.5a1 1 0 011-1h1a1 1 0 011 1V2" stroke="currentColor" stroke-width="1.3"/><line x1="5.5" y1="6" x2="8.5" y2="6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="5.5" y1="8.5" x2="8.5" y2="8.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 
-    if (showPaste) {
-      var pasteItem = document.createElement('div');
-      pasteItem.className = 'ctx-menu-item';
-      pasteItem.textContent = 'Paste Coordinates';
-      pasteItem.addEventListener('click', function(ev) {
+    function _miniItem(label, icon, onClick) {
+      var item = document.createElement('div');
+      item.className = 'ctx-menu-item';
+      item.style.display = 'flex';
+      item.style.alignItems = 'center';
+      var iconSpan = document.createElement('span');
+      iconSpan.style.cssText = 'display:flex;align-items:center;flex-shrink:0;opacity:0.7;margin-right:10px;';
+      iconSpan.innerHTML = icon;
+      item.appendChild(iconSpan);
+      var labelSpan = document.createElement('span');
+      labelSpan.textContent = label;
+      item.appendChild(labelSpan);
+      item.addEventListener('click', function(ev) {
         ev.stopPropagation();
         if (mini.parentNode) mini.parentNode.removeChild(mini);
-        _pasteCoordinates();
+        onClick();
       });
-      mini.appendChild(pasteItem);
+      mini.appendChild(item);
     }
 
-    document.body.appendChild(mini);
+    _miniItem('Open Settings', _icSettings, function() { _showSettingsModal(); });
 
-    var mw = 170, mh = showPaste ? 72 : 36;
+    if (showLayout !== false) {
+      _miniItem(
+        _presetLayout === 'list' ? 'Grid View' : 'List View',
+        _presetLayout === 'list' ? _icGrid : _icList,
+        function() {
+          _presetLayout = _presetLayout === 'list' ? 'grid' : 'list';
+          localStorage.setItem(_LAYOUT_KEY, _presetLayout);
+          _applyPresetLayout(true);
+        }
+      );
+    }
+
+    if (showPaste) {
+      _miniItem('Paste Preset', _icPaste, function() { _pasteCoordinates(); });
+    }
+
+    if (showGrid) {
+      var gridRow = document.createElement('div');
+      gridRow.style.cssText = 'display:flex;border-top:1px solid rgba(255,255,255,0.07);';
+      var gridSizes = [4, 8, 16];
+      gridSizes.forEach(function(size) {
+        var gb = document.createElement('div');
+        gb.textContent = size + 'x' + size;
+        var isActive = _gridSize === size;
+        gb.style.cssText = 'flex:1;font-size:14px;padding:7px 0;cursor:pointer;display:flex;align-items:center;justify-content:center;'
+          + 'color:' + (isActive ? '#3ddc84' : '#888') + ';'
+          + 'background:' + (isActive ? 'rgba(61,220,132,0.08)' : 'transparent') + ';';
+        gb.addEventListener('mouseenter', function() {
+          gb.style.background = _gridSize === size ? 'rgba(61,220,132,0.15)' : 'rgba(255,255,255,0.05)';
+          gb.style.color = _gridSize === size ? '#3ddc84' : '#e4e4e4';
+        });
+        gb.addEventListener('mouseleave', function() {
+          gb.style.background = _gridSize === size ? 'rgba(61,220,132,0.08)' : 'transparent';
+          gb.style.color = _gridSize === size ? '#3ddc84' : '#888';
+        });
+        gb.addEventListener('click', function(ev) {
+          ev.stopPropagation();
+          _gridSize = size;
+          localStorage.setItem(_GRID_KEY, size);
+          if (_svgW > 0 && _svgH > 0) updateStaticSVG(_svgW, _svgH);
+          gridRow.querySelectorAll('div').forEach(function(el, idx) {
+            var a = gridSizes[idx] === size;
+            el.style.color = a ? '#3ddc84' : '#888';
+            el.style.background = a ? 'rgba(61,220,132,0.08)' : 'transparent';
+          });
+        });
+        gridRow.appendChild(gb);
+      });
+      mini.appendChild(gridRow);
+      mini.style.paddingBottom = '0';
+    }
+
+    mini.style.left = '0px';
+    mini.style.top = '0px';
+    document.body.appendChild(mini);
+    void mini.offsetHeight;
+    var mw = mini.offsetWidth || 170;
+    var mh = mini.offsetHeight || 100;
     var ww = document.documentElement.clientWidth  || document.body.clientWidth;
     var wh = document.documentElement.clientHeight || document.body.clientHeight;
     var x = Math.min(e.clientX, ww - mw);
@@ -1596,55 +1678,61 @@ function initPanel() {
     var graph = document.getElementById('bezier-svg');
     if (!graph) return;
     graph.addEventListener('contextmenu', function(e) {
-      _showMiniCtxMenu(e, false);
+      _showMiniCtxMenu(e, false, false, true);
     });
   })();
 
-  // Build the New Preset button using identical DOM structure to preset buttons
+  // Build the New Preset button inside the preset list
   (function() {
     var list = document.getElementById('all-presets-list');
-    if (!list || !list.parentNode) return;
+    if (!list) return;
 
-    var newBtn = document.createElement('div');
-    newBtn.id = 'new-preset-btn';
-    newBtn.className = 'preset-btn new-preset-btn';
+    function _buildNewPresetBtn() {
+      var newBtn = document.createElement('div');
+      newBtn.id = 'new-preset-btn';
+      newBtn.className = 'preset-btn new-preset-btn';
 
-    // "+" thumbnail
-    var thumb = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    thumb.setAttribute('class', 'preset-thumb');
-    thumb.setAttribute('width', '28'); thumb.setAttribute('height', '28');
-    var l1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    l1.setAttribute('x1', '14'); l1.setAttribute('y1', '7');
-    l1.setAttribute('x2', '14'); l1.setAttribute('y2', '21');
-    l1.setAttribute('stroke', 'currentColor'); l1.setAttribute('stroke-width', '2'); l1.setAttribute('stroke-linecap', 'round');
-    var l2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    l2.setAttribute('x1', '7');  l2.setAttribute('y1', '14');
-    l2.setAttribute('x2', '21'); l2.setAttribute('y2', '14');
-    l2.setAttribute('stroke', 'currentColor'); l2.setAttribute('stroke-width', '2'); l2.setAttribute('stroke-linecap', 'round');
-    thumb.appendChild(l1); thumb.appendChild(l2);
-    newBtn.appendChild(thumb);
+      // "+" thumbnail
+      var thumb = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      thumb.setAttribute('class', 'preset-thumb');
+      thumb.setAttribute('width', '28'); thumb.setAttribute('height', '28'); thumb.setAttribute('viewBox', '0 0 28 28');
+      var l1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      l1.setAttribute('x1', '14'); l1.setAttribute('y1', '7');
+      l1.setAttribute('x2', '14'); l1.setAttribute('y2', '21');
+      l1.setAttribute('stroke', 'currentColor'); l1.setAttribute('stroke-width', '2'); l1.setAttribute('stroke-linecap', 'round');
+      var l2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      l2.setAttribute('x1', '7');  l2.setAttribute('y1', '14');
+      l2.setAttribute('x2', '21'); l2.setAttribute('y2', '14');
+      l2.setAttribute('stroke', 'currentColor'); l2.setAttribute('stroke-width', '2'); l2.setAttribute('stroke-linecap', 'round');
+      thumb.appendChild(l1); thumb.appendChild(l2);
+      newBtn.appendChild(thumb);
 
-    var nameSpan = document.createElement('span');
-    nameSpan.className = 'preset-name';
-    nameSpan.textContent = 'New Preset';
-    newBtn.appendChild(nameSpan);
+      var nameSpan = document.createElement('span');
+      nameSpan.className = 'preset-name';
+      nameSpan.textContent = 'New Preset';
+      newBtn.appendChild(nameSpan);
 
-    newBtn.addEventListener('click', function() {
-      var c = getState().curve;
-      var preset = {
-        id: 'c' + Date.now(),
-        name: 'Custom ' + (_presetList.filter(function(p){ return !p.builtIn; }).length + 1),
-        curve: { p1x: c.p1x, p1y: c.p1y, p2x: c.p2x, p2y: c.p2y },
-      };
-      _presetList.push(preset);
-      _savePresetList(_presetList);
-      var btn = _buildPresetBtn(preset);
-      list.appendChild(btn);
-      var ns = btn.querySelector('.preset-name');
-      if (ns) ns.dispatchEvent(new Event('dblclick'));
-    });
+      newBtn.addEventListener('click', function() {
+        var c = getState().curve;
+        var preset = {
+          id: 'c' + Date.now(),
+          name: 'Custom ' + (_presetList.filter(function(p){ return !p.builtIn; }).length + 1),
+          curve: { p1x: c.p1x, p1y: c.p1y, p2x: c.p2x, p2y: c.p2y },
+        };
+        _presetList.push(preset);
+        _savePresetList(_presetList);
+        var btn = _buildPresetBtn(preset);
+        // Insert before the New Preset button
+        list.insertBefore(btn, newBtn);
+        _applyPresetLayout(true);
+        var ns = btn.querySelector('.preset-name');
+        if (ns) ns.dispatchEvent(new Event('dblclick'));
+      });
 
-    list.parentNode.insertBefore(newBtn, list.nextSibling);
+      return newBtn;
+    }
+
+    list.appendChild(_buildNewPresetBtn());
   }());
 
   // Resize handle — drag to adjust left/right column split
@@ -1832,7 +1920,7 @@ async function poll() {
 window.__opencurvePoll = poll;
 
 // ─── Settings / flyout ─────────────────────────────────────────────────────
-var CURRENT_VERSION     = '1.1.0';
+var CURRENT_VERSION     = '1.2.0';
 var _CURVE_COLOR_KEY    = 'opencurve-line-color';
 var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#4a9eff';
 var _updateAvailable    = false;
@@ -1842,6 +1930,155 @@ var _UPDATE_NOTIF_KEY   = 'opencurve-update-notif';
 var _updateNotifsOn     = localStorage.getItem(_UPDATE_NOTIF_KEY) !== 'off';
 var _ANIM_KEY           = 'opencurve-animations';
 var _animationsOn       = localStorage.getItem(_ANIM_KEY) !== 'off';
+var _GRID_KEY           = 'opencurve-grid-size';
+var _gridSize           = parseInt(localStorage.getItem(_GRID_KEY), 10) || 8;
+var _LAYOUT_KEY         = 'opencurve-preset-layout';
+var _presetLayout       = localStorage.getItem(_LAYOUT_KEY) || 'list';
+
+function _applyPresetLayout(force) {
+  var list = document.getElementById('all-presets-list');
+  if (!list) return;
+  var isGrid = _presetLayout === 'grid';
+  var w = list.offsetWidth || 180;
+  var cols = isGrid ? (w >= 220 ? 3 : 2) : 1;
+  var btnCount = list.querySelectorAll('.preset-btn').length;
+  var cacheKey = (isGrid ? 'g' : 'l') + cols + '_' + btnCount;
+  if (!force && _applyPresetLayout._lastKey === cacheKey) return;
+  _applyPresetLayout._lastKey = cacheKey;
+  var itemW = isGrid ? (100/cols).toFixed(3) + '%' : '100%';
+  var thumbSz = isGrid ? (cols >= 3 ? 30 : 32) : 28;
+
+  // List container
+  if (isGrid) {
+    list.style.display = 'flex';
+    list.style.flexWrap = 'wrap';
+    list.style.alignContent = 'flex-start';
+    list.style.padding = '0';
+    list.style.gap = '0';
+  } else {
+    list.style.display = '';
+    list.style.flexWrap = '';
+    list.style.alignContent = '';
+    list.style.padding = '';
+    list.style.gap = '';
+  }
+
+  // Each preset button
+  list.querySelectorAll('.preset-btn').forEach(function(btn) {
+    if (isGrid) {
+      btn.style.width = itemW;
+      btn.style.flexDirection = 'column';
+      btn.style.padding = '8px 4px 2px';
+      btn.style.border = 'none';
+      btn.style.borderBottom = 'none';
+      btn.style.marginRight = '0';
+      btn.style.marginBottom = '0';
+      btn.style.textAlign = 'center';
+      btn.style.gap = '0';
+      btn.style.alignItems = 'center';
+      btn.style.alignSelf = 'flex-start';
+      btn.style.overflow = 'visible';
+      btn.style.whiteSpace = 'normal';
+      btn.style.minHeight = (cols >= 3 ? '58px' : '66px');
+    } else {
+      btn.style.width = '';
+      btn.style.flexDirection = '';
+      btn.style.padding = '';
+      btn.style.borderBottom = '';
+      btn.style.border = '';
+      btn.style.textAlign = '';
+      btn.style.gap = '';
+      btn.style.alignItems = '';
+      btn.style.alignSelf = '';
+      btn.style.overflow = '';
+      btn.style.whiteSpace = '';
+      btn.style.minHeight = '';
+      btn.style.marginRight = '';
+      btn.style.marginBottom = '';
+    }
+  });
+
+  // Preset name text wrapping
+  list.querySelectorAll('.preset-name').forEach(function(n) {
+    if (isGrid) {
+      n.style.whiteSpace = 'normal';
+      n.style.overflow = 'visible';
+      n.style.textOverflow = 'clip';
+      n.style.marginTop = '4px';
+    } else {
+      n.style.whiteSpace = '';
+      n.style.overflow = '';
+      n.style.textOverflow = '';
+      n.style.marginTop = '';
+    }
+  });
+
+  // Thumbnails
+  list.querySelectorAll('.preset-thumb').forEach(function(t) {
+    if (isGrid) {
+      t.setAttribute('width', String(thumbSz));
+      t.setAttribute('height', String(thumbSz));
+      t.style.marginRight = '0';
+    } else {
+      t.setAttribute('width', '28');
+      t.setAttribute('height', '28');
+      t.style.marginRight = '';
+    }
+  });
+
+  // Update notif — compact in grid mode
+  var notifEl = document.getElementById('_update-notif');
+  if (notifEl) {
+    var notifIcon = notifEl.querySelector('.preset-thumb');
+    var notifName = notifEl.querySelector('.preset-name');
+    var notifBr = notifEl.querySelector('.notif-br');
+    if (isGrid) {
+      if (notifIcon) { notifIcon.style.width = '22px'; notifIcon.style.height = '22px'; notifIcon.style.fontSize = '14px'; notifIcon.style.marginTop = '-4px'; }
+      if (notifName) { notifName.style.fontSize = '12px'; notifName.style.marginTop = '2px'; notifName.style.lineHeight = '1.2'; }
+      if (notifBr) notifBr.style.display = '';
+    } else {
+      if (notifIcon) { notifIcon.style.width = '28px'; notifIcon.style.height = '28px'; notifIcon.style.fontSize = '16px'; notifIcon.style.marginTop = ''; }
+      if (notifName) { notifName.style.fontSize = ''; notifName.style.marginTop = ''; notifName.style.lineHeight = ''; }
+      if (notifBr) notifBr.style.display = 'none';
+    }
+  }
+  var notifDel = list.querySelector('#_update-notif .preset-delete');
+  if (notifDel) {
+    if (isGrid) {
+      notifDel.style.position = 'absolute';
+      notifDel.style.top = '4px';
+      notifDel.style.right = '4px';
+      notifDel.style.marginLeft = '0';
+    } else {
+      notifDel.style.position = '';
+      notifDel.style.top = '';
+      notifDel.style.right = '';
+      notifDel.style.marginLeft = '';
+    }
+  }
+
+  // UXP may ignore inline styles on first render — force reflow,
+  // then re-assert align-self on each tile after a delay (no full re-call)
+  if (isGrid) {
+    void list.offsetHeight;
+    if (!_applyPresetLayout._pending) {
+      _applyPresetLayout._pending = true;
+      setTimeout(function() {
+        _applyPresetLayout._pending = false;
+        var btns = list.querySelectorAll('.preset-btn');
+        btns.forEach(function(b) { b.style.alignSelf = 'flex-start'; });
+        list.style.alignContent = 'flex-start';
+        void list.offsetHeight;
+      }, 200);
+    }
+  }
+}
+var _gridColsTimer = null;
+function _updateGridCols() {
+  if (_presetLayout !== 'grid') return;
+  if (_gridColsTimer) clearTimeout(_gridColsTimer);
+  _gridColsTimer = setTimeout(_applyPresetLayout, 60);
+}
 
 function _hexToRgba(hex, alpha) {
   var r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
@@ -1899,24 +2136,28 @@ function _refreshUpdateNotification() {
   notif.className = 'preset-btn';
   notif.style.color = '#e6b800';
   notif.style.background = 'rgba(240,180,0,0.08)';
+  notif.style.position = 'relative';
 
   // Icon area (same 28x28 space as thumbnail)
   var iconWrap = document.createElement('span');
+  iconWrap.className = 'preset-thumb';
   iconWrap.style.cssText = 'width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:8px;font-size:16px;opacity:0.9;';
   iconWrap.textContent = '⚠';
   notif.appendChild(iconWrap);
 
   var nameSpan = document.createElement('span');
   nameSpan.className = 'preset-name';
-  nameSpan.textContent = 'Update Available';
+  nameSpan.innerHTML = 'Update <br class="notif-br">Available';
   notif.appendChild(nameSpan);
 
   var delBtn = document.createElement('div');
   delBtn.className = 'preset-delete';
-  delBtn.textContent = '×';
-  delBtn.style.opacity = '0';
+  delBtn.innerHTML = '<svg width="10" height="10" viewBox="0 0 10 10" fill="none"><line x1="1" y1="1" x2="9" y2="9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="9" y1="1" x2="1" y2="9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+  delBtn.style.cssText = 'opacity:0;width:22px;height:22px;display:flex;align-items:center;justify-content:center;';
   notif.addEventListener('mouseenter', function() { delBtn.style.opacity = '1'; notif.style.background = 'rgba(240,180,0,0.15)'; });
-  notif.addEventListener('mouseleave', function() { delBtn.style.opacity = '0'; notif.style.background = 'rgba(240,180,0,0.08)'; });
+  notif.addEventListener('mouseleave', function() { delBtn.style.opacity = '0'; delBtn.style.background = 'transparent'; notif.style.background = 'rgba(240,180,0,0.08)'; });
+  delBtn.addEventListener('mouseenter', function() { delBtn.style.background = 'rgba(240,96,96,0.25)'; });
+  delBtn.addEventListener('mouseleave', function() { delBtn.style.background = 'transparent'; });
   notif.addEventListener('click', function(e) {
     if (e.target === delBtn) return;
     _openReleasesPage();
@@ -1929,6 +2170,7 @@ function _refreshUpdateNotification() {
   notif.appendChild(delBtn);
 
   list.insertBefore(notif, list.firstChild);
+  _applyPresetLayout(true);
 }
 
 function _applyUpdateBtnState(btn, label) {
@@ -1947,7 +2189,7 @@ function _applyUpdateBtnState(btn, label) {
     var icon = document.createElement('span');
     icon.className = '_update-icon';
     icon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
-    icon.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2L13 12H1L7 2Z" stroke="#e6b800" stroke-width="1.5" stroke-linejoin="round"/><line x1="7" y1="6" x2="7" y2="9" stroke="#e6b800" stroke-width="1.5" stroke-linecap="round"/><circle cx="7" cy="10.5" r="0.75" fill="#e6b800"/></svg>';
+    icon.innerHTML = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M7 2L13 12H1L7 2Z" stroke="#e6b800" stroke-width="1.5" stroke-linejoin="round"/><line x1="7" y1="6" x2="7" y2="9" stroke="#e6b800" stroke-width="1.5" stroke-linecap="round"/><circle cx="7" cy="10.5" r="0.75" fill="#e6b800"/></svg>';
     btn.appendChild(icon);
   } else {
     btn.style.background = 'rgba(230,184,0,0.08)';
@@ -2040,6 +2282,8 @@ function _confirmReset() {
     localStorage.removeItem('opencurve-presets-v10');
     localStorage.removeItem('opencurve-sidebar-width');
     localStorage.removeItem(_CURVE_COLOR_KEY);
+    localStorage.removeItem(_GRID_KEY);
+    localStorage.removeItem(_LAYOUT_KEY);
     _applyCurveColor('#4a9eff');
     setState({ curve: { p1x: 0.625, p1y: 0.000, p2x: 0.375, p2y: 1.000 } });
     document.body.removeChild(overlay);
@@ -2072,7 +2316,7 @@ function _showSettingsModal() {
   var logoWrap = document.createElement('div');
   logoWrap.style.cssText = 'flex:1;display:flex;align-items:center;justify-content:center;';
   var logo = document.createElement('img');
-  logo.src = 'img/OpenCurve_Logo13.png';
+  logo.src = 'img/OpenCurve_Logo14.png';
   logo.style.cssText = 'height:26px;opacity:0.9;';
   logoWrap.appendChild(logo);
   var closeBtn = document.createElement('div');
@@ -2089,18 +2333,18 @@ function _showSettingsModal() {
 
   // Content
   var content = document.createElement('div');
-  var dualCol = vw >= 300;
+  var dualCol = vw > 520;
   content.style.cssText = dualCol
     ? 'flex:1;overflow-y:auto;display:flex;flex-direction:row;'
-    : 'flex:1;overflow-y:auto;';
+    : 'flex:1;overflow-y:auto;display:flex;flex-direction:column;';
   var rowsCol = document.createElement('div');
-  rowsCol.style.cssText = dualCol ? 'flex:1;display:flex;flex-direction:column;' : '';
+  rowsCol.style.cssText = dualCol ? 'flex:1;display:flex;flex-direction:column;' : 'flex-shrink:0;display:flex;flex-direction:column;';
 
   // Graph line colour section
   var colorSection = document.createElement('div');
   colorSection.style.cssText = dualCol
     ? 'padding:10px 12px 12px;width:50%;box-sizing:border-box;border-left:1px solid rgba(255,255,255,0.07);'
-    : 'padding:10px 12px 12px;border-top:1px solid rgba(255,255,255,0.07);';
+    : 'padding:10px 12px 12px;border-top:1px solid rgba(255,255,255,0.07);flex-shrink:0;';
 
   var colorLabel = document.createElement('div');
   colorLabel.textContent = 'Theme';
@@ -2275,6 +2519,7 @@ var sbCopyBtn = document.createElement('div');
   var _svgCross = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><line x1="2" y1="2" x2="10" y2="10" stroke="#f06060" stroke-width="1.8" stroke-linecap="round"/><line x1="10" y1="2" x2="2" y2="10" stroke="#f06060" stroke-width="1.8" stroke-linecap="round"/></svg>';
   function _updateNotifCheck() {
     notifCheck.innerHTML = _updateNotifsOn ? _svgCheck : _svgCross;
+    notifLabel.textContent = 'Update Notifications ' + (_updateNotifsOn ? 'On' : 'Off');
     notifRow.style.background = _updateNotifsOn ? 'rgba(61,220,132,0.08)' : 'rgba(240,96,96,0.08)';
   }
   var notifIcon = document.createElement('span');
@@ -2303,6 +2548,7 @@ var sbCopyBtn = document.createElement('div');
   animCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
   function _updateAnimCheck() {
     animCheck.innerHTML = _animationsOn ? _svgCheck : _svgCross;
+    animLabel.textContent = 'Animations ' + (_animationsOn ? 'On' : 'Off');
     animRow.style.background = _animationsOn ? 'rgba(61,220,132,0.08)' : 'rgba(240,96,96,0.08)';
   }
   var animIcon = document.createElement('span');
@@ -2320,6 +2566,86 @@ var sbCopyBtn = document.createElement('div');
     _updateAnimCheck();
   });
   rowsCol.appendChild(animRow);
+
+  // Grid size row
+  var gridRow = document.createElement('div');
+  gridRow.style.cssText = 'display:flex;align-items:center;padding:0 0 0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);';
+  var gridIcon = document.createElement('span');
+  gridIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
+  gridIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" stroke="#b0b0b0" stroke-width="1.4" rx="1"/><line x1="6" y1="2" x2="6" y2="14" stroke="#b0b0b0" stroke-width="1"/><line x1="10" y1="2" x2="10" y2="14" stroke="#b0b0b0" stroke-width="1"/><line x1="2" y1="6" x2="14" y2="6" stroke="#b0b0b0" stroke-width="1"/><line x1="2" y1="10" x2="14" y2="10" stroke="#b0b0b0" stroke-width="1"/></svg>';
+  var gridLabel = document.createElement('span');
+  gridLabel.style.cssText = 'font-size:14px;flex:1;color:#b0b0b0;';
+  gridLabel.textContent = 'Grid';
+  var gridBtns = document.createElement('div');
+  gridBtns.style.cssText = 'display:flex;gap:0;flex-shrink:0;align-self:stretch;';
+  var gridSizes = [4, 8, 16];
+  var gridBtnEls = [];
+  gridSizes.forEach(function(size) {
+    var gb = document.createElement('div');
+    gb.textContent = size + 'x' + size;
+    var isActive = _gridSize === size;
+    gb.style.cssText = 'font-size:12px;padding:0 8px;cursor:pointer;display:flex;align-items:center;justify-content:center;min-width:48px;'
+      + 'color:' + (isActive ? '#3ddc84' : '#666') + ';'
+      + 'background:' + (isActive ? 'rgba(61,220,132,0.08)' : 'transparent') + ';';
+    gb.addEventListener('mouseenter', function() { gb.style.background = _gridSize === size ? 'rgba(61,220,132,0.15)' : 'rgba(255,255,255,0.05)'; });
+    gb.addEventListener('mouseleave', function() { gb.style.background = _gridSize === size ? 'rgba(61,220,132,0.08)' : 'transparent'; });
+    gb.addEventListener('click', function() {
+      _gridSize = size;
+      localStorage.setItem(_GRID_KEY, size);
+      gridBtnEls.forEach(function(el, idx) {
+        var a = gridSizes[idx] === size;
+        el.style.color = a ? '#3ddc84' : '#666';
+        el.style.background = a ? 'rgba(61,220,132,0.08)' : 'transparent';
+      });
+      if (_svgW > 0 && _svgH > 0) updateStaticSVG(_svgW, _svgH);
+    });
+    gridBtnEls.push(gb);
+    gridBtns.appendChild(gb);
+  });
+  gridRow.appendChild(gridIcon);
+  gridRow.appendChild(gridLabel);
+  gridRow.appendChild(gridBtns);
+  rowsCol.appendChild(gridRow);
+
+  // Preset layout row
+  var layoutRow = document.createElement('div');
+  layoutRow.style.cssText = 'display:flex;align-items:center;padding:0 0 0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);';
+  var layoutIcon = document.createElement('span');
+  layoutIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
+  layoutIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><line x1="2" y1="4" x2="14" y2="4" stroke="#b0b0b0" stroke-width="1.4" stroke-linecap="round"/><line x1="2" y1="8" x2="14" y2="8" stroke="#b0b0b0" stroke-width="1.4" stroke-linecap="round"/><line x1="2" y1="12" x2="14" y2="12" stroke="#b0b0b0" stroke-width="1.4" stroke-linecap="round"/></svg>';
+  var layoutLabel = document.createElement('span');
+  layoutLabel.style.cssText = 'font-size:14px;flex:1;color:#b0b0b0;';
+  layoutLabel.textContent = 'Presets';
+  var layoutBtns = document.createElement('div');
+  layoutBtns.style.cssText = 'display:flex;gap:0;flex-shrink:0;align-self:stretch;';
+  var layoutOptions = ['list', 'grid'];
+  var layoutBtnEls = [];
+  layoutOptions.forEach(function(opt) {
+    var lb = document.createElement('div');
+    lb.textContent = opt.charAt(0).toUpperCase() + opt.slice(1);
+    var isActive = _presetLayout === opt;
+    lb.style.cssText = 'font-size:12px;padding:0 8px;cursor:pointer;display:flex;align-items:center;justify-content:center;min-width:48px;'
+      + 'color:' + (isActive ? '#3ddc84' : '#666') + ';'
+      + 'background:' + (isActive ? 'rgba(61,220,132,0.08)' : 'transparent') + ';';
+    lb.addEventListener('mouseenter', function() { lb.style.background = _presetLayout === opt ? 'rgba(61,220,132,0.15)' : 'rgba(255,255,255,0.05)'; });
+    lb.addEventListener('mouseleave', function() { lb.style.background = _presetLayout === opt ? 'rgba(61,220,132,0.08)' : 'transparent'; });
+    lb.addEventListener('click', function() {
+      _presetLayout = opt;
+      localStorage.setItem(_LAYOUT_KEY, opt);
+      layoutBtnEls.forEach(function(el, idx) {
+        var a = layoutOptions[idx] === opt;
+        el.style.color = a ? '#3ddc84' : '#666';
+        el.style.background = a ? 'rgba(61,220,132,0.08)' : 'transparent';
+      });
+      _applyPresetLayout(true);
+    });
+    layoutBtnEls.push(lb);
+    layoutBtns.appendChild(lb);
+  });
+  layoutRow.appendChild(layoutIcon);
+  layoutRow.appendChild(layoutLabel);
+  layoutRow.appendChild(layoutBtns);
+  rowsCol.appendChild(layoutRow);
 
   content.appendChild(rowsCol);
   content.appendChild(colorSection);
@@ -2376,16 +2702,16 @@ var sbCopyBtn = document.createElement('div');
     var nvh = document.documentElement.clientHeight || document.body.clientHeight;
     modal.style.width  = nvw + 'px';
     modal.style.height = nvh + 'px';
-    var nowDual = nvw >= 300;
+    var nowDual = nvw > 520;
     if (nowDual !== dualCol) {
       dualCol = nowDual;
       content.style.flexDirection = nowDual ? 'row' : 'column';
       colorSection.style.cssText = nowDual
         ? 'padding:10px 12px 12px;width:50%;box-sizing:border-box;border-left:1px solid rgba(255,255,255,0.07);'
-        : 'padding:10px 12px 12px;border-top:1px solid rgba(255,255,255,0.07);';
+        : 'padding:10px 12px 12px;border-top:1px solid rgba(255,255,255,0.07);flex-shrink:0;';
       rowsCol.style.cssText = nowDual
         ? 'flex:1;display:flex;flex-direction:column;'
-        : '';
+        : 'flex-shrink:0;display:flex;flex-direction:column;';
     }
   });
   _settingsRO.observe(document.body);
@@ -2435,6 +2761,7 @@ try {
         },
         show: function() {
           console.log('[FS] panel show — starting poll');
+          _applyPresetLayout(true);
           poll();
           pollTimer = setInterval(poll, POLL_MS);
           if (_updateNotifsOn) _checkForUpdates(true);
