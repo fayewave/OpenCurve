@@ -1,89 +1,14 @@
 /**
- * FayeSmoothify — single-file plugin bundle.
+ * OpenCurve — shared UI code for both UXP and CEP versions.
  *
- * Deliberately NOT an ES module (no import/export).
- * require() is a UXP global available in all script contexts.
- * All logic lives here so there's no module-loading chain to fail silently.
+ * This file contains all pure DOM/JS logic: state management, bezier math,
+ * SVG graph editor, preset system, settings modal, and UI rendering.
+ *
+ * Platform-specific code (Premiere API, plugin lifecycle) is injected via
+ * the OpenCurve.bridge object which must be set before calling OpenCurve.initPanel().
  */
 
-console.log('[FS] plugin.js executing');
-
-// ─── UXP built-ins ────────────────────────────────────────────────────────
-var uxp, ppro;
-try {
-  uxp  = require('uxp');
-  console.log('[FS] uxp loaded OK');
-} catch(e) {
-  console.error('[FS] FATAL: could not load uxp:', e);
-}
-try {
-  ppro = require('premierepro');
-  console.log('[FS] premierepro loaded OK');
-} catch(e) {
-  console.error('[FS] FATAL: could not load premierepro:', e);
-}
-
-// ─── Entrypoints ──────────────────────────────────────────────────────────
-var _panelInitialised = false;
-
-console.log('[FS] setting up entrypoints');
-try {
-  var ep = uxp && uxp.entrypoints ? uxp.entrypoints : require('uxp').entrypoints;
-  ep.setup({
-    plugin: {
-      create: function() { console.log('[FS] plugin create'); },
-      destroy: function() { if (pollTimer) { clearInterval(pollTimer); pollTimer=null; } },
-    },
-    panels: {
-      'opencurve-panel': {
-        create: function() {
-          console.log('[FS] panel create — DOM ready');
-          if (_panelInitialised) {
-            console.log('[FS] panel already initialised — skipping duplicate create');
-            return;
-          }
-          _panelInitialised = true;
-          initPanel();
-          _applyCurveColor(_curveColor);
-          if (localStorage.getItem('opencurve-post-update') === '1') {
-            localStorage.removeItem('opencurve-post-update');
-            setTimeout(function() {
-              _showCopyToast('Updated to v' + CURRENT_VERSION, '#3ddc84');
-            }, 500);
-          }
-        },
-        show: function() {
-          console.log('[FS] panel show — starting poll');
-          _applyPresetLayout(true);
-          poll();
-          pollTimer = setInterval(poll, POLL_MS);
-          if (_updateNotifsOn) _checkForUpdates(true);
-        },
-        hide: function() {
-          console.log('[FS] panel hide — stopping poll');
-          if (pollTimer) { clearInterval(pollTimer); pollTimer=null; }
-        },
-        destroy: function() {
-          if (pollTimer) { clearInterval(pollTimer); pollTimer=null; }
-        },
-        menuItems: [
-          { id: 'options',       label: 'Settings' },
-          { id: 'check-updates', label: 'Check for Updates' },
-          { id: 'sep',           label: '-' },
-          { id: 'made-by',       label: 'made by faye', enabled: false },
-        ],
-        invokeMenu: function(id) {
-          if (id === 'options')       _showSettingsModal();
-          if (id === 'check-updates') _checkForUpdates();
-          if (id === 'reset')         _confirmReset();
-        },
-      },
-    },
-  });
-  console.log('[FS] entrypoints.setup complete');
-} catch(e) {
-  console.error('[FS] entrypoints.setup FAILED:', e);
-}
+var OpenCurve = (function() {
 
 // ─── State ────────────────────────────────────────────────────────────────
 var state = {
@@ -156,10 +81,9 @@ function _tForX(x, p1x, p2x) {
     var err = _bx(t, p1x, p2x) - x;
     if (Math.abs(err) < 1e-8) return t;
     var d = _bxd(t, p1x, p2x);
-    if (Math.abs(d) < 1e-8) break; // derivative too small — fall through to binary search
+    if (Math.abs(d) < 1e-8) break;
     t = Math.max(0, Math.min(1, t - err / d));
   }
-  // Binary search fallback for when Newton-Raphson doesn't converge
   var lo = 0, hi = 1;
   for (var j = 0; j < 20; j++) {
     var mid = (lo + hi) / 2;
@@ -177,18 +101,17 @@ function sampleBezier(x, curve) {
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────
-var FALLBACK_FPS        = 30;   // used when sequence frame rate can't be detected
-var DONE_DISPLAY_MS     = 1000; // how long "Done!" status shows after bake
-var ERROR_DISPLAY_MS    = 3000; // how long error status persists before poll resumes
-var HIT_TOLERANCE       = 6;    // extra px around handle for hit detection
-var Y_CLAMP_MIN         = -1.0; // min Y value for control point dragging
-var Y_CLAMP_MAX         =  2.0; // max Y value for control point dragging
+var FALLBACK_FPS        = 30;
+var DONE_DISPLAY_MS     = 1000;
+var ERROR_DISPLAY_MS    = 3000;
+var HIT_TOLERANCE       = 6;
+var Y_CLAMP_MIN         = -1.0;
+var Y_CLAMP_MAX         =  2.0;
 
 // ─── SVG graph editor ─────────────────────────────────────────────────────
 var PAD = 16, HANDLE_R = 5;
 var _zoom = 1.0;
 
-// Normalised [0,1] curve coords ↔ SVG pixel coords (always at zoom=1 logical space)
 function normToSVG(nx, ny, W, H) {
   return {
     cx: PAD + nx * (W - 2*PAD),
@@ -202,7 +125,6 @@ function svgToNorm(cx, cy, W, H) {
   };
 }
 
-// Map a raw SVG viewport coordinate through the inverse of the content group's scale transform
 function _unscale(cx, cy) {
   return {
     cx: _svgW / 2 + (cx - _svgW / 2) / _zoom,
@@ -225,11 +147,8 @@ function _setLine(id, x1, y1, x2, y2) {
   el.setAttribute('x2', x2); el.setAttribute('y2', y2);
 }
 
-// Dimensions of the SVG element — updated by ResizeObserver, read during drag
 var _svgW = 0, _svgH = 0;
 
-// Update all static elements (grid, diagonal, endpoints) — called on init + resize only
-// Opacity steps for the fade zones, innermost to outermost
 function _makeLine(id, stroke) {
   var el = document.getElementById(id);
   if (!el) {
@@ -243,11 +162,9 @@ function _makeLine(id, stroke) {
 }
 
 function updateStaticSVG(W, H) {
-  // Full background (outer area when zoomed out)
   var bg = document.getElementById('sg-bg');
   if (bg) { bg.setAttribute('width', W); bg.setAttribute('height', H); }
 
-  // Range background and outline — covers exactly the 0–1 value region
   var ds = normToSVG(0, 0, W, H), de = normToSVG(1, 1, W, H);
   var rx = ds.cx, ry = de.cy, rw = de.cx - ds.cx, rh = ds.cy - de.cy;
   var rangeBg = document.getElementById('sg-range-bg');
@@ -261,7 +178,6 @@ function updateStaticSVG(W, H) {
     rangeOutline.setAttribute('width', rw); rangeOutline.setAttribute('height', rh);
   }
 
-  // Grid lines — dynamic count based on _gridSize
   var gridGroup = document.getElementById('sg-grid');
   if (gridGroup) while (gridGroup.firstChild) gridGroup.removeChild(gridGroup.firstChild);
   for (var j = 1; j < _gridSize; j++) {
@@ -286,7 +202,6 @@ function updateStaticSVG(W, H) {
   if (ep3) { ep3.setAttribute('cx', de.cx); ep3.setAttribute('cy', de.cy); }
 }
 
-// Update only the dynamic elements (curve, tangents, handles) — called on every pointer event
 function updateDynamicSVG(curve, W, H) {
   var p0 = normToSVG(0, 0, W, H);
   var p1 = normToSVG(curve.p1x, curve.p1y, W, H);
@@ -303,9 +218,9 @@ function updateDynamicSVG(curve, W, H) {
 }
 
 function initGraphEditor(svg) {
-  var dragging  = null; // 'p1' | 'p2' | null
-  var liveCurve = null; // working copy mutated during drag
-  var dragRect  = null; // SVG rect cached at drag-start
+  var dragging  = null;
+  var liveCurve = null;
+  var dragRect  = null;
 
   function hitTest(e) {
     var rect = dragRect || svg.getBoundingClientRect();
@@ -322,7 +237,6 @@ function initGraphEditor(svg) {
     if (e.button !== 0) return;
     var hit = hitTest(e);
     if (!hit) {
-      // Snap the closest handle to the click position
       var rect = svg.getBoundingClientRect();
       var raw  = _unscale(e.clientX - rect.left, e.clientY - rect.top);
       var c    = getState().curve;
@@ -367,7 +281,6 @@ function initGraphEditor(svg) {
       var hit = hitTest(e);
       svg.style.cursor = hit ? 'grab' : 'crosshair';
       if (hit) {
-        // Snap to handle position
         var hc = getState().curve;
         if (hit === 'p1') _showCoords(hc.p1x, hc.p1y);
         else              _showCoords(hc.p2x, hc.p2y);
@@ -379,7 +292,6 @@ function initGraphEditor(svg) {
       }
       return;
     }
-    // Hot path: pure arithmetic + 5 setAttribute calls — no layout, no redraw
     var raw = _unscale(e.clientX - dragRect.left, e.clientY - dragRect.top);
     var n   = svgToNorm(raw.cx, raw.cy, _svgW, _svgH);
     var x   = Math.max(0,    Math.min(1,   n.nx));
@@ -428,9 +340,9 @@ function initGraphEditor(svg) {
     if (e.key === 'Shift') _setSnapBg(false);
   });
 
-
   function onResize() {
-    var rect = svg.getBoundingClientRect();
+    var el = svg.parentNode || svg;
+    var rect = el.getBoundingClientRect();
     var w = Math.floor(rect.width);
     var h = Math.floor(rect.height);
     if (w < 40 || h < 40) return;
@@ -442,493 +354,13 @@ function initGraphEditor(svg) {
   }
 
   if (typeof ResizeObserver !== 'undefined') {
-    new ResizeObserver(onResize).observe(svg);
+    // Observe the parent container — more reliable in CEP's Chromium for abs-positioned SVG
+    var wrapEl = svg.parentNode || svg;
+    new ResizeObserver(onResize).observe(wrapEl);
   }
-  onResize();
-}
-
-// ─── Premiere API helpers ─────────────────────────────────────────────────
-
-// Call a method that might be sync or async
-async function _call(obj, method) {
-  var args = Array.prototype.slice.call(arguments, 2);
-  if (!obj || typeof obj[method] !== 'function') {
-    throw new Error(method + ' is not a function');
-  }
-  var r = obj[method].apply(obj, args);
-  return (r && typeof r.then === 'function') ? await r : r;
-}
-
-async function _fpsDetect(sequence) {
-  var TICKS_PER_SEC = 254016000000; // Premiere Pro's internal tick rate
-
-  // Primary: sequence.getTimebase() returns ticks-per-frame as a string
-  try {
-    if (typeof sequence.getTimebase === 'function') {
-      var tb = await sequence.getTimebase();
-      var ticksPerFrame = parseInt(tb, 10);
-      if (ticksPerFrame > 0) {
-        var fps = TICKS_PER_SEC / ticksPerFrame;
-        console.log('[FS] fps from getTimebase:', fps, '(' + tb + ' ticks/frame)');
-        return fps;
-      }
-    }
-  } catch(_) {}
-
-  // Fallback: getSettings().videoFrameRate (TickTime with .seconds)
-  try {
-    var settings = await sequence.getSettings();
-    var fd = settings.videoFrameRate;
-    if (fd && fd.seconds > 0) return 1 / fd.seconds;
-    if (fd && fd.ticks > 0) return TICKS_PER_SEC / fd.ticks;
-  } catch(_) {}
-
-  console.warn('[FS] Could not detect sequence frame rate — defaulting to ' + FALLBACK_FPS + ' fps.');
-  return FALLBACK_FPS;
-}
-
-async function _fps(sequence) {
-  var now = Date.now();
-  // Return cached fps if still fresh
-  if (_cache.fps !== null && (now - _cache.fpsCheckedAt) < FPS_RECHECK_MS) {
-    return _cache.fps;
-  }
-  var fps = await _fpsDetect(sequence);
-  _cache.fps = fps;
-  _cache.fpsCheckedAt = now;
-  return fps;
-}
-
-// Known param display names: component matchName → { paramIndex: displayName }
-// getDisplayName() returns "" for params in this version of the UXP API.
-var PARAM_NAMES = {
-  'AE.ADBE Opacity':    { 0: 'Opacity' },
-  'AE.ADBE Motion':     { 0: 'Position', 1: 'Scale', 2: 'Scale Width', 3: 'Scale Height', 4: 'Rotation', 5: 'Anchor Point', 7: 'Crop Left', 8: 'Crop Top', 9: 'Crop Right', 10: 'Crop Bottom' },
-  'ADBE Opacity':       { 0: 'Opacity' },
-  'ADBE Motion':        { 0: 'Position', 1: 'Scale', 2: 'Scale Width', 3: 'Scale Height', 4: 'Rotation', 5: 'Anchor Point', 7: 'Crop Left', 8: 'Crop Top', 9: 'Crop Right', 10: 'Crop Bottom' },
-  'AE.ADBE Geometry2':  { 0: 'Transform Anchor Point', 1: 'Transform Position', 3: 'Transform Scale', 5: 'Transform Skew', 6: 'Transform Skew Axis', 7: 'Transform Rotation', 8: 'Transform Opacity', 10: 'Transform Shutter Angle' },
-  'ADBE Geometry2':     { 0: 'Transform Anchor Point', 1: 'Transform Position', 3: 'Transform Scale', 5: 'Transform Skew', 6: 'Transform Skew Axis', 7: 'Transform Rotation', 8: 'Transform Opacity', 10: 'Transform Shutter Angle' },
-};
-function _paramName(compMatchName, idx, fallback) {
-  var map = PARAM_NAMES[compMatchName];
-  return (map && map[idx]) || fallback || ('Param ' + idx);
-}
-
-
-async function _getValue(param, tickTime) {
-  return await _call(param, 'getValueAtTime', tickTime);
-}
-
-// Extract the usable value from whatever getValueAtTime returns.
-// Scalar params return {value: number} or a plain number → unwrap to number.
-// Compound params (Position) return {value: [x, y]} → unwrap to array.
-// Returns null only if the shape is unrecognised.
-function _extractValue(v) {
-  if (typeof v === 'number') return v;
-  if (v !== null && typeof v === 'object' && 'value' in v) {
-    if (typeof v.value === 'number') return v.value;
-    if (Array.isArray(v.value) && v.value.length > 0) return v.value;
-  }
-  return null;
-}
-
-// Fast selection item fetch — caches which getTrackItems signature works
-async function _getSelectionItems(sequence) {
-  var sel = await sequence.getSelection();
-  if (!sel) return null;
-  var items = null;
-  if (_cache.selTrackItemSig === 'noargs') {
-    items = await _call(sel, 'getTrackItems');
-  } else if (_cache.selTrackItemSig === 'typed') {
-    items = await _call(sel, 'getTrackItems', 1, false);
-  } else {
-    // First call — discover which signature works
-    try { items = await _call(sel, 'getTrackItems'); _cache.selTrackItemSig = 'noargs'; }
-    catch(_) {}
-    if (!items) {
-      try { items = await _call(sel, 'getTrackItems', 1, false); _cache.selTrackItemSig = 'typed'; }
-      catch(_) {}
-    }
-  }
-  return items;
-}
-
-// Composite clip identity: name + start + end — unique even for same-named stacked clips
-async function _clipIdentity(item) {
-  var n = '', s = '', e = '';
-  try { n = await item.getName(); } catch(_) {}
-  try { var st = await item.getStartTime(); s = st && typeof st.seconds === 'number' ? st.seconds : ''; } catch(_) {}
-  try { var et = await item.getEndTime();   e = et && typeof et.seconds === 'number' ? et.seconds : ''; } catch(_) {}
-  return n + '|' + s + '|' + e;
-}
-
-// Returns ALL clips at the playhead across all video tracks (topmost first)
-async function _clipsViaTrackScan(sequence, ph) {
-  var numTracks;
-  try { numTracks = await sequence.getVideoTrackCount(); }
-  catch(_) { return []; }
-  if (!numTracks || numTracks <= 0) return [];
-
-  var results = [];
-
-  // Iterate top-down (highest track = topmost visible clip in timeline)
-  for (var t = numTracks - 1; t >= 0; t--) {
-    var track;
-    try { track = await sequence.getVideoTrack(t); } catch(_) { continue; }
-    if (!track) continue;
-
-    var all = null;
-    try { all = await track.getTrackItems(1, false); } catch(_) {}
-    if (!all || all.length === 0) continue;
-
-    for (var i = 0; i < all.length; i++) {
-      try {
-        var item = all[i];
-        var st = await item.getStartTime();
-        var et = await item.getEndTime();
-        var s = st && typeof st.seconds === 'number' ? st.seconds : -1;
-        var e = et && typeof et.seconds === 'number' ? et.seconds : -1;
-        if (ph >= s && ph <= e) {
-          var chain = await item.getComponentChain();
-          if (chain) {
-            results.push({ clip: item, chain: chain, clipStart: s });
-          }
-        }
-      } catch(_) {}
-    }
-  }
-  return results;
-}
-
-async function _clipViaSelection(sequence) {
-  var selItems = await _getSelectionItems(sequence);
-  for (var si = 0; si < (selItems || []).length; si++) {
-    try {
-      var ch = await selItems[si].getComponentChain();
-      if (ch) {
-        var cs = await _clipStart(selItems[si]);
-        return { clip: selItems[si], chain: ch, clipStart: cs, viaSelection: true };
-      }
-    } catch(_) {}
-  }
-  return null;
-}
-
-// Returns array of all clips at playhead.
-// Selected clip goes FIRST so it takes priority (user override).
-// Track-scanned clips fill in the rest (auto-detection).
-async function _clipsAtPlayhead(sequence, ph) {
-  var clips = [];
-
-  // 1. Selected clip first — user's explicit choice takes priority
-  var sel = null;
-  try { sel = await _clipViaSelection(sequence); } catch(_) {}
-  if (sel) clips.push(sel);
-
-  // 2. Track scan for all other clips at playhead
-  var scanned = [];
-  try { scanned = await _clipsViaTrackScan(sequence, ph); } catch(_) {}
-
-  // Add scanned clips, skipping any that match the selected clip
-  for (var i = 0; i < scanned.length; i++) {
-    if (sel && scanned[i].clipStart === sel.clipStart) continue;
-    clips.push(scanned[i]);
-  }
-
-  return clips;
-}
-
-// Get clip start time in sequence (seconds). Keyframe times are clip-local,
-// so we need this to convert the sequence playhead into clip-local time.
-async function _clipStart(clip) {
-  try {
-    var st = await clip.getStartTime();
-    if (st && typeof st.seconds === 'number') return st.seconds;
-  } catch(_) {}
-  return 0;
-}
-
-// Clip's in-point in media time. KF times from getKeyframeListAsTickTimes() are
-// in media time, so we need this to convert the sequence playhead to media time.
-async function _clipInPoint(clip) {
-  try {
-    var ip = await clip.getInPoint();
-    if (ip && typeof ip.seconds === 'number') return ip.seconds;
-  } catch(_) {}
-  return 0;
-}
-
-
-async function _findQualifiedParams(chain, phLocal) {
-  var qualified = [];
-  var compCount = 0;
-  try { compCount = await _call(chain, 'getComponentCount'); }
-  catch(e) { console.log('[FS] getComponentCount failed:', e.message); return qualified; }
-
-  for (var i = 0; i < compCount; i++) {
-    var comp;
-    try { comp = await _call(chain, 'getComponentAtIndex', i); }
-    catch(_) { continue; }
-
-    var matchName = ''; try { matchName = await _call(comp, 'getMatchName'); } catch(_) {}
-    var paramCount = 0; try { paramCount = await _call(comp, 'getParamCount'); } catch(_) {}
-
-    for (var j = 0; j < paramCount; j++) {
-      var param;
-      try { param = await _call(comp, 'getParam', j); }
-      catch(_) { continue; }
-
-      var kfTimes = null;
-      try { kfTimes = await _call(param, 'getKeyframeListAsTickTimes'); }
-      catch(e) { console.log('[FS] kfList err ['+i+'_'+j+']:', e.message); }
-      var kfArr = kfTimes ? (Array.isArray(kfTimes) ? kfTimes : Array.from(kfTimes)) : [];
-      if (kfArr.length < 2) continue;
-
-      // Find bracket KFs around phLocal; fall back to first/last with isOutside flag
-      var kf0 = null, kf1 = null;
-      for (var k = 0; k < kfArr.length; k++) {
-        if (kfArr[k].seconds <= phLocal)      kf0 = kfArr[k];
-        else if (kf1 === null)                kf1 = kfArr[k];
-      }
-      var isOutside = false;
-      if (!kf0 || !kf1) {
-        kf0 = kfArr[0]; kf1 = kfArr[kfArr.length - 1]; isOutside = true;
-      }
-
-      // Accept both scalar params (Opacity, Scale, Rotation — value is a number)
-      // and compound params (Position — value is [x, y]). Skip anything unrecognised.
-      var rawVal;
-      try { rawVal = await _getValue(param, kf0); } catch(_) { continue; }
-      if (_extractValue(rawVal) === null) continue;
-
-      var displayName = _paramName(matchName, j, matchName + ' ' + j);
-      qualified.push({ key: i+'_'+j, displayName: displayName,
-                       param: param, comp: comp, paramIdx: j,
-                       kf0: kf0, kf1: kf1, totalKf: kfArr.length, isOutside: isOutside });
-    }
-  }
-  return qualified;
-}
-
-// ─── detectContext ────────────────────────────────────────────────────────
-async function _detectContextFull(project, sequence, ph) {
-  var allClips = await _clipsAtPlayhead(sequence, ph);
-  if (allClips.length === 0) {
-    _cache.clipStartSec = null;
-    return { status: 'no-clip', availableParams: [], hint: 'No video clip found at playhead position' };
-  }
-
-  // Try each clip at the playhead — pick the first with qualifying keyframes
-  var bestQualified = null;
-  var bestFound     = null;
-
-  for (var ci = 0; ci < allClips.length; ci++) {
-    var found = allClips[ci];
-    var clipStart   = found.clipStart || 0;
-    var clipInPoint = await _clipInPoint(found.clip);
-    var phLocal     = (ph - clipStart) + clipInPoint;
-    var qualifiedParams = await _findQualifiedParams(found.chain, phLocal);
-
-    if (qualifiedParams.length > 0) {
-      bestQualified = qualifiedParams;
-      bestFound     = found;
-      break; // use the first clip that has keyframes
-    }
-  }
-
-  if (!bestQualified) {
-    return { status: 'no-keyframes', availableParams: [], hint: 'No property with 2+ keyframes found on clips at playhead.' };
-  }
-
-  var found = bestFound;
-  _cache.clipStartSec = found.clipStart || 0;
-
-  var paramList   = bestQualified.map(function(p){ return { key: p.key, displayName: p.displayName }; });
-  var validParams = bestQualified.filter(function(p){ return !p.isOutside; });
-
-  if (validParams.length === 0) {
-    var first = bestQualified[0];
-    return {
-      status: 'outside', availableParams: paramList, validParamKeys: [],
-      hint: 'Move playhead between keyframes (' + first.kf0.seconds.toFixed(2) + 's – ' + first.kf1.seconds.toFixed(2) + 's)',
-    };
-  }
-
-  var fps = await _fps(sequence);
-  var paramContexts = {};
-  for (var vi = 0; vi < validParams.length; vi++) {
-    var vp   = validParams[vi];
-    var val0 = _extractValue(await _getValue(vp.param, vp.kf0));
-    var val1 = _extractValue(await _getValue(vp.param, vp.kf1));
-    var fc   = Math.round((vp.kf1.seconds - vp.kf0.seconds) * fps);
-    paramContexts[vp.key] = {
-      param: vp.param, kf0: vp.kf0, kf1: vp.kf1,
-      val0: val0, val1: val1, frameCount: fc,
-      project: project, sequence: sequence, clip: found.clip, fps: fps,
-    };
-  }
-
-  var validParamKeys = validParams
-    .filter(function(p){ return paramContexts[p.key] && paramContexts[p.key].frameCount >= 2; })
-    .map(function(p){ return p.key; });
-
-  var firstCtx  = validParamKeys.length > 0 ? paramContexts[validParamKeys[0]] : null;
-  var hintFrames = firstCtx ? firstCtx.frameCount + ' frames' : '';
-  var selectionHint = found.viaSelection ? ' (selected clip)' : '';
-
-  return {
-    status: 'valid',
-    availableParams: paramList,
-    validParamKeys: validParamKeys,
-    paramContexts: paramContexts,
-    hint: hintFrames + selectionHint,
-  };
-}
-
-async function detectContext() {
-  try {
-    if (!ppro) return { status: 'error', availableParams: [], hint: 'premierepro module not loaded' };
-
-    var project = await ppro.Project.getActiveProject();
-    if (!project) { _invalidateCache(); return { status: 'no-project', availableParams: [], hint: '' }; }
-
-    var sequence = await project.getActiveSequence();
-    if (!sequence) { _invalidateCache(); return { status: 'no-sequence', availableParams: [], hint: '' }; }
-
-    // Invalidate caches if the active sequence changed
-    var seqGuid = sequence.guid || null;
-    if (seqGuid !== _cache.sequenceGuid) {
-      console.log('[FS] sequence changed:', _cache.sequenceGuid, '→', seqGuid);
-      _invalidateCache();
-      _cache.sequenceGuid = seqGuid;
-      _cache.fps = null; // force fps re-detection for new sequence
-    }
-
-    var playerPos = await sequence.getPlayerPosition();
-    var ph = playerPos.seconds;
-
-    // If playhead hasn't moved, check if selection changed before returning cache
-    _cache.pollCount++;
-    if (_cache.playhead === ph && _cache.lastResult && _cache.pollCount < HEARTBEAT_POLLS) {
-      // Fast selection identity check — composite name|start|end distinguishes any clip
-      var selChanged = false;
-      try {
-        var selItems = await _getSelectionItems(sequence);
-        var selCount = selItems ? selItems.length : 0;
-        if (selCount !== _cache.selItemCount) {
-          selChanged = true;
-        } else if (selCount > 0) {
-          var clipId = await _clipIdentity(selItems[0]);
-          if (clipId !== _cache.selClipId) selChanged = true;
-        }
-      } catch(_) {}
-      if (!selChanged) return _cache.lastResult;
-      _cache.pollCount = 0;
-    }
-
-    _cache.playhead = ph;
-    _cache.pollCount = 0;
-
-    // Snapshot selection identity for future change detection
-    try {
-      var selSnap = await _getSelectionItems(sequence);
-      var snapCount = selSnap ? selSnap.length : 0;
-      _cache.selItemCount = snapCount;
-      _cache.selClipId    = snapCount > 0 ? await _clipIdentity(selSnap[0]) : null;
-    } catch(_) {
-      _cache.selItemCount = 0;
-      _cache.selClipId    = null;
-    }
-
-    var result = await _detectContextFull(project, sequence, ph);
-    _cache.lastResult   = result;
-    _cache.lastResultAt = Date.now();
-    return result;
-
-  } catch(err) {
-    console.error('[FS] detectContext threw:', err);
-    _invalidateCache();
-    return { status: 'error', availableParams: [], hint: err && err.message ? err.message : String(err) };
-  }
-}
-
-// ─── bakeKeyframes ────────────────────────────────────────────────────────
-// Accepts an array of contexts (one per selected param) and bakes all in one transaction.
-async function bakeKeyframes(contexts, curve) {
-  if (!contexts || contexts.length === 0) throw new Error('No contexts to bake.');
-  var project = contexts[0].project;
-  var allActions = [];
-
-  for (var ci = 0; ci < contexts.length; ci++) {
-    var context = contexts[ci];
-    var param   = context.param;
-    var kf0     = context.kf0;
-    var kf1     = context.kf1;
-    var val0    = context.val0;
-    var val1    = context.val1;
-    var fps     = context.fps;
-
-    var startSec    = kf0.seconds;
-    var totalFrames = Math.round((kf1.seconds - startSec) * fps);
-    if (totalFrames < 2) { console.log('[FS] skipping param — KFs less than 2 frames apart'); continue; }
-
-    var isCompound = Array.isArray(val0);
-    console.log('[FS] bake['+ci+']: '+totalFrames+' frames | compound='+isCompound);
-
-    if (isCompound) {
-      for (var f2 = 1; f2 < totalFrames; f2++) {
-        var easedT2    = sampleBezier(f2 / totalFrames, curve);
-        var kfPerFrame = await _call(param, 'getKeyframePtr', kf0);
-        kfPerFrame.position = ppro.TickTime.createWithSeconds(startSec + f2 / fps);
-        kfPerFrame.value    = new ppro.PointF(
-          val0[0] + (val1[0] - val0[0]) * easedT2,
-          val0[1] + (val1[1] - val0[1]) * easedT2
-        );
-        try {
-          var act2 = param.createAddKeyframeAction(kfPerFrame);
-          if (act2 && typeof act2.then === 'function') act2 = await act2;
-          if (act2) allActions.push(act2);
-          else break;
-        } catch(e) { console.log('[FS] compound kf['+f2+'] threw:', e.message); break; }
-      }
-    } else {
-      var keyframes = [];
-      for (var f = 1; f < totalFrames; f++) {
-        var value = val0 + (val1 - val0) * sampleBezier(f / totalFrames, curve);
-        var kf    = param.createKeyframe(0, 0);
-        kf.position = ppro.TickTime.createWithSeconds(startSec + f / fps);
-        kf.value    = value;
-        keyframes.push(kf);
-      }
-      for (var i = 0; i < keyframes.length; i++) {
-        try {
-          var action = param.createAddKeyframeAction(keyframes[i]);
-          if (action && typeof action.then === 'function') action = await action;
-          if (action) allActions.push(action);
-          else break;
-        } catch(e) { console.log('[FS] createAddKeyframeAction threw:', e.message); break; }
-      }
-    }
-  }
-
-  if (allActions.length === 0) { console.log('[FS] bake: all params skipped (already baked or too close)'); return; }
-
-  try {
-    await project.lockedAccess(async function() {
-      await project.executeTransaction(function(compound) {
-        for (var j = 0; j < allActions.length; j++) compound.addAction(allActions[j]);
-      }, 'FayeSmoothify bake');
-    });
-  } catch(e) { console.log('[FS] transaction threw:', e.message); }
-
-  console.log('[FS] bake done: '+allActions.length+' actions across '+contexts.length+' param(s)');
-}
-
-function _kfCount(param) {
-  try {
-    var arr = param.getKeyframeListAsTickTimes();
-    return Array.isArray(arr) ? arr.length : Array.from(arr).length;
-  } catch(_) { return -1; }
+  // Delay initial sizing to let flex layout settle
+  setTimeout(onResize, 50);
+  setTimeout(onResize, 200);
 }
 
 // ─── UI ───────────────────────────────────────────────────────────────────
@@ -981,7 +413,6 @@ function setPresetActive(id) {
 }
 
 function renderUI(s) {
-  // Property buttons
   var propBtns = document.getElementById('prop-btns');
   if (propBtns) {
     var params  = s.availableParams || [];
@@ -1000,7 +431,6 @@ function renderUI(s) {
           var baked = (s2.bakedParamKeys || []).slice();
           var bi    = baked.indexOf(p.key);
           if (bi >= 0) {
-            // First click on a green button clears baked state, leaves unselected
             baked.splice(bi, 1);
             setState({ bakedParamKeys: baked });
             return;
@@ -1014,7 +444,6 @@ function renderUI(s) {
         propBtns.appendChild(btn);
       });
     }
-    // Sync active state
     var selKeys   = s.selectedParamKeys || [];
     var bakedKeys = s.bakedParamKeys   || [];
     propBtns.querySelectorAll('.prop-btn').forEach(function(btn) {
@@ -1024,7 +453,6 @@ function renderUI(s) {
     });
   }
 
-  // Status strip
   var strip = document.getElementById('status-strip');
   var txt   = document.getElementById('status-text');
   if (strip && txt) {
@@ -1034,7 +462,6 @@ function renderUI(s) {
     txt.textContent = msg;
   }
 
-  // Go button
   var goBtn     = document.getElementById('go-btn');
   var goArrow   = document.getElementById('go-arrow');
   var goSpinner = document.getElementById('go-spinner');
@@ -1053,11 +480,11 @@ function renderUI(s) {
 
 // ─── Panel init ───────────────────────────────────────────────────────────
 function initPanel() {
-  console.log('[FS] initPanel called');
+  console.log('[OC] initPanel called');
 
   var svg = document.getElementById('bezier-svg');
   if (svg) {
-    initGraphEditor(svg); // handles initial sizing + draw via ResizeObserver
+    initGraphEditor(svg);
   }
 
   var zoomIn  = document.getElementById('zoom-in');
@@ -1104,7 +531,6 @@ function initPanel() {
     localStorage.setItem(_STORAGE_KEY, JSON.stringify(list));
   }
 
-  // _presetList: array of { id, name, curve, builtIn? }
   var _stored = _loadPresetList();
   var _presetList = _stored || BUILT_IN_PRESETS.map(function(p) {
     return { id: p.id, name: p.name, curve: p.curve, builtIn: true };
@@ -1116,7 +542,7 @@ function initPanel() {
   _ctxMenu.style.display = 'none';
   document.body.appendChild(_ctxMenu);
 
-  var _ctxTarget = null; // { preset, btn, startRename }
+  var _ctxTarget = null;
 
   function _ctxItem(label, danger, onClick, icon) {
     var item = document.createElement('div');
@@ -1134,7 +560,7 @@ function initPanel() {
     item.appendChild(labelSpan);
     item.addEventListener('click', function(e) {
       e.stopPropagation();
-      var t = _ctxTarget; // capture before hide nulls it
+      var t = _ctxTarget;
       _hideCtxMenu();
       onClick(t);
     });
@@ -1153,20 +579,20 @@ function initPanel() {
     if (!t) return;
     var c = t.preset.curve;
     var text = 'cubic-bezier(' + c.p1x + ', ' + c.p1y + ', ' + c.p2x + ', ' + c.p2y + ')';
-    console.log('[FS] Coordinates:', text);
+    console.log('[OC] Coordinates:', text);
     var copied = false;
     try {
       if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(text).then(function() {
-          console.log('[FS] Copied to clipboard:', text);
+          console.log('[OC] Copied to clipboard:', text);
           _showCopyToast('Copied!');
         }).catch(function(e) {
-          console.log('[FS] clipboard writeText failed:', e);
+          console.log('[OC] clipboard writeText failed:', e);
           _showCopyToast(text);
         });
         copied = true;
       }
-    } catch(e) { /* navigator.clipboard not available */ }
+    } catch(e) {}
     if (!copied) { _showCopyToast(text); }
   }, _icCopy);
   _ctxItem('Overwrite with current', false, function(t) {
@@ -1222,7 +648,6 @@ function initPanel() {
     btn.className = 'preset-btn';
     btn.dataset.id = preset.id;
 
-    // Thumbnail
     var thumb = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     thumb.setAttribute('class', 'preset-thumb');
     thumb.setAttribute('width', '28'); thumb.setAttribute('height', '28'); thumb.setAttribute('viewBox', '0 0 28 28');
@@ -1232,13 +657,11 @@ function initPanel() {
     tp.setAttribute('d', _thumbPathD(preset.curve));
     thumb.appendChild(tp); btn.appendChild(thumb);
 
-    // Name
     var nameSpan = document.createElement('span');
     nameSpan.className = 'preset-name';
     nameSpan.textContent = preset.name;
     btn.appendChild(nameSpan);
 
-    // Apply curve on click
     btn.addEventListener('click', function(e) {
       setPresetActive(preset.id);
       _animateToCurve(preset.curve, function(cur) {
@@ -1246,7 +669,6 @@ function initPanel() {
       });
     });
 
-    // Rename: dblclick or right-click
     function startRename() {
       var input = document.createElement('input');
       input.type = 'text'; input.value = preset.name;
@@ -1277,7 +699,7 @@ function initPanel() {
     return btn;
   }
 
-  // Drag-to-reorder (pointer events)
+  // Drag-to-reorder
   function _initDragSort(container) {
     var dragEl = null, dropLine = null, startY = 0, startX = 0, moved = false;
     var _lastDownBtn = null, _lastDownTime = 0;
@@ -1294,7 +716,6 @@ function initPanel() {
       if (btn.id === '_update-notif') return;
       if (e.target.classList && e.target.classList.contains('preset-rename-input')) return;
 
-      // If this is a rapid second press on the same button, let dblclick fire instead
       var now = Date.now();
       if (btn === _lastDownBtn && now - _lastDownTime < 350) {
         _lastDownBtn = null;
@@ -1304,20 +725,24 @@ function initPanel() {
       _lastDownTime = now;
 
       dragEl = btn; startX = e.clientX; startY = e.clientY; moved = false;
-      container.setPointerCapture(e.pointerId);
+      _pendingPointerId = e.pointerId;
     });
 
     var _dropHighlight = null;
+    var _pendingPointerId = null;
     container.addEventListener('pointermove', function(e) {
       if (!dragEl) return;
       if (!moved && Math.abs(e.clientY - startY) < 5) return;
       if (!moved) {
+        if (_pendingPointerId != null) {
+          container.setPointerCapture(_pendingPointerId);
+          _pendingPointerId = null;
+        }
         moved = true;
         dropLine = document.createElement('div');
         dropLine.className = 'preset-drop-line';
         dragEl.classList.add('preset-dragging');
         if (_presetLayout === 'grid') {
-          // Create floating ghost
           var rect = dragEl.getBoundingClientRect();
           _dragGhost = dragEl.cloneNode(true);
           _dragGhost.style.cssText = 'position:fixed;z-index:9999;pointer-events:none;opacity:0.6;transform:scale(0.85);width:' + rect.width + 'px;';
@@ -1327,7 +752,6 @@ function initPanel() {
           dragEl.style.display = 'none';
         }
       }
-      // Move ghost
       if (_dragGhost) {
         var gw = _dragGhost.offsetWidth || 80;
         var gh = _dragGhost.offsetHeight || 60;
@@ -1340,7 +764,6 @@ function initPanel() {
       });
       var after = null;
       if (isGrid) {
-        // Find which tile the cursor is over
         var hoverTarget = null;
         for (var i = 0; i < items.length; i++) {
           var r = items[i].getBoundingClientRect();
@@ -1349,9 +772,7 @@ function initPanel() {
             break;
           }
         }
-        // Insert before the hovered tile (dragged item takes its place)
         if (hoverTarget) after = hoverTarget;
-        // Highlight the target tile
         if (_dropHighlight && _dropHighlight !== after) {
           _dropHighlight.style.outline = '';
         }
@@ -1389,7 +810,7 @@ function initPanel() {
       if (_dragGhost && _dragGhost.parentNode) { _dragGhost.parentNode.removeChild(_dragGhost); _dragGhost = null; }
       dragEl.style.display = '';
       dragEl.classList.remove('preset-dragging');
-      dragEl = null; dropLine = null; moved = false;
+      dragEl = null; dropLine = null; moved = false; _pendingPointerId = null;
       if (_presetLayout === 'grid') _applyPresetLayout(true);
     }
 
@@ -1400,7 +821,6 @@ function initPanel() {
   function _renderPresets() {
     var list = document.getElementById('all-presets-list');
     if (!list) return;
-    // Preserve the New Preset button if it exists
     var newBtn = document.getElementById('new-preset-btn');
     list.innerHTML = '';
     _presetList.forEach(function(p) { list.appendChild(_buildPresetBtn(p)); });
@@ -1417,7 +837,6 @@ function initPanel() {
     new ResizeObserver(_updateGridCols).observe(_presetListEl);
   }
 
-  // Parse cubic-bezier string → curve object or null
   function _parseCubicBezier(text) {
     if (!text) return null;
     var m = text.match(/cubic-bezier\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/i);
@@ -1427,7 +846,6 @@ function initPanel() {
     return { p1x: vals[0], p1y: vals[1], p2x: vals[2], p2y: vals[3] };
   }
 
-  // Create a preset from a parsed curve and add it to the list
   function _createPresetFromCurve(curve) {
     var list = document.getElementById('all-presets-list');
     if (!list) return;
@@ -1446,7 +864,6 @@ function initPanel() {
     if (ns) ns.dispatchEvent(new Event('dblclick'));
   }
 
-  // Show paste-coordinates input panel
   function _showPastePanel() {
     console.log('[OC] _showPastePanel called');
     var existingOv = document.getElementById('_paste-overlay');
@@ -1521,7 +938,6 @@ function initPanel() {
     btnRow.appendChild(cancelBtn);
     box.appendChild(btnRow);
 
-    // Position vertically once box has height
     setTimeout(function() {
       var bh = box.offsetHeight || 160;
       var t = Math.max(0, Math.round((vh - bh) / 5));
@@ -1536,13 +952,12 @@ function initPanel() {
     });
   }
 
-  // Paste coordinates: always show panel, pre-fill clipboard if valid
   function _pasteCoordinates() {
     console.log('[OC] _pasteCoordinates called');
     _showPastePanel();
   }
 
-  // Mini Settings-only context menu (used in preset list empty space + graph)
+  // Mini context menu
   function _showMiniCtxMenu(e, showPaste, showLayout, showGrid) {
     console.log('[OC] _showMiniCtxMenu called');
     e.preventDefault();
@@ -1677,7 +1092,7 @@ function initPanel() {
     });
   })();
 
-  // Build the New Preset button inside the preset list
+  // New Preset button
   (function() {
     var list = document.getElementById('all-presets-list');
     if (!list) return;
@@ -1687,7 +1102,6 @@ function initPanel() {
       newBtn.id = 'new-preset-btn';
       newBtn.className = 'preset-btn new-preset-btn';
 
-      // "+" thumbnail
       var thumb = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       thumb.setAttribute('class', 'preset-thumb');
       thumb.setAttribute('width', '28'); thumb.setAttribute('height', '28'); thumb.setAttribute('viewBox', '0 0 28 28');
@@ -1717,7 +1131,6 @@ function initPanel() {
         _presetList.push(preset);
         _savePresetList(_presetList);
         var btn = _buildPresetBtn(preset);
-        // Insert before the New Preset button
         list.insertBefore(btn, newBtn);
         _applyPresetLayout(true);
         var ns = btn.querySelector('.preset-name');
@@ -1730,7 +1143,7 @@ function initPanel() {
     list.appendChild(_buildNewPresetBtn());
   }());
 
-  // Resize handle — drag to adjust left/right column split
+  // Resize handle
   var resizeHandle = document.getElementById('resize-handle');
   var rightCol     = document.getElementById('right-col');
   if (resizeHandle && rightCol) {
@@ -1776,34 +1189,18 @@ function initPanel() {
   }
   stateListeners.push(_updateStripCursor);
 
-  // Go button
+  // Go button — calls bridge.onGo()
   var goBtn = document.getElementById('go-btn');
   if (goBtn) {
-    goBtn.addEventListener('click', async function() {
+    goBtn.addEventListener('click', function() {
       var s = getState();
       var bakedKeys = (s.selectedParamKeys || [])
         .filter(function(k){ return (s.validParamKeys || []).indexOf(k) >= 0 && s.paramContexts && s.paramContexts[k]; });
-      var contexts = bakedKeys.map(function(k){ return s.paramContexts[k]; });
-      if (s.status !== 'valid' || s.isBaking || contexts.length === 0) return;
-      setState({ isBaking: true, status: 'baking' });
-      try {
-        await bakeKeyframes(contexts, s.curve);
-        _invalidateCache(); // keyframes changed — force full re-scan on next poll
-        _skipPollUntil = Date.now() + DONE_DISPLAY_MS;
-        var newBaked = (s.bakedParamKeys || []).concat(bakedKeys.filter(function(k){ return (s.bakedParamKeys || []).indexOf(k) < 0; }));
-        setState({
-          isBaking: false, status: 'done',
-          bakedParamKeys:    newBaked,
-          selectedParamKeys: (s.selectedParamKeys || []).filter(function(k){ return bakedKeys.indexOf(k) < 0; }),
-        });
-        setTimeout(function() {
-          _lastStatus = '';
-          setState({ status: 'idle' });
-        }, DONE_DISPLAY_MS);
-      } catch(err) {
-        console.error('[FS] bake error:', err);
-        _skipPollUntil = Date.now() + ERROR_DISPLAY_MS;
-        setState({ isBaking: false, status: 'error', hint: err && err.message ? err.message : String(err) });
+      if (s.status !== 'valid' || s.isBaking || bakedKeys.length === 0) return;
+
+      // Delegate to platform bridge
+      if (_bridge && _bridge.onGo) {
+        _bridge.onGo(s, bakedKeys);
       }
     });
   }
@@ -1814,107 +1211,7 @@ function initPanel() {
   setPresetActive('s-curve');
 }
 
-// ─── Detection cache ─────────────────────────────────────────────────────
-var _cache = {
-  playhead:       null,   // last playhead seconds
-  sequenceGuid:   null,   // guid of active sequence
-  fps:            null,   // cached fps for current sequence
-  fpsCheckedAt:   0,      // timestamp of last fps detection
-  clipStrategy:   null,   // 'track' | 'selection' — whichever worked last
-  clipStartSec:   null,   // start time of last detected clip (identity key)
-  selClipId:      null,   // composite identity string: name|start|end
-  selItemCount:   0,      // number of selected items (fast identity check)
-  selTrackItemSig: null,  // 'noargs' | 'typed' — which getTrackItems call works on selection
-  lastResult:     null,   // full detectContext result
-  lastResultAt:   0,      // timestamp of last full detection
-  pollCount:      0,      // polls since last full detection
-};
-
-var FPS_RECHECK_MS     = 30000; // re-detect fps every 30s to catch mid-session changes
-var HEARTBEAT_POLLS    = 15;    // force full re-scan every N polls even if playhead is static
-
-function _invalidateCache() {
-  _cache.playhead      = null;
-  _cache.clipStartSec  = null;
-  _cache.selClipId     = null;
-  _cache.selItemCount  = 0;
-  _cache.lastResult    = null;
-  _cache.pollCount     = 0;
-}
-
-// ─── Polling ──────────────────────────────────────────────────────────────
-var pollTimer      = null;
-var POLL_MS        = 200;
-var _lastStatus    = '';
-var _skipPollUntil = 0;
-var _pollRunning   = false; // prevents concurrent poll calls piling up
-var _isDragging    = false; // pause polling while handle is being dragged
-
-async function poll() {
-  if (_pollRunning) return; // drop the tick if the previous one isn't done yet
-  if (_isDragging)  return; // keep event loop free while user is dragging
-  var s = getState();
-  if (s.isBaking) return;
-  if (Date.now() < _skipPollUntil) return;
-  _pollRunning = true;
-  try {
-    var result = await detectContext();
-    var updates = {
-      status:          result.status,
-      availableParams: result.availableParams || [],
-      hint:            result.hint || '',
-      errorMessage:    result.errorMessage || result.hint || '',
-    };
-
-    if (result.status === 'valid') {
-      var avail      = result.availableParams || [];
-      var validKeys  = result.validParamKeys  || [];
-
-      // Keep selected keys that are still in availableParams; drop stale ones
-      var currentSel = (s.selectedParamKeys || []).filter(function(k) {
-        return avail.some(function(p){ return p.key === k; });
-      });
-
-      // Auto-select all valid params only on fresh detection (when clip just came into range)
-      var wasEmpty = (s.availableParams || []).length === 0;
-      if (currentSel.length === 0 && validKeys.length > 0 && wasEmpty) {
-        currentSel = validKeys.slice();
-      }
-
-      updates.selectedParamKeys = currentSel;
-      updates.validParamKeys    = validKeys;
-      updates.paramContexts     = result.paramContexts || {};
-      updates.bakedParamKeys    = (s.bakedParamKeys || []).filter(function(k){
-        // Drop baked state if param is back in validParamKeys (undo restored original KFs)
-        var inAvail = avail.some(function(p){ return p.key === k; });
-        var inValid = validKeys.indexOf(k) >= 0;
-        return inAvail && !inValid;
-      });
-
-      // Downgrade status if no selected param is actually valid
-      var activeCount = currentSel.filter(function(k){ return validKeys.indexOf(k) >= 0; }).length;
-      if (activeCount === 0) updates.status = 'no-selection';
-    } else {
-      updates.selectedParamKeys = [];
-      updates.validParamKeys    = [];
-      updates.paramContexts     = {};
-      updates.bakedParamKeys    = [];
-    }
-
-    if (result.status !== _lastStatus) {
-      console.log('[FS] status changed:', _lastStatus, '→', result.status, result.hint || '');
-      _lastStatus = result.status;
-    }
-    setState(updates);
-  } catch(err) {
-    console.error('[FS] poll error:', err);
-  } finally {
-    _pollRunning = false;
-  }
-}
-window.__opencurvePoll = poll;
-
-// ─── Settings / flyout ─────────────────────────────────────────────────────
+// ─── Settings / shared variables ─────────────────────────────────────────
 var CURRENT_VERSION     = '1.2.1';
 var _CURVE_COLOR_KEY    = 'opencurve-line-color';
 var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#4a9eff';
@@ -1929,6 +1226,10 @@ var _GRID_KEY           = 'opencurve-grid-size';
 var _gridSize           = parseInt(localStorage.getItem(_GRID_KEY), 10) || 8;
 var _LAYOUT_KEY         = 'opencurve-preset-layout';
 var _presetLayout       = localStorage.getItem(_LAYOUT_KEY) || 'list';
+var _isDragging         = false;
+
+// Bridge object — set by platform-specific code before calling initPanel()
+var _bridge = null;
 
 function _applyPresetLayout(force) {
   var list = document.getElementById('all-presets-list');
@@ -1943,7 +1244,6 @@ function _applyPresetLayout(force) {
   var itemW = isGrid ? (100/cols).toFixed(3) + '%' : '100%';
   var thumbSz = isGrid ? (cols >= 3 ? 30 : 32) : 28;
 
-  // List container
   if (isGrid) {
     list.style.display = 'flex';
     list.style.flexWrap = 'wrap';
@@ -1958,7 +1258,6 @@ function _applyPresetLayout(force) {
     list.style.gap = '';
   }
 
-  // Each preset button
   list.querySelectorAll('.preset-btn').forEach(function(btn) {
     if (isGrid) {
       btn.style.width = itemW;
@@ -1993,7 +1292,6 @@ function _applyPresetLayout(force) {
     }
   });
 
-  // Preset name text wrapping
   list.querySelectorAll('.preset-name').forEach(function(n) {
     if (isGrid) {
       n.style.whiteSpace = 'normal';
@@ -2008,7 +1306,6 @@ function _applyPresetLayout(force) {
     }
   });
 
-  // Thumbnails
   list.querySelectorAll('.preset-thumb').forEach(function(t) {
     if (isGrid) {
       t.setAttribute('width', String(thumbSz));
@@ -2021,7 +1318,6 @@ function _applyPresetLayout(force) {
     }
   });
 
-  // Update notif — compact in grid mode
   var notifEl = document.getElementById('_update-notif');
   if (notifEl) {
     var notifIcon = notifEl.querySelector('.preset-thumb');
@@ -2052,8 +1348,6 @@ function _applyPresetLayout(force) {
     }
   }
 
-  // UXP may ignore inline styles on first render — force reflow,
-  // then re-assert align-self on each tile after a delay (no full re-call)
   if (isGrid) {
     void list.offsetHeight;
     if (!_applyPresetLayout._pending) {
@@ -2091,7 +1385,6 @@ function _applyCurveColor(color) {
   document.querySelectorAll('.preset-thumb path').forEach(function(p) {
     p.setAttribute('stroke', color);
   });
-  // Update active preset button theme colours
   if (/^#[0-9a-fA-F]{6}$/.test(color)) {
     var bg  = _hexToRgba(color, 0.15);
     var bg2 = _hexToRgba(color, 0.28);
@@ -2133,11 +1426,10 @@ function _refreshUpdateNotification() {
   notif.style.background = 'rgba(240,180,0,0.08)';
   notif.style.position = 'relative';
 
-  // Icon area (same 28x28 space as thumbnail)
   var iconWrap = document.createElement('span');
   iconWrap.className = 'preset-thumb';
   iconWrap.style.cssText = 'width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:8px;font-size:16px;opacity:0.9;';
-  iconWrap.textContent = '⚠';
+  iconWrap.textContent = '\u26A0';
   notif.appendChild(iconWrap);
 
   var nameSpan = document.createElement('span');
@@ -2197,26 +1489,23 @@ function _applyUpdateBtnState(btn, label) {
 
 function _openReleasesPage() {
   var url = 'https://github.com/fayewave/OpenCurve/releases/latest';
-  require('uxp').shell.openExternal(url).then(function() {
-    _showCopyToast('Opened link in browser', '#e6b800');
-  }).catch(function(e) {
-    console.error('[OC] openExternal failed:', e);
-    navigator.clipboard.writeText(url).then(function() {
-      _showCopyToast('Link copied — paste in browser', '#e6b800');
-    });
-  });
+  // Use bridge to open external URL (platform-specific)
+  if (_bridge && _bridge.openExternal) {
+    _bridge.openExternal(url);
+  } else {
+    window.open(url);
+  }
 }
 
 function _checkForUpdates(silent) {
   _updateDismissed = false;
-  if (!silent) _showCopyToast('Checking for updates…');
+  if (!silent) _showCopyToast('Checking for updates\u2026');
   fetch('https://api.github.com/repos/fayewave/OpenCurve/releases/latest')
     .then(function(r) {
       if (!r.ok) throw new Error('GitHub API returned ' + r.status);
       return r.json();
     })
     .then(function(data) {
-      // Validate the response is from the expected repository
       if (!data || typeof data !== 'object' || !data.tag_name) {
         if (!silent) _showCopyToast('Unexpected response from GitHub');
         return;
@@ -2233,7 +1522,7 @@ function _checkForUpdates(silent) {
         if (!silent) _showCopyToast('OpenCurve is up to date (v' + CURRENT_VERSION + ')');
       } else {
         _updateAvailable = true;
-        if (!silent) _showCopyToast('Update available: v' + latest + ' — you have v' + CURRENT_VERSION);
+        if (!silent) _showCopyToast('Update available: v' + latest + ' \u2014 you have v' + CURRENT_VERSION);
       }
       var btn = document.getElementById('_updates-row');
       var lbl = document.getElementById('_updates-label');
@@ -2276,6 +1565,7 @@ function _confirmReset() {
   resetBtn.addEventListener('click', function() {
     localStorage.removeItem('opencurve-presets-v10');
     localStorage.removeItem('opencurve-sidebar-width');
+    localStorage.removeItem('opencurve-cep-splash-seen');
     localStorage.removeItem(_CURVE_COLOR_KEY);
     localStorage.removeItem(_GRID_KEY);
     localStorage.removeItem(_LAYOUT_KEY);
@@ -2296,14 +1586,12 @@ function _confirmReset() {
 }
 
 function _showSettingsModal() {
-
   var modal = document.createElement('div');
   modal.id = 'settings-modal';
   var vw = document.documentElement.clientWidth  || document.body.clientWidth;
   var vh = document.documentElement.clientHeight || document.body.clientHeight;
   modal.style.cssText = 'position:fixed;top:0;left:0;width:'+vw+'px;height:'+vh+'px;background:#1c1c1c;z-index:9998;display:flex;flex-direction:column;font-family:system-ui,sans-serif;';
 
-  // Logo + close row
   var header = document.createElement('div');
   header.style.cssText = 'display:flex;align-items:center;padding:10px 8px 10px 12px;border-bottom:1px solid rgba(255,255,255,0.07);flex-shrink:0;';
   var logoSpacer = document.createElement('div');
@@ -2315,18 +1603,15 @@ function _showSettingsModal() {
   logo.style.cssText = 'height:26px;opacity:0.9;';
   logoWrap.appendChild(logo);
   var closeBtn = document.createElement('div');
-  closeBtn.textContent = '✕';
+  closeBtn.textContent = '\u2715';
   closeBtn.style.cssText = 'color:#888;font-size:13px;cursor:pointer;padding:4px 6px;flex-shrink:0;';
   closeBtn.addEventListener('mouseenter', function() { closeBtn.style.color='#e4e4e4'; });
   closeBtn.addEventListener('mouseleave', function() { closeBtn.style.color='#888'; });
-  closeBtn.addEventListener('click', function() {
-    modal.remove();
-  });
+  closeBtn.addEventListener('click', function() { modal.remove(); });
   header.appendChild(logoSpacer);
   header.appendChild(logoWrap);
   header.appendChild(closeBtn);
 
-  // Content
   var content = document.createElement('div');
   var dualCol = vw > 520;
   content.style.cssText = dualCol
@@ -2335,7 +1620,6 @@ function _showSettingsModal() {
   var rowsCol = document.createElement('div');
   rowsCol.style.cssText = dualCol ? 'flex:1;display:flex;flex-direction:column;' : 'flex-shrink:0;display:flex;flex-direction:column;';
 
-  // Graph line colour section
   var colorSection = document.createElement('div');
   colorSection.style.cssText = dualCol
     ? 'padding:10px 12px 12px;width:50%;box-sizing:border-box;border-left:1px solid rgba(255,255,255,0.07);'
@@ -2346,7 +1630,6 @@ function _showSettingsModal() {
   colorLabel.style.cssText = 'color:#b0b0b0;font-size:14px;margin-bottom:10px;';
   colorSection.appendChild(colorLabel);
 
-  // Swatches
   var swatchColors = ['#4a9eff','#3ddc84','#f06060','#f0a030','#c97ff0','#ff6eb4','#ffffff','#aaaaaa'];
   var swatchRow = document.createElement('div');
   swatchRow.style.cssText = 'display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;';
@@ -2371,7 +1654,6 @@ function _showSettingsModal() {
   });
   colorSection.appendChild(swatchRow);
 
-  // Hex input
   var hexRow = document.createElement('div');
   hexRow.style.cssText = 'display:flex;align-items:center;gap:8px;';
   var hexLabel = document.createElement('span');
@@ -2386,14 +1668,10 @@ function _showSettingsModal() {
   hexPreview.style.cssText = 'width:20px;height:20px;background:'+_curveColor+';flex-shrink:0;border:1px solid rgba(255,255,255,0.12);';
   hexInput.addEventListener('input', function() {
     var val = hexInput.value;
-    // Strip anything that isn't # or hex digits
     val = val.toUpperCase().replace(/[^#0-9A-F]/g, '');
-    // Ensure it starts with #
     if (val.charAt(0) !== '#') val = '#' + val;
-    // Cap at 7 chars
     val = val.slice(0, 7);
     hexInput.value = val;
-    // Apply immediately once we have a full valid code
     if (/^#[0-9A-F]{6}$/.test(val)) {
       hexPreview.style.background = val;
       _applyCurveColor(val);
@@ -2408,6 +1686,7 @@ function _showSettingsModal() {
   hexRow.appendChild(hexInput);
   hexRow.appendChild(hexPreview);
   colorSection.appendChild(hexRow);
+
   // Check for updates row
   var updatesRow = document.createElement('div');
   updatesRow.id = '_updates-row';
@@ -2429,7 +1708,7 @@ function _showSettingsModal() {
   });
   rowsCol.appendChild(updatesRow);
 
-  // Update notifications toggle row
+  // Update notifications toggle
   var notifRow = document.createElement('div');
   notifRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);cursor:pointer;';
   var notifLabel = document.createElement('span');
@@ -2461,11 +1740,11 @@ function _showSettingsModal() {
   });
   rowsCol.appendChild(notifRow);
 
+  // Animations toggle
   var animRow = document.createElement('div');
   animRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);cursor:pointer;';
   var animLabel = document.createElement('span');
   animLabel.style.cssText = 'font-size:14px;flex:1;color:#b0b0b0;';
-  animLabel.textContent = 'Animations';
   var animCheck = document.createElement('span');
   animCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
   function _updateAnimCheck() {
@@ -2580,7 +1859,7 @@ function _showSettingsModal() {
 
   var footerLeft = document.createElement('div');
   var madeBy = document.createElement('div');
-  madeBy.textContent = 'made by faye  ·  v' + CURRENT_VERSION;
+  madeBy.textContent = 'made by faye  \u00B7  v' + CURRENT_VERSION;
   madeBy.style.cssText = 'color:#888;font-size:12px;margin-bottom:4px;';
   var ghLink = document.createElement('div');
   ghLink.textContent = 'github.com/fayewave/OpenCurve';
@@ -2588,7 +1867,7 @@ function _showSettingsModal() {
   ghLink.addEventListener('mouseenter', function() { ghLink.style.color = '#4a9eff'; });
   ghLink.addEventListener('mouseleave', function() { ghLink.style.color = '#555'; });
   ghLink.addEventListener('click', function() {
-    try { require('uxp').shell.openExternal('https://github.com/fayewave/OpenCurve'); } catch(e) {}
+    _openReleasesPage();
   });
   footerLeft.appendChild(madeBy);
   footerLeft.appendChild(ghLink);
@@ -2618,7 +1897,6 @@ function _showSettingsModal() {
   modal.appendChild(footer);
   document.body.appendChild(modal);
 
-  // Resize with the panel
   var _settingsRO = new ResizeObserver(function() {
     var nvw = document.documentElement.clientWidth  || document.body.clientWidth;
     var nvh = document.documentElement.clientHeight || document.body.clientHeight;
@@ -2647,4 +1925,36 @@ document.addEventListener('DOMContentLoaded', function() {
   _applyCurveColor(_curveColor);
 });
 
+// ─── Public API ──────────────────────────────────────────────────────────
+return {
+  // State
+  getState:    getState,
+  setState:    setState,
+  stateListeners: stateListeners,
 
+  // Bezier
+  sampleBezier: sampleBezier,
+
+  // Constants
+  DONE_DISPLAY_MS:  DONE_DISPLAY_MS,
+  ERROR_DISPLAY_MS: ERROR_DISPLAY_MS,
+
+  // Init
+  initPanel: initPanel,
+  applyCurveColor: _applyCurveColor,
+  applyPresetLayout: _applyPresetLayout,
+  checkForUpdates: _checkForUpdates,
+  showSettingsModal: _showSettingsModal,
+  showCopyToast: _showCopyToast,
+
+  // isDragging flag (read by bridge poll loop)
+  get isDragging() { return _isDragging; },
+
+  // Update notification state (read by bridge)
+  get updateNotifsOn() { return _updateNotifsOn; },
+
+  // Bridge setter
+  setBridge: function(b) { _bridge = b; },
+};
+
+})();

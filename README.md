@@ -1,5 +1,5 @@
 ![OpenCurve](https://img.shields.io/badge/Premiere%20Pro-UXP%20Plugin-blue)
-![Version](https://img.shields.io/badge/version-1.2.0-lightgrey)
+![Version](https://img.shields.io/badge/version-1.2.1-lightgrey)
 
 <p align="left">
   <img src="img/OpenCurve_Logo14.png" alt="OpenCurve" width="400"/>

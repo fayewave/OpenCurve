@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ExtensionManifest Version="6.0" ExtensionBundleId="com.fayelab.opencurve.cep"
+    ExtensionBundleVersion="1.2.1" ExtensionBundleName="OpenCurve"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+  <ExtensionList>
+    <Extension Id="com.fayelab.opencurve.cep.panel" Version="1.2.1"/>
+  </ExtensionList>
+
+  <ExecutionEnvironment>
+    <HostList>
+      <Host Name="PPRO" Version="[0.0,99.9]"/>
+    </HostList>
+    <LocaleList>
+      <Locale Code="All"/>
+    </LocaleList>
+    <RequiredRuntimeList>
+      <RequiredRuntime Name="CSXS" Version="9.0"/>
+    </RequiredRuntimeList>
+  </ExecutionEnvironment>
+
+  <DispatchInfoList>
+    <Extension Id="com.fayelab.opencurve.cep.panel">
+      <DispatchInfo>
+        <Resources>
+          <MainPath>./index.html</MainPath>
+          <ScriptPath>./jsx/host.jsx</ScriptPath>
+          <CEFCommandLine>
+            <Parameter>--enable-nodejs</Parameter>
+            <Parameter>--mixed-context</Parameter>
+          </CEFCommandLine>
+        </Resources>
+        <Lifecycle>
+          <AutoVisible>true</AutoVisible>
+        </Lifecycle>
+        <UI>
+          <Type>Panel</Type>
+          <Menu>OpenCurve</Menu>
+          <Geometry>
+            <Size>
+              <Width>420</Width>
+              <Height>500</Height>
+            </Size>
+            <MinSize>
+              <Width>380</Width>
+              <Height>440</Height>
+            </MinSize>
+            <MaxSize>
+              <Width>840</Width>
+              <Height>900</Height>
+            </MaxSize>
+          </Geometry>
+          <Icons>
+            <Icon Type="Normal">./icons/icon-dark.png</Icon>
+            <Icon Type="DarkNormal">./icons/icon-dark.png</Icon>
+            <Icon Type="RollOver">./icons/icon-dark.png</Icon>
+            <Icon Type="DarkRollOver">./icons/icon-dark.png</Icon>
+          </Icons>
+        </UI>
+      </DispatchInfo>
+    </Extension>
+  </DispatchInfoList>
+</ExtensionManifest>
