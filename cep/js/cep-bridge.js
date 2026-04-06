@@ -230,7 +230,7 @@
     var text = document.createElement('div');
     text.style.cssText = 'color:#ccc;font-size:12.5px;line-height:1.65;margin-bottom:22px;';
     text.innerHTML =
-      'You have installed the <strong style="color:#e4e4e4">.cep</strong> version of OpenCurve.<br><br>' +
+      'You have installed the <strong style="color:#e4e4e4">.zxp</strong> version of OpenCurve.<br><br>' +
       'This version supports older Premiere versions, but can\u2019t support Undo/Redo with shortcuts.<br><br>' +
       'Use the <strong style="color:#e4e4e4">Undo button</strong> next to the Go button to undo added keyframes.<br><br>' +
       'Undo and Redo are supported in the <strong style="color:#e4e4e4">.ccx</strong> version of OpenCurve for Premiere 2025 onwards.';
