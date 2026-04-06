@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ExtensionManifest Version="6.0" ExtensionBundleId="com.fayelab.opencurve.cep"
-    ExtensionBundleVersion="1.2.1" ExtensionBundleName="OpenCurve"
+    ExtensionBundleVersion="1.2.2" ExtensionBundleName="OpenCurve"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 
   <ExtensionList>
-    <Extension Id="com.fayelab.opencurve.cep.panel" Version="1.2.1"/>
+    <Extension Id="com.fayelab.opencurve.cep.panel" Version="1.2.2"/>
   </ExtensionList>
 
   <ExecutionEnvironment>

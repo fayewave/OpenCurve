@@ -14,12 +14,14 @@
 
   var cs = new CSInterface();
 
-  // ─── Poll state ───��─────────────────────────────────────────────────────
+  // ─── Poll state ────────────────────────────────────────────────────────
   var POLL_MS        = 300; // slightly slower than UXP (200ms) due to evalScript overhead
   var pollTimer      = null;
   var _pollRunning   = false;
   var _lastStatus    = '';
   var _skipPollUntil = 0;
+  var _lastPh        = null; // last playhead position (seconds)
+  var _movingCount   = 0;    // consecutive polls where playhead moved
 
   // ─── Bridge object ──────────────────────────────────────────────────────
   var bridge = {
@@ -136,6 +138,31 @@
         console.error('[OC-CEP] Failed to parse detectContext result:', resultStr);
         return;
       }
+
+      // Track sustained playhead movement — pause detection during playback
+      var ph = result.ph;
+      if (_lastPh !== null && ph !== undefined && ph !== _lastPh) {
+        _movingCount++;
+        _lastPh = ph;
+        if (_movingCount >= 3) {
+          OpenCurve.setState({
+            status: 'playing',
+            availableParams: [],
+            hint: 'Keyframe detection paused while playing',
+            selectedParamKeys: [],
+            validParamKeys: [],
+            paramContexts: {},
+            bakedParamKeys: [],
+          });
+          if ('playing' !== _lastStatus) {
+            _lastStatus = 'playing';
+          }
+          return;
+        }
+      } else {
+        _movingCount = 0;
+      }
+      _lastPh = ph;
 
       var s = OpenCurve.getState();
       var updates = {
@@ -264,7 +291,7 @@
     if (localStorage.getItem('opencurve-post-update') === '1') {
       localStorage.removeItem('opencurve-post-update');
       setTimeout(function() {
-        OpenCurve.showCopyToast('Updated to v' + '1.2.1', '#3ddc84');
+        OpenCurve.showCopyToast('Updated to v' + '1.2.2', '#3ddc84');
       }, 500);
     }
 
