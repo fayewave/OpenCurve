@@ -377,6 +377,7 @@ var BUILT_IN_PRESETS = [
 ];
 
 var STATUS_CONFIG = {
+  'playing':      { cls:'status-idle',  text: 'Keyframe detection paused while playing' },
   'idle':         { cls:'status-idle',  text: function(s){ return s.hint || 'Open a project and select a clip'; } },
   'no-project':   { cls:'status-idle',  text: 'No project open' },
   'no-sequence':  { cls:'status-idle',  text: 'No active sequence' },
@@ -1212,7 +1213,7 @@ function initPanel() {
 }
 
 // ─── Settings / shared variables ─────────────────────────────────────────
-var CURRENT_VERSION     = '1.2.1';
+var CURRENT_VERSION     = '1.2.2';
 var _CURVE_COLOR_KEY    = 'opencurve-line-color';
 var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#4a9eff';
 var _updateAvailable    = false;

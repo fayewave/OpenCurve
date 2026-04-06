@@ -2,7 +2,7 @@
   "manifestVersion": 6,
   "id": "com.fayelab.opencurve",
   "name": "OpenCurve",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "main": "index.html",
   "host": {
     "app": "premierepro",

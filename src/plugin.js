@@ -508,6 +508,8 @@ var PARAM_NAMES = {
   'ADBE Motion':        { 0: 'Position', 1: 'Scale', 2: 'Scale Width', 3: 'Scale Height', 4: 'Rotation', 5: 'Anchor Point', 7: 'Crop Left', 8: 'Crop Top', 9: 'Crop Right', 10: 'Crop Bottom' },
   'AE.ADBE Geometry2':  { 0: 'Transform Anchor Point', 1: 'Transform Position', 3: 'Transform Scale', 5: 'Transform Skew', 6: 'Transform Skew Axis', 7: 'Transform Rotation', 8: 'Transform Opacity', 10: 'Transform Shutter Angle' },
   'ADBE Geometry2':     { 0: 'Transform Anchor Point', 1: 'Transform Position', 3: 'Transform Scale', 5: 'Transform Skew', 6: 'Transform Skew Axis', 7: 'Transform Rotation', 8: 'Transform Opacity', 10: 'Transform Shutter Angle' },
+  'AE.ADBE AECrop':     { 0: 'Crop Left', 1: 'Crop Top', 2: 'Crop Right', 3: 'Crop Bottom' },
+  'ADBE AECrop':        { 0: 'Crop Left', 1: 'Crop Top', 2: 'Crop Right', 3: 'Crop Bottom' },
 };
 function _paramName(compMatchName, idx, fallback) {
   var map = PARAM_NAMES[compMatchName];
@@ -553,13 +555,14 @@ async function _getSelectionItems(sequence) {
   return items;
 }
 
-// Composite clip identity: name + start + end — unique even for same-named stacked clips
-async function _clipIdentity(item) {
+// Composite clip identity — name + start + end + track index.
+// Unique even for same-named clips stacked on different tracks.
+async function _clipIdentity(item, trackIdx) {
   var n = '', s = '', e = '';
   try { n = await item.getName(); } catch(_) {}
   try { var st = await item.getStartTime(); s = st && typeof st.seconds === 'number' ? st.seconds : ''; } catch(_) {}
   try { var et = await item.getEndTime();   e = et && typeof et.seconds === 'number' ? et.seconds : ''; } catch(_) {}
-  return n + '|' + s + '|' + e;
+  return n + '|' + s + '|' + e + (trackIdx !== undefined ? '|T' + trackIdx : '');
 }
 
 // Returns ALL clips at the playhead across all video tracks (topmost first)
@@ -591,7 +594,8 @@ async function _clipsViaTrackScan(sequence, ph) {
         if (ph >= s && ph <= e) {
           var chain = await item.getComponentChain();
           if (chain) {
-            results.push({ clip: item, chain: chain, clipStart: s });
+            var id = await _clipIdentity(item, t);
+            results.push({ clip: item, chain: chain, clipStart: s, trackIdx: t, identity: id });
           }
         }
       } catch(_) {}
@@ -605,38 +609,23 @@ async function _clipViaSelection(sequence) {
   for (var si = 0; si < (selItems || []).length; si++) {
     try {
       var ch = await selItems[si].getComponentChain();
-      if (ch) {
-        var cs = await _clipStart(selItems[si]);
-        return { clip: selItems[si], chain: ch, clipStart: cs, viaSelection: true };
+      if (!ch) continue;
+      // Skip audio track items — their chain contains audio-only components
+      // (e.g. "Internal Volume Mono") instead of video components (Opacity, Motion).
+      var cc = 0; try { cc = await _call(ch, 'getComponentCount'); } catch(_) {}
+      if (cc > 0) {
+        var firstComp = await _call(ch, 'getComponentAtIndex', 0);
+        var mn = ''; try { mn = await _call(firstComp, 'getMatchName'); } catch(_) {}
+        if (mn.indexOf('Internal') === 0) continue; // Audio chain — skip
       }
+      var cs = await _clipStart(selItems[si]);
+      var id = await _clipIdentity(selItems[si]);
+      return { clip: selItems[si], chain: ch, clipStart: cs, viaSelection: true, identity: id };
     } catch(_) {}
   }
   return null;
 }
 
-// Returns array of all clips at playhead.
-// Selected clip goes FIRST so it takes priority (user override).
-// Track-scanned clips fill in the rest (auto-detection).
-async function _clipsAtPlayhead(sequence, ph) {
-  var clips = [];
-
-  // 1. Selected clip first — user's explicit choice takes priority
-  var sel = null;
-  try { sel = await _clipViaSelection(sequence); } catch(_) {}
-  if (sel) clips.push(sel);
-
-  // 2. Track scan for all other clips at playhead
-  var scanned = [];
-  try { scanned = await _clipsViaTrackScan(sequence, ph); } catch(_) {}
-
-  // Add scanned clips, skipping any that match the selected clip
-  for (var i = 0; i < scanned.length; i++) {
-    if (sel && scanned[i].clipStart === sel.clipStart) continue;
-    clips.push(scanned[i]);
-  }
-
-  return clips;
-}
 
 // Get clip start time in sequence (seconds). Keyframe times are clip-local,
 // so we need this to convert the sequence playhead into clip-local time.
@@ -663,7 +652,7 @@ async function _findQualifiedParams(chain, phLocal) {
   var qualified = [];
   var compCount = 0;
   try { compCount = await _call(chain, 'getComponentCount'); }
-  catch(e) { console.log('[FS] getComponentCount failed:', e.message); return qualified; }
+  catch(e) { console.log('[OC] getComponentCount failed:', e.message); return qualified; }
 
   for (var i = 0; i < compCount; i++) {
     var comp;
@@ -680,7 +669,7 @@ async function _findQualifiedParams(chain, phLocal) {
 
       var kfTimes = null;
       try { kfTimes = await _call(param, 'getKeyframeListAsTickTimes'); }
-      catch(e) { console.log('[FS] kfList err ['+i+'_'+j+']:', e.message); }
+      catch(e) {}
       var kfArr = kfTimes ? (Array.isArray(kfTimes) ? kfTimes : Array.from(kfTimes)) : [];
       if (kfArr.length < 2) continue;
 
@@ -698,8 +687,9 @@ async function _findQualifiedParams(chain, phLocal) {
       // Accept both scalar params (Opacity, Scale, Rotation — value is a number)
       // and compound params (Position — value is [x, y]). Skip anything unrecognised.
       var rawVal;
-      try { rawVal = await _getValue(param, kf0); } catch(_) { continue; }
-      if (_extractValue(rawVal) === null) continue;
+      try { rawVal = await _getValue(param, kf0); } catch(valErr) { continue; }
+      var extracted = _extractValue(rawVal);
+      if (extracted === null) continue;
 
       var displayName = _paramName(matchName, j, matchName + ' ' + j);
       qualified.push({ key: i+'_'+j, displayName: displayName,
@@ -712,28 +702,48 @@ async function _findQualifiedParams(chain, phLocal) {
 
 // ─── detectContext ────────────────────────────────────────────────────────
 async function _detectContextFull(project, sequence, ph) {
-  var allClips = await _clipsAtPlayhead(sequence, ph);
-  if (allClips.length === 0) {
-    _cache.clipStartSec = null;
-    return { status: 'no-clip', availableParams: [], hint: 'No video clip found at playhead position' };
-  }
-
-  // Try each clip at the playhead — pick the first with qualifying keyframes
   var bestQualified = null;
   var bestFound     = null;
 
-  for (var ci = 0; ci < allClips.length; ci++) {
-    var found = allClips[ci];
-    var clipStart   = found.clipStart || 0;
-    var clipInPoint = await _clipInPoint(found.clip);
+  // 1. Try selected clip first — fast path, avoids expensive track scan
+  var sel = null;
+  try { sel = await _clipViaSelection(sequence); } catch(_) {}
+  if (sel) {
+    var clipStart   = sel.clipStart || 0;
+    var clipInPoint = await _clipInPoint(sel.clip);
     var phLocal     = (ph - clipStart) + clipInPoint;
-    var qualifiedParams = await _findQualifiedParams(found.chain, phLocal);
-
+    var qualifiedParams = await _findQualifiedParams(sel.chain, phLocal);
     if (qualifiedParams.length > 0) {
       bestQualified = qualifiedParams;
-      bestFound     = found;
-      break; // use the first clip that has keyframes
+      bestFound     = sel;
     }
+  }
+
+  // 2. Fall back to track scan only if NO clip is selected.
+  // When a clip IS selected but has no qualifying params, respect
+  // that selection — don't show another clip's keyframes.
+  var scanned = [];
+  if (!bestQualified && !sel) {
+    try { scanned = await _clipsViaTrackScan(sequence, ph); } catch(_) {}
+
+    for (var ci = 0; ci < scanned.length; ci++) {
+      var found = scanned[ci];
+      var clipStart   = found.clipStart || 0;
+      var clipInPoint = await _clipInPoint(found.clip);
+      var phLocal     = (ph - clipStart) + clipInPoint;
+      var qualifiedParams = await _findQualifiedParams(found.chain, phLocal);
+      if (qualifiedParams.length > 0) {
+        bestQualified = qualifiedParams;
+        bestFound     = found;
+        break;
+      }
+    }
+  }
+
+  // No clips found at playhead at all
+  if (!sel && scanned.length === 0) {
+    _cache.clipStartSec = null;
+    return { status: 'no-clip', availableParams: [], hint: 'No video clip found at playhead position' };
   }
 
   if (!bestQualified) {
@@ -807,10 +817,23 @@ async function detectContext() {
     var playerPos = await sequence.getPlayerPosition();
     var ph = playerPos.seconds;
 
+    // Track sustained playhead movement to distinguish playing from scrubbing.
+    // Short scrubs (1-2 polls) get real-time detection; sustained playback (3+) pauses it.
+    if (_cache.playhead !== null && ph !== _cache.playhead) {
+      _cache.movingCount++;
+      _cache.playhead = ph;
+      _cache.pollCount = 0;
+      if (_cache.movingCount >= 3) {
+        return { status: 'playing', availableParams: [], hint: 'Keyframe detection paused while playing' };
+      }
+    } else {
+      _cache.movingCount = 0;
+    }
+
     // If playhead hasn't moved, check if selection changed before returning cache
     _cache.pollCount++;
     if (_cache.playhead === ph && _cache.lastResult && _cache.pollCount < HEARTBEAT_POLLS) {
-      // Fast selection identity check — composite name|start|end distinguishes any clip
+      // Selection identity check — combined identity of ALL selected items
       var selChanged = false;
       try {
         var selItems = await _getSelectionItems(sequence);
@@ -818,8 +841,10 @@ async function detectContext() {
         if (selCount !== _cache.selItemCount) {
           selChanged = true;
         } else if (selCount > 0) {
-          var clipId = await _clipIdentity(selItems[0]);
-          if (clipId !== _cache.selClipId) selChanged = true;
+          var ids = [];
+          for (var si = 0; si < selCount; si++) ids.push(await _clipIdentity(selItems[si]));
+          var combinedId = ids.join('+');
+          if (combinedId !== _cache.selClipId) selChanged = true;
         }
       } catch(_) {}
       if (!selChanged) return _cache.lastResult;
@@ -834,7 +859,13 @@ async function detectContext() {
       var selSnap = await _getSelectionItems(sequence);
       var snapCount = selSnap ? selSnap.length : 0;
       _cache.selItemCount = snapCount;
-      _cache.selClipId    = snapCount > 0 ? await _clipIdentity(selSnap[0]) : null;
+      if (snapCount > 0) {
+        var snapIds = [];
+        for (var si2 = 0; si2 < snapCount; si2++) snapIds.push(await _clipIdentity(selSnap[si2]));
+        _cache.selClipId = snapIds.join('+');
+      } else {
+        _cache.selClipId = null;
+      }
     } catch(_) {
       _cache.selItemCount = 0;
       _cache.selClipId    = null;
@@ -945,6 +976,7 @@ var BUILT_IN_PRESETS = [
 ];
 
 var STATUS_CONFIG = {
+  'playing':      { cls:'status-idle',  text: 'Keyframe detection paused while playing' },
   'idle':         { cls:'status-idle',  text: function(s){ return s.hint || 'Open a project and select a clip'; } },
   'no-project':   { cls:'status-idle',  text: 'No project open' },
   'no-sequence':  { cls:'status-idle',  text: 'No active sequence' },
@@ -1828,10 +1860,11 @@ var _cache = {
   lastResult:     null,   // full detectContext result
   lastResultAt:   0,      // timestamp of last full detection
   pollCount:      0,      // polls since last full detection
+  movingCount:    0,      // consecutive polls where playhead moved
 };
 
 var FPS_RECHECK_MS     = 30000; // re-detect fps every 30s to catch mid-session changes
-var HEARTBEAT_POLLS    = 15;    // force full re-scan every N polls even if playhead is static
+var HEARTBEAT_POLLS    = 5;     // force full re-scan every N polls even if playhead is static (~1s)
 
 function _invalidateCache() {
   _cache.playhead      = null;
@@ -1915,7 +1948,7 @@ async function poll() {
 window.__opencurvePoll = poll;
 
 // ─── Settings / flyout ─────────────────────────────────────────────────────
-var CURRENT_VERSION     = '1.2.1';
+var CURRENT_VERSION     = '1.2.2';
 var _CURVE_COLOR_KEY    = 'opencurve-line-color';
 var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#4a9eff';
 var _updateAvailable    = false;

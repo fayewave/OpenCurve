@@ -19,6 +19,8 @@ var PARAM_NAMES = {
   'ADBE Motion':        { 0: 'Position', 1: 'Scale', 2: 'Scale Width', 3: 'Scale Height', 4: 'Rotation', 5: 'Anchor Point', 7: 'Crop Left', 8: 'Crop Top', 9: 'Crop Right', 10: 'Crop Bottom' },
   'AE.ADBE Geometry2':  { 0: 'Transform Anchor Point', 1: 'Transform Position', 3: 'Transform Scale', 5: 'Transform Skew', 6: 'Transform Skew Axis', 7: 'Transform Rotation', 8: 'Transform Opacity', 10: 'Transform Shutter Angle' },
   'ADBE Geometry2':     { 0: 'Transform Anchor Point', 1: 'Transform Position', 3: 'Transform Scale', 5: 'Transform Skew', 6: 'Transform Skew Axis', 7: 'Transform Rotation', 8: 'Transform Opacity', 10: 'Transform Shutter Angle' },
+  'AE.ADBE AECrop':     { 0: 'Crop Left', 1: 'Crop Top', 2: 'Crop Right', 3: 'Crop Bottom' },
+  'ADBE AECrop':        { 0: 'Crop Left', 1: 'Crop Top', 2: 'Crop Right', 3: 'Crop Bottom' },
 };
 
 function _paramName(matchName, idx) {
@@ -135,11 +137,13 @@ function detectContext() {
       }
     }
 
-    // Selected clips first, then remaining (topmost first)
-    var allClipResults = selectedClips.concat(otherClips);
+    // When a clip is selected, only check that clip — don't fall through
+    // to other clips if it has no keyframes.
+    var hasSelection = selectedClips.length > 0;
+    var allClipResults = hasSelection ? selectedClips : otherClips;
 
-    if (allClipResults.length === 0) {
-      return _jsonStringify({ status: 'no-clip', availableParams: [], hint: 'No video clip found at playhead position' });
+    if (selectedClips.length === 0 && otherClips.length === 0) {
+      return _jsonStringify({ status: 'no-clip', availableParams: [], hint: 'No video clip found at playhead position', ph: ph });
     }
 
     // Find qualifying params (properties with 2+ keyframes)
@@ -241,6 +245,7 @@ function detectContext() {
         status: 'no-keyframes',
         availableParams: [],
         hint: 'No property with 2+ keyframes found on clips at playhead.',
+        ph: ph,
       });
     }
 
@@ -277,6 +282,7 @@ function detectContext() {
         availableParams: paramList,
         validParamKeys: [],
         hint: 'Move playhead between keyframes (' + first.kf0Time.toFixed(2) + 's \u2013 ' + first.kf1Time.toFixed(2) + 's)',
+        ph: ph,
       });
     }
 
@@ -289,6 +295,7 @@ function detectContext() {
       validParamKeys: validParamKeys,
       paramContexts: paramContexts,
       hint: hintFrames,
+      ph: ph,
     });
 
   } catch(err) {
