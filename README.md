@@ -46,9 +46,9 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 2. Install the `.zxp` file using [aescripts ZXP Installer](https://aescripts.com/learn/zxp-installer/) (free).
 4. Open Premiere Pro and find OpenCurve under **Window → Extensions**
 > **⚠️Warning: The `.zxp` version has limitations.**
-> - Slower scanning speed.
-> - Dedicated Undo button (next to Go) instead of shortcuts due to Premiere limitations. 
-> - Keyframes won't appear until the effects panel is selected.
+> - Slower scanning speed
+> - Dedicated Undo button (next to Go) instead of shortcuts
+> - Keyframes won't appear until the effects panel is selected
 
 ---
 
