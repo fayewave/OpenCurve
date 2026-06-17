@@ -139,12 +139,21 @@
         return;
       }
 
-      // Track sustained playhead movement — pause detection during playback
+      // Nothing changed since the last poll — the host skipped the full scan.
+      // Keep the current UI state untouched (no setState, no re-render).
+      if (result.status === 'unchanged') {
+        _movingCount = 0;
+        if (result.ph !== undefined) _lastPh = result.ph;
+        return;
+      }
+
+      // Track sustained playhead movement — pause detection during playback.
+      // If the user has enabled "Scan During Playback" in Settings, skip the pause.
       var ph = result.ph;
       if (_lastPh !== null && ph !== undefined && ph !== _lastPh) {
         _movingCount++;
         _lastPh = ph;
-        if (_movingCount >= 3) {
+        if (!OpenCurve.scanDuringPlayback && _movingCount >= 3) {
           OpenCurve.setState({
             status: 'playing',
             availableParams: [],
@@ -181,9 +190,14 @@
           return avail.some(function(p) { return p.key === k; });
         });
 
-        // Auto-select all valid params on fresh detection
-        var wasEmpty = (s.availableParams || []).length === 0;
-        if (currentSel.length === 0 && validKeys.length > 0 && wasEmpty) {
+        // Auto-select all valid params whenever the available set changes —
+        // including switching directly from one keyframed clip to another
+        // (previously only fired when availableParams was empty, so moving
+        // between two clips with params left nothing selected).
+        var prevKeys = (s.availableParams || []).map(function(p) { return p.key; }).join(',');
+        var newKeys  = avail.map(function(p) { return p.key; }).join(',');
+        var availChanged = prevKeys !== newKeys;
+        if (currentSel.length === 0 && validKeys.length > 0 && availChanged) {
           currentSel = validKeys.slice();
         }
 
@@ -258,9 +272,13 @@
     text.style.cssText = 'color:#ccc;font-size:12.5px;line-height:1.65;margin-bottom:22px;';
     text.innerHTML =
       'You have installed the <strong style="color:#e4e4e4">.zxp</strong> version of OpenCurve.<br><br>' +
-      'This version supports older Premiere versions, but can\u2019t support Undo/Redo with shortcuts.<br><br>' +
-      'Use the <strong style="color:#e4e4e4">Undo button</strong> next to the Go button to undo added keyframes.<br><br>' +
-      'Undo and Redo are supported in the <strong style="color:#e4e4e4">.ccx</strong> version of OpenCurve for Premiere 2025 onwards.';
+      'This version has limitations:' +
+      '<ul style="text-align:left;margin:8px 0 0;padding-left:20px;">' +
+      '<li>Slower scanning speed.</li>' +
+      '<li>Dedicated Undo button instead of shortcuts.</li>' +
+      '<li>Keyframes won\u2019t appear until the effects panel is selected.</li>' +
+      '</ul><br>' +
+      'Install the <strong style="color:#e4e4e4">.ccx</strong> version of OpenCurve for the full featureset.';
     card.appendChild(text);
 
     var btn = document.createElement('div');
@@ -291,7 +309,7 @@
     if (localStorage.getItem('opencurve-post-update') === '1') {
       localStorage.removeItem('opencurve-post-update');
       setTimeout(function() {
-        OpenCurve.showCopyToast('Updated to v' + '1.2.2', '#3ddc84');
+        OpenCurve.showCopyToast('Updated to v' + '1.2.3', '#3ddc84');
       }, 500);
     }
 

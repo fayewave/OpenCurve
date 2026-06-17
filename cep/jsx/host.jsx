@@ -87,6 +87,35 @@ function _detectFps(sequence) {
   return 30; // fallback
 }
 
+// ─── Detection cache ─────────────────────────────────────────────────────
+// ExtendScript module-level vars persist across evalScript() calls, so we use
+// them to skip the expensive component/property walk when nothing relevant has
+// changed since the last poll. A full rescan is forced every _OC_HEARTBEAT
+// polls so keyframe edits made elsewhere are still picked up.
+var _ocCacheKey    = null;
+var _ocCacheResult = null;
+var _ocPollCount   = 0;
+var _OC_HEARTBEAT  = 6;
+
+var _ocFps      = 0;
+var _ocFpsSeqId = null;
+
+function _ocReturn(jsonStr) {
+  _ocCacheResult = jsonStr;
+  return jsonStr;
+}
+
+// FPS rarely changes within a session — cache per sequence instead of
+// re-reading getSettings() on every poll.
+function _fpsCached(sequence) {
+  var seqId = '';
+  try { seqId = String(sequence.sequenceID || sequence.name || ''); } catch(e) {}
+  if (_ocFps > 0 && seqId === _ocFpsSeqId) return _ocFps;
+  _ocFps = _detectFps(sequence);
+  _ocFpsSeqId = seqId;
+  return _ocFps;
+}
+
 // ─── detectContext ────────────────────────────────────────────────────────
 
 function detectContext() {
@@ -103,7 +132,7 @@ function detectContext() {
 
     var playerPos = sequence.getPlayerPosition();
     var ph = playerPos.seconds;
-    var fps = _detectFps(sequence);
+    var fps = _fpsCached(sequence);
 
     // Find clips at playhead across all video tracks
     // Selected clip goes first so user can override which clip is targeted
@@ -142,8 +171,26 @@ function detectContext() {
     var hasSelection = selectedClips.length > 0;
     var allClipResults = hasSelection ? selectedClips : otherClips;
 
+    // ── Cache short-circuit ──
+    // Build a cheap signature from the playhead + the clips at the playhead.
+    // If it matches the last poll (within the heartbeat window), skip the whole
+    // component/property/getKeys walk and tell the panel nothing changed.
+    var _sig = Math.round(ph * 1000) + '|' + numTracks + '|';
+    for (var _si = 0; _si < allClipResults.length; _si++) {
+      var _ce = allClipResults[_si];
+      var _cn = ''; try { _cn = _ce.clip.name; } catch(e) {}
+      _sig += _cn + '@' + _ce.clipStart.toFixed(3) + ':' + _ce.clipInPoint.toFixed(3)
+            + '#' + _ce.trackIdx + '/' + _ce.clipIdx + ';';
+    }
+    if (_sig === _ocCacheKey && _ocPollCount < _OC_HEARTBEAT && _ocCacheResult !== null) {
+      _ocPollCount++;
+      return '{"status":"unchanged","ph":' + ph + '}';
+    }
+    _ocPollCount = 0;
+    _ocCacheKey  = _sig;
+
     if (selectedClips.length === 0 && otherClips.length === 0) {
-      return _jsonStringify({ status: 'no-clip', availableParams: [], hint: 'No video clip found at playhead position', ph: ph });
+      return _ocReturn(_jsonStringify({ status: 'no-clip', availableParams: [], hint: 'No video clip found at playhead position', ph: ph }));
     }
 
     // Find qualifying params (properties with 2+ keyframes)
@@ -241,12 +288,12 @@ function detectContext() {
     }
 
     if (!bestParams) {
-      return _jsonStringify({
+      return _ocReturn(_jsonStringify({
         status: 'no-keyframes',
         availableParams: [],
         hint: 'No property with 2+ keyframes found on clips at playhead.',
         ph: ph,
-      });
+      }));
     }
 
     var paramList = [];
@@ -264,6 +311,7 @@ function detectContext() {
           clipIdx: p.clipIdx,
           compIdx: p.compIdx,
           propIdx: p.propIdx,
+          displayName: p.displayName,
           kf0Time: p.kf0Time,
           kf1Time: p.kf1Time,
           val0: p.val0,
@@ -277,28 +325,29 @@ function detectContext() {
 
     if (validParamKeys.length === 0) {
       var first = bestParams[0];
-      return _jsonStringify({
+      return _ocReturn(_jsonStringify({
         status: 'outside',
         availableParams: paramList,
         validParamKeys: [],
         hint: 'Move playhead between keyframes (' + first.kf0Time.toFixed(2) + 's \u2013 ' + first.kf1Time.toFixed(2) + 's)',
         ph: ph,
-      });
+      }));
     }
 
     var firstCtx = paramContexts[validParamKeys[0]];
     var hintFrames = firstCtx ? firstCtx.frameCount + ' frames' : '';
 
-    return _jsonStringify({
+    return _ocReturn(_jsonStringify({
       status: 'valid',
       availableParams: paramList,
       validParamKeys: validParamKeys,
       paramContexts: paramContexts,
       hint: hintFrames,
       ph: ph,
-    });
+    }));
 
   } catch(err) {
+    _ocCacheKey = null; // don't let a transient error poison the cache
     return _jsonStringify({
       status: 'error',
       availableParams: [],
@@ -318,61 +367,99 @@ function bakeKeyframes(argsJSON) {
     var project = app.project;
     var sequence = project.activeSequence;
     var totalActions = 0;
+    var firstErr = null;
 
     var undoInfo = [];
 
-    for (var pi = 0; pi < paramRefs.length; pi++) {
-      var ref = paramRefs[pi];
-      var track = sequence.videoTracks[ref.trackIdx];
-      var clip = track.clips[ref.clipIdx];
-      var comp = clip.components[ref.compIdx];
-      var prop = comp.properties[ref.propIdx];
+    // Premiere's ExtendScript `app` has no beginUndoGroup/endUndoGroup (that's
+    // an After Effects API), so only use it if present. Undo is handled by the
+    // panel's own undo button (_undoStack) regardless. The real apply speed-up
+    // comes from passing updateUI=false on intermediate keys (see below).
+    var _hasUndoGroup = (typeof app.beginUndoGroup === 'function' && typeof app.endUndoGroup === 'function');
+    if (_hasUndoGroup) app.beginUndoGroup('OpenCurve bake');
+    try {
+      for (var pi = 0; pi < paramRefs.length; pi++) {
+        var ref = paramRefs[pi];
+        var track = sequence.videoTracks[ref.trackIdx];
+        var clip = track.clips[ref.clipIdx];
+        var comp = clip.components[ref.compIdx];
+        var prop = comp.properties[ref.propIdx];
 
-      var startSec = ref.kf0Time;
-      var totalFrames = ref.frameCount;
-      var val0 = ref.val0;
-      var val1 = ref.val1;
-      var fps = ref.fps;
-      var isCompound = ref.isCompound || false;
+        var startSec = ref.kf0Time;
+        var totalFrames = ref.frameCount;
+        var val0 = ref.val0;
+        var val1 = ref.val1;
+        var fps = ref.fps;
+        var isCompound = ref.isCompound || false;
+        var label = ref.displayName || ('param ' + ref.propIdx);
 
-      if (totalFrames < 2) continue;
+        if (totalFrames < 2) continue;
 
-      var addedTimes = [];
+        var addedTimes = [];
 
-      for (var f = 1; f < totalFrames; f++) {
-        var t = f / totalFrames;
-        var easedT = _sampleBezier(t, curve);
-        var value;
-        if (isCompound) {
-          value = [
-            val0[0] + (val1[0] - val0[0]) * easedT,
-            val0[1] + (val1[1] - val0[1]) * easedT
-          ];
-        } else {
-          value = val0 + (val1 - val0) * easedT;
+        for (var f = 1; f < totalFrames; f++) {
+          var t = f / totalFrames;
+          var easedT = _sampleBezier(t, curve);
+          // Compound (Position / Anchor Point) values are passed as [x, y]
+          // arrays — the correct format for 2D spatial params (the old
+          // "illegal parameter type" bug was fixed in PPro 14.0.1).
+          var value;
+          if (isCompound) {
+            value = [
+              val0[0] + (val1[0] - val0[0]) * easedT,
+              val0[1] + (val1[1] - val0[1]) * easedT
+            ];
+          } else {
+            value = val0 + (val1 - val0) * easedT;
+          }
+          var timeSec = startSec + f / fps;
+
+          // Pass updateUI=true only on the final key of each property: one
+          // redraw per param (so the keyframes actually appear without
+          // re-selecting the clip) instead of a redraw on every frame, which
+          // would defeat the batching speed-up.
+          var doUpdate = (f === totalFrames - 1);
+
+          try {
+            prop.addKey(timeSec);
+            prop.setValueAtKey(timeSec, value, doUpdate);
+            addedTimes.push(timeSec);
+            totalActions++;
+          } catch(e) { if (!firstErr) firstErr = label + ': ' + (e.message || String(e)); }
         }
-        var timeSec = startSec + f / fps;
 
-        try {
-          prop.addKey(timeSec);
-          prop.setValueAtKey(timeSec, value);
-          addedTimes.push(timeSec);
-          totalActions++;
-        } catch(e) {}
+        // Capture a stable clip/component identity alongside the indices so
+        // undo can detect a changed timeline and refuse to touch the wrong
+        // property.
+        var bClipName = '';  try { bClipName = clip.name; } catch(e) {}
+        var bClipStart = 0;  try { bClipStart = clip.start.seconds; } catch(e) {}
+        var bMatchName = ''; try { bMatchName = comp.matchName; } catch(e) {}
+
+        undoInfo.push({
+          trackIdx: ref.trackIdx,
+          clipIdx: ref.clipIdx,
+          compIdx: ref.compIdx,
+          propIdx: ref.propIdx,
+          clipName: bClipName,
+          clipStart: bClipStart,
+          matchName: bMatchName,
+          times: addedTimes,
+        });
       }
+    } finally {
+      if (_hasUndoGroup) app.endUndoGroup();
+    }
 
-      undoInfo.push({
-        trackIdx: ref.trackIdx,
-        clipIdx: ref.clipIdx,
-        compIdx: ref.compIdx,
-        propIdx: ref.propIdx,
-        times: addedTimes,
-      });
+    // Detection caches by playhead+clip identity; the clip's keyframes just
+    // changed, so force a fresh scan on the next poll.
+    _ocCacheKey = null;
+
+    if (totalActions === 0) {
+      return _jsonStringify({ success: false, error: firstErr || 'No keyframes were written.' });
     }
 
     _undoStack.push(undoInfo);
-
-    return _jsonStringify({ success: true, actions: totalActions });
+    return _jsonStringify({ success: true, actions: totalActions, warning: firstErr });
   } catch(err) {
     return _jsonStringify({ success: false, error: err.message || String(err) });
   }
@@ -391,25 +478,54 @@ function undoBake() {
     var batch = _undoStack.pop();
     var sequence = app.project.activeSequence;
     var removed = 0;
+    var skipped = 0;
 
-    for (var i = 0; i < batch.length; i++) {
-      var info = batch[i];
-      try {
-        var track = sequence.videoTracks[info.trackIdx];
-        var clip = track.clips[info.clipIdx];
-        var comp = clip.components[info.compIdx];
-        var prop = comp.properties[info.propIdx];
+    var _hasUndoGroup = (typeof app.beginUndoGroup === 'function' && typeof app.endUndoGroup === 'function');
+    if (_hasUndoGroup) app.beginUndoGroup('OpenCurve undo bake');
+    try {
+      for (var i = 0; i < batch.length; i++) {
+        var info = batch[i];
+        try {
+          var track = sequence.videoTracks[info.trackIdx];
+          var clip = track.clips[info.clipIdx];
+          var comp = clip.components[info.compIdx];
+          var prop = comp.properties[info.propIdx];
 
-        for (var t = 0; t < info.times.length; t++) {
-          try {
-            prop.removeKey(info.times[t]);
-            removed++;
-          } catch(e) {}
-        }
-      } catch(e) {}
+          // Verify the indices still resolve to the SAME clip/component we
+          // baked into. If the timeline changed (clip moved/reordered, effect
+          // added/removed), skip rather than deleting keyframes off whatever
+          // property now sits at those indices.
+          var curName = '';  try { curName = clip.name; } catch(e) {}
+          var curStart = 0;  try { curStart = clip.start.seconds; } catch(e) {}
+          var curMatch = ''; try { curMatch = comp.matchName; } catch(e) {}
+          var okName  = (!info.clipName)  || curName === info.clipName;
+          var okStart = (info.clipStart === undefined) || Math.abs(curStart - info.clipStart) < 0.0005;
+          var okMatch = (!info.matchName) || curMatch === info.matchName;
+          if (!okName || !okStart || !okMatch) { skipped++; continue; }
+
+          for (var t = 0; t < info.times.length; t++) {
+            try {
+              prop.removeKey(info.times[t]);
+              removed++;
+            } catch(e) {}
+          }
+        } catch(e) { skipped++; }
+      }
+    } finally {
+      if (_hasUndoGroup) app.endUndoGroup();
     }
 
-    return _jsonStringify({ success: true, removed: removed, remaining: _undoStack.length });
+    // The clip's keyframes changed — force a fresh detection scan next poll.
+    _ocCacheKey = null;
+
+    if (removed === 0) {
+      // Removed nothing — most likely the clip moved/changed since baking.
+      // Put the batch back so the user can retry after reselecting the clip.
+      _undoStack.push(batch);
+      return _jsonStringify({ success: false, error: 'Could not undo — the original clip may have moved or changed. Select it and try again.', remaining: _undoStack.length });
+    }
+
+    return _jsonStringify({ success: true, removed: removed, skipped: skipped, remaining: _undoStack.length });
   } catch(err) {
     return _jsonStringify({ success: false, error: err.message || String(err) });
   }

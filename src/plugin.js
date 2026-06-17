@@ -69,12 +69,14 @@ try {
         menuItems: [
           { id: 'options',       label: 'Settings' },
           { id: 'check-updates', label: 'Check for Updates' },
+          { id: 'dump-comps',    label: 'Dump Components (Debug)' },
           { id: 'sep',           label: '-' },
           { id: 'made-by',       label: 'made by faye', enabled: false },
         ],
         invokeMenu: function(id) {
           if (id === 'options')       _showSettingsModal();
           if (id === 'check-updates') _checkForUpdates();
+          if (id === 'dump-comps')    _dumpComponents();
           if (id === 'reset')         _confirmReset();
         },
       },
@@ -700,6 +702,542 @@ async function _findQualifiedParams(chain, phLocal) {
   return qualified;
 }
 
+// ─── dumpComponents (debug) ───────────────────────────────────────────────
+// Deep probe: enumerates every component, param, clip method, ProjectItem
+// chain, and VideoFilterFactory match names to find Time Remapping.
+async function _dumpComponents() {
+  try {
+    if (!ppro) { console.log('[FS] dump: premierepro not loaded'); return; }
+    var project = await ppro.Project.getActiveProject();
+    if (!project) { console.log('[FS] dump: no active project'); return; }
+    var sequence = await project.getActiveSequence();
+    if (!sequence) { console.log('[FS] dump: no active sequence'); return; }
+    var playerPos = await sequence.getPlayerPosition();
+    var ph = playerPos.seconds;
+
+    // Try selected clip first, then track scan
+    var found = null;
+    try { found = await _clipViaSelection(sequence); } catch(_) {}
+    if (!found) {
+      var scanned = await _clipsViaTrackScan(sequence, ph);
+      if (scanned.length > 0) found = scanned[0];
+    }
+    if (!found) { console.log('[FS] dump: no clip found at playhead / selection'); return; }
+
+    var clipName = '';
+    try { clipName = await found.clip.getName(); } catch(_) {}
+    var speed = '';
+    try { speed = await found.clip.getSpeed(); } catch(_) {}
+    console.log('[FS] ══════════════════════════════════════════════');
+    console.log('[FS] COMPONENT DUMP — clip: "' + clipName + '" | speed: ' + speed);
+    console.log('[FS] ══════════════════════════════════════════════');
+
+    // ── SECTION 1: TrackItem component chain ──
+    console.log('[FS] ── SECTION 1: TrackItem component chain ──');
+    var chain = found.chain;
+    var compCount = 0;
+    try { compCount = await _call(chain, 'getComponentCount'); } catch(_) {}
+    console.log('[FS] Component count: ' + compCount);
+
+    for (var i = 0; i < compCount; i++) {
+      var comp;
+      try { comp = await _call(chain, 'getComponentAtIndex', i); } catch(_) { continue; }
+      var matchName = ''; try { matchName = await _call(comp, 'getMatchName'); } catch(_) {}
+      var displayName = ''; try { displayName = await _call(comp, 'getDisplayName'); } catch(_) {}
+      var paramCount = 0; try { paramCount = await _call(comp, 'getParamCount'); } catch(_) {}
+      console.log('[FS] Component[' + i + ']: matchName="' + matchName + '" display="' + displayName + '" params=' + paramCount);
+      for (var j = 0; j < paramCount; j++) {
+        var param;
+        try { param = await _call(comp, 'getParam', j); } catch(_) { continue; }
+        var pName = ''; try { pName = await _call(param, 'getDisplayName'); } catch(_) {}
+        var pMatch = ''; try { pMatch = await _call(param, 'getMatchName'); } catch(_) {}
+        var kfSupported = '?'; try { kfSupported = await _call(param, 'areKeyframesSupported'); } catch(_) {}
+        var kfTimes = null;
+        try { kfTimes = await _call(param, 'getKeyframeListAsTickTimes'); } catch(_) {}
+        var kfCount = kfTimes ? (Array.isArray(kfTimes) ? kfTimes.length : 0) : 0;
+        console.log('[FS]   Param[' + j + ']: display="' + pName + '" match="' + pMatch + '" kfOK=' + kfSupported + ' kfs=' + kfCount);
+      }
+    }
+
+    // Also try higher indices beyond reported count (in case count is wrong)
+    console.log('[FS] ── Probing beyond reported count ──');
+    for (var extra = compCount; extra < compCount + 5; extra++) {
+      try {
+        var ec = await _call(chain, 'getComponentAtIndex', extra);
+        if (ec) {
+          var emn = ''; try { emn = await _call(ec, 'getMatchName'); } catch(_) {}
+          var edn = ''; try { edn = await _call(ec, 'getDisplayName'); } catch(_) {}
+          console.log('[FS] HIDDEN Component[' + extra + ']: matchName="' + emn + '" display="' + edn + '"');
+        }
+      } catch(_) {}
+    }
+
+    // ── SECTION 2: Enumerate ALL methods on clip object ──
+    console.log('[FS] ── SECTION 2: All clip object methods ──');
+    var clipMethods = [];
+    try {
+      // Own properties
+      var ownKeys = Object.getOwnPropertyNames(found.clip);
+      for (var ok = 0; ok < ownKeys.length; ok++) clipMethods.push(ownKeys[ok]);
+    } catch(_) {}
+    try {
+      // Prototype chain
+      var proto = Object.getPrototypeOf(found.clip);
+      while (proto && proto !== Object.prototype) {
+        var protoKeys = Object.getOwnPropertyNames(proto);
+        for (var pk = 0; pk < protoKeys.length; pk++) {
+          if (clipMethods.indexOf(protoKeys[pk]) < 0) clipMethods.push(protoKeys[pk]);
+        }
+        proto = Object.getPrototypeOf(proto);
+      }
+    } catch(_) {}
+    try {
+      // for...in (catches enumerable + inherited)
+      for (var k in found.clip) {
+        if (clipMethods.indexOf(k) < 0) clipMethods.push(k);
+      }
+    } catch(_) {}
+    console.log('[FS] Clip methods/props (' + clipMethods.length + '): ' + clipMethods.join(', '));
+
+    // ── SECTION 3: Enumerate ALL methods on chain object ──
+    console.log('[FS] ── SECTION 3: All chain object methods ──');
+    var chainMethods = [];
+    try {
+      var ck = Object.getOwnPropertyNames(chain);
+      for (var ci2 = 0; ci2 < ck.length; ci2++) chainMethods.push(ck[ci2]);
+    } catch(_) {}
+    try {
+      var cp = Object.getPrototypeOf(chain);
+      while (cp && cp !== Object.prototype) {
+        var cpk = Object.getOwnPropertyNames(cp);
+        for (var ci3 = 0; ci3 < cpk.length; ci3++) {
+          if (chainMethods.indexOf(cpk[ci3]) < 0) chainMethods.push(cpk[ci3]);
+        }
+        cp = Object.getPrototypeOf(cp);
+      }
+    } catch(_) {}
+    try { for (var ck2 in chain) { if (chainMethods.indexOf(ck2) < 0) chainMethods.push(ck2); } } catch(_) {}
+    console.log('[FS] Chain methods/props (' + chainMethods.length + '): ' + chainMethods.join(', '));
+
+    // ── SECTION 4: ProjectItem component chain ──
+    console.log('[FS] ── SECTION 4: ProjectItem component chain ──');
+    try {
+      var projItem = await found.clip.getProjectItem();
+      if (projItem) {
+        console.log('[FS] Got ProjectItem');
+        // Enumerate ProjectItem methods
+        var piMethods = [];
+        try { var pik = Object.getOwnPropertyNames(projItem); for (var pi2 = 0; pi2 < pik.length; pi2++) piMethods.push(pik[pi2]); } catch(_) {}
+        try {
+          var pip = Object.getPrototypeOf(projItem);
+          while (pip && pip !== Object.prototype) {
+            var pipk = Object.getOwnPropertyNames(pip);
+            for (var pi3 = 0; pi3 < pipk.length; pi3++) { if (piMethods.indexOf(pipk[pi3]) < 0) piMethods.push(pipk[pi3]); }
+            pip = Object.getPrototypeOf(pip);
+          }
+        } catch(_) {}
+        try { for (var pi4 in projItem) { if (piMethods.indexOf(pi4) < 0) piMethods.push(pi4); } } catch(_) {}
+        console.log('[FS] ProjectItem methods (' + piMethods.length + '): ' + piMethods.join(', '));
+
+        // Try getComponentChain on ProjectItem
+        if (typeof projItem.getComponentChain === 'function') {
+          var piChain = await projItem.getComponentChain();
+          console.log('[FS] ProjectItem.getComponentChain() returned: ' + typeof piChain + ' = ' + JSON.stringify(piChain));
+          if (piChain && typeof piChain === 'object') {
+            var piCC = 0; try { piCC = await _call(piChain, 'getComponentCount'); } catch(_) {}
+            console.log('[FS] ProjectItem chain component count: ' + piCC);
+            for (var pi5 = 0; pi5 < piCC; pi5++) {
+              var pic = await _call(piChain, 'getComponentAtIndex', pi5);
+              var pimn = ''; try { pimn = await _call(pic, 'getMatchName'); } catch(_) {}
+              var pidn = ''; try { pidn = await _call(pic, 'getDisplayName'); } catch(_) {}
+              console.log('[FS]   PI Component[' + pi5 + ']: matchName="' + pimn + '" display="' + pidn + '"');
+            }
+          }
+        } else {
+          console.log('[FS] ProjectItem has no getComponentChain()');
+        }
+      }
+    } catch(e) { console.log('[FS] ProjectItem probe error: ' + e.message); }
+
+    // ── SECTION 5: VideoFilterFactory — all available match names ──
+    console.log('[FS] ── SECTION 5: VideoFilterFactory match names ──');
+    try {
+      var vff = ppro.VideoFilterFactory;
+      if (!vff) {
+        // Try alternate access
+        try { vff = new ppro.VideoFilterFactory(); } catch(_) {}
+      }
+      if (vff) {
+        console.log('[FS] VideoFilterFactory found, type: ' + typeof vff);
+        var vffMethods = [];
+        try { for (var vk in vff) vffMethods.push(vk); } catch(_) {}
+        try { var vok = Object.getOwnPropertyNames(vff); for (var vi = 0; vi < vok.length; vi++) { if (vffMethods.indexOf(vok[vi]) < 0) vffMethods.push(vok[vi]); } } catch(_) {}
+        console.log('[FS] VFF methods: ' + vffMethods.join(', '));
+
+        if (typeof vff.getMatchNames === 'function') {
+          var allMatchNames = await vff.getMatchNames();
+          var mnArr = allMatchNames ? (Array.isArray(allMatchNames) ? allMatchNames : Array.from(allMatchNames)) : [];
+          console.log('[FS] All VideoFilter matchNames (' + mnArr.length + '):');
+          // Log them and flag anything with "time", "remap", "speed"
+          for (var mi = 0; mi < mnArr.length; mi++) {
+            var mn = String(mnArr[mi]).toLowerCase();
+            var flag = '';
+            if (mn.indexOf('time') >= 0 || mn.indexOf('remap') >= 0 || mn.indexOf('speed') >= 0) flag = ' *** POSSIBLE TIME REMAP ***';
+            console.log('[FS]   [' + mi + '] ' + mnArr[mi] + flag);
+          }
+        }
+      } else {
+        console.log('[FS] VideoFilterFactory not accessible');
+      }
+    } catch(e) { console.log('[FS] VFF probe error: ' + e.message); }
+
+    // ── SECTION 6: premierepro module exports ──
+    console.log('[FS] ── SECTION 6: premierepro module exports ──');
+    try {
+      var pproKeys = [];
+      for (var mk in ppro) pproKeys.push(mk);
+      try { var mok = Object.getOwnPropertyNames(ppro); for (var mi2 = 0; mi2 < mok.length; mi2++) { if (pproKeys.indexOf(mok[mi2]) < 0) pproKeys.push(mok[mi2]); } } catch(_) {}
+      console.log('[FS] ppro module keys (' + pproKeys.length + '): ' + pproKeys.join(', '));
+    } catch(e) { console.log('[FS] module probe error: ' + e.message); }
+
+    // ── SECTION 7: ComponentFactory (undocumented — may expose intrinsic components) ──
+    console.log('[FS] ── SECTION 7: ComponentFactory probe ──');
+    try {
+      var cf = ppro.ComponentFactory;
+      console.log('[FS] ComponentFactory type: ' + typeof cf);
+      if (cf) {
+        var cfMethods = [];
+        try { for (var cfk in cf) cfMethods.push(cfk); } catch(_) {}
+        try { var cfok = Object.getOwnPropertyNames(cf); for (var cfi = 0; cfi < cfok.length; cfi++) { if (cfMethods.indexOf(cfok[cfi]) < 0) cfMethods.push(cfok[cfi]); } } catch(_) {}
+        try {
+          var cfp = Object.getPrototypeOf(cf);
+          while (cfp && cfp !== Object.prototype && cfp !== Function.prototype) {
+            var cfpk = Object.getOwnPropertyNames(cfp);
+            for (var cfj = 0; cfj < cfpk.length; cfj++) { if (cfMethods.indexOf(cfpk[cfj]) < 0) cfMethods.push(cfpk[cfj]); }
+            cfp = Object.getPrototypeOf(cfp);
+          }
+        } catch(_) {}
+        console.log('[FS] ComponentFactory methods: ' + cfMethods.join(', '));
+
+        // Try getMatchNames
+        if (typeof cf.getMatchNames === 'function') {
+          var cfNames = await cf.getMatchNames();
+          var cfArr = cfNames ? (Array.isArray(cfNames) ? cfNames : Array.from(cfNames)) : [];
+          console.log('[FS] ComponentFactory matchNames (' + cfArr.length + '):');
+          for (var cfmi = 0; cfmi < cfArr.length; cfmi++) {
+            var cfmn = String(cfArr[cfmi]).toLowerCase();
+            var cfFlag = '';
+            if (cfmn.indexOf('time') >= 0 || cfmn.indexOf('remap') >= 0 || cfmn.indexOf('speed') >= 0) cfFlag = ' *** MATCH ***';
+            console.log('[FS]   [' + cfmi + '] ' + cfArr[cfmi] + cfFlag);
+          }
+        }
+        // Try createComponent with known Time Remap matchNames
+        var tryCandidates = [
+          'AE.ADBE Time Remapping', 'ADBE Time Remapping', 'PR.ADBE Time Remapping',
+          'AE.ADBE Time Remap', 'ADBE Time Remap', 'PR.ADBE Time Remap',
+          'Time Remapping', 'TimeRemapping', 'Speed',
+          'AE.ADBE Speed', 'PR.ADBE Speed', 'ADBE Speed'
+        ];
+        if (typeof cf.createComponent === 'function') {
+          for (var tri = 0; tri < tryCandidates.length; tri++) {
+            try {
+              var trComp = await cf.createComponent(tryCandidates[tri]);
+              if (trComp) {
+                console.log('[FS]   ComponentFactory.createComponent("' + tryCandidates[tri] + '") SUCCEEDED: ' + typeof trComp);
+                try {
+                  var trMn = await _call(trComp, 'getMatchName');
+                  var trDn = await _call(trComp, 'getDisplayName');
+                  var trPc = await _call(trComp, 'getParamCount');
+                  console.log('[FS]     matchName="' + trMn + '" display="' + trDn + '" params=' + trPc);
+                } catch(_) {}
+              }
+            } catch(e) {
+              console.log('[FS]   ComponentFactory.createComponent("' + tryCandidates[tri] + '") → ' + e.message);
+            }
+          }
+        }
+      }
+    } catch(e) { console.log('[FS] ComponentFactory probe error: ' + e.message); }
+
+    // ── SECTION 8: ClipProjectItem — cast and get its component chain ──
+    console.log('[FS] ── SECTION 8: ClipProjectItem probe ──');
+    try {
+      var projItem2 = await found.clip.getProjectItem();
+      var cpi = ppro.ClipProjectItem;
+
+      // Cast ProjectItem → ClipProjectItem
+      var castItem = null;
+      if (cpi && typeof cpi.cast === 'function') {
+        try { castItem = await cpi.cast(projItem2); console.log('[FS] cast() succeeded: ' + typeof castItem); } catch(e) { console.log('[FS] cast() threw: ' + e.message); }
+      }
+      if (!castItem && cpi && typeof cpi.queryCast === 'function') {
+        try { castItem = await cpi.queryCast(projItem2); console.log('[FS] queryCast() succeeded: ' + typeof castItem); } catch(e) { console.log('[FS] queryCast() threw: ' + e.message); }
+      }
+
+      var target = castItem || projItem2;
+      if (target) {
+        // Enumerate methods on the cast object
+        var castMethods = [];
+        try { for (var cmk in target) castMethods.push(cmk); } catch(_) {}
+        try { var cmok = Object.getOwnPropertyNames(target); for (var cmi = 0; cmi < cmok.length; cmi++) { if (castMethods.indexOf(cmok[cmi]) < 0) castMethods.push(cmok[cmi]); } } catch(_) {}
+        try {
+          var cmp = Object.getPrototypeOf(target);
+          while (cmp && cmp !== Object.prototype) {
+            var cmpk = Object.getOwnPropertyNames(cmp);
+            for (var cmj = 0; cmj < cmpk.length; cmj++) { if (castMethods.indexOf(cmpk[cmj]) < 0) castMethods.push(cmpk[cmj]); }
+            cmp = Object.getPrototypeOf(cmp);
+          }
+        } catch(_) {}
+        console.log('[FS] Cast item methods (' + castMethods.length + '): ' + castMethods.join(', '));
+
+        // Try getComponentChain on the cast item
+        if (typeof target.getComponentChain === 'function') {
+          console.log('[FS] Cast item HAS getComponentChain!');
+
+          // First get content type
+          try {
+            var contentType = await target.getContentType();
+            console.log('[FS] getContentType() = ' + JSON.stringify(contentType));
+          } catch(e_ct) { console.log('[FS] getContentType() threw: ' + (e_ct ? (e_ct.message || e_ct.toString()) : 'undefined')); }
+
+          // Get Guid and other objects to try as arguments
+          var mediaTypeGuid = null;
+          try { mediaTypeGuid = await found.clip.getMediaType(); console.log('[FS] clip.getMediaType() = ' + JSON.stringify(mediaTypeGuid)); } catch(_) {}
+          var projItemId = null;
+          try { var pi = await found.clip.getProjectItem(); projItemId = await pi.getId(); console.log('[FS] projectItem.getId() = ' + JSON.stringify(projItemId)); } catch(_) {}
+
+          // Try constructing Guid objects
+          var guidObj = null;
+          try { guidObj = new ppro.Guid(); console.log('[FS] new Guid() = ' + JSON.stringify(guidObj)); } catch(eg) { console.log('[FS] new Guid() threw: ' + (eg ? eg.message : '')); }
+          var guidObj2 = null;
+          try { guidObj2 = new ppro.Guid('video'); console.log('[FS] new Guid("video") = ' + JSON.stringify(guidObj2)); } catch(eg2) { console.log('[FS] new Guid("video") threw: ' + (eg2 ? eg2.message : '')); }
+
+          // Try getComponentChain with everything we have
+          var tryArgs = [
+            { label: 'mediaTypeGuid', args: [mediaTypeGuid] },
+            { label: 'projItemId', args: [projItemId] },
+          ];
+          if (guidObj) tryArgs.push({ label: 'new Guid()', args: [guidObj] });
+          if (guidObj2) tryArgs.push({ label: 'new Guid("video")', args: [guidObj2] });
+          // Also try with two arguments — maybe it needs (trackItem, type) or similar
+          tryArgs.push({ label: 'clip + 0', args: [found.clip, 0] });
+          tryArgs.push({ label: 'clip + 1', args: [found.clip, 1] });
+          tryArgs.push({ label: '1, clip', args: [1, found.clip] });
+          tryArgs.push({ label: 'mediaTypeGuid + clip', args: [mediaTypeGuid, found.clip] });
+          var piChain = null;
+          for (var tai = 0; tai < tryArgs.length; tai++) {
+            try {
+              var taResult = await target.getComponentChain.apply(target, tryArgs[tai].args);
+              console.log('[FS] getComponentChain(' + tryArgs[tai].label + ') → type=' + typeof taResult + ' value=' + JSON.stringify(taResult).substring(0, 200));
+              if (taResult && !piChain) piChain = taResult;
+            } catch(e_ta) {
+              console.log('[FS] getComponentChain(' + tryArgs[tai].label + ') THREW: ' + (e_ta ? (e_ta.message || e_ta.toString()) : 'undefined'));
+            }
+          }
+          if (piChain && typeof piChain === 'object') {
+            // Enumerate chain methods
+            var piChainMethods = [];
+            try { for (var pck in piChain) piChainMethods.push(pck); } catch(_) {}
+            try { var pcok = Object.getOwnPropertyNames(piChain); for (var pci = 0; pci < pcok.length; pci++) { if (piChainMethods.indexOf(pcok[pci]) < 0) piChainMethods.push(pcok[pci]); } } catch(_) {}
+            try {
+              var pcp = Object.getPrototypeOf(piChain);
+              while (pcp && pcp !== Object.prototype) {
+                var pcpk = Object.getOwnPropertyNames(pcp);
+                for (var pcj = 0; pcj < pcpk.length; pcj++) { if (piChainMethods.indexOf(pcpk[pcj]) < 0) piChainMethods.push(pcpk[pcj]); }
+                pcp = Object.getPrototypeOf(pcp);
+              }
+            } catch(_) {}
+            console.log('[FS] PI chain methods: ' + piChainMethods.join(', '));
+
+            var piCC = 0;
+            try { piCC = await _call(piChain, 'getComponentCount'); } catch(e3) { console.log('[FS] PI chain getComponentCount error: ' + (e3 ? e3.message : 'undefined')); }
+            console.log('[FS] ClipProjectItem chain component count: ' + piCC);
+            for (var pi5 = 0; pi5 < piCC; pi5++) {
+              try {
+                var pic = await _call(piChain, 'getComponentAtIndex', pi5);
+                var pimn = ''; try { pimn = await _call(pic, 'getMatchName'); } catch(_) {}
+                var pidn = ''; try { pidn = await _call(pic, 'getDisplayName'); } catch(_) {}
+                var pipc = 0; try { pipc = await _call(pic, 'getParamCount'); } catch(_) {}
+                var flag = '';
+                var pimnLower = pimn.toLowerCase();
+                if (pimnLower.indexOf('time') >= 0 || pimnLower.indexOf('remap') >= 0 || pimnLower.indexOf('speed') >= 0) flag = ' *** POSSIBLE TIME REMAP ***';
+                console.log('[FS]   PI Component[' + pi5 + ']: matchName="' + pimn + '" display="' + pidn + '" params=' + pipc + flag);
+                for (var pij = 0; pij < pipc; pij++) {
+                  try {
+                    var pip2 = await _call(pic, 'getParam', pij);
+                    var pipn = ''; try { pipn = await _call(pip2, 'getDisplayName'); } catch(_) {}
+                    var pipm = ''; try { pipm = await _call(pip2, 'getMatchName'); } catch(_) {}
+                    var pikf = '?'; try { pikf = await _call(pip2, 'areKeyframesSupported'); } catch(_) {}
+                    var pikt = null; try { pikt = await _call(pip2, 'getKeyframeListAsTickTimes'); } catch(_) {}
+                    var pikc = pikt ? (Array.isArray(pikt) ? pikt.length : 0) : 0;
+                    console.log('[FS]     Param[' + pij + ']: display="' + pipn + '" match="' + pipm + '" kfOK=' + pikf + ' kfs=' + pikc);
+                  } catch(_) {}
+                }
+              } catch(e4) { console.log('[FS]   PI Component[' + pi5 + '] error: ' + (e4 ? e4.message : 'undefined')); }
+            }
+          } else if (piChain && typeof piChain === 'string') {
+            console.log('[FS] ClipProjectItem chain is a STRING: "' + piChain + '"');
+          } else {
+            console.log('[FS] ClipProjectItem chain falsy or unexpected type');
+          }
+        } else {
+          console.log('[FS] Cast item does NOT have getComponentChain');
+        }
+
+        // Try getMedia() on the cast ClipProjectItem
+        console.log('[FS] ── Probing ClipProjectItem.getMedia() ──');
+        try {
+          if (typeof target.getMedia === 'function') {
+            var media = await target.getMedia();
+            console.log('[FS] getMedia() type: ' + typeof media + ' truthy: ' + !!media);
+            if (media) {
+              var mediaMethods = [];
+              try { for (var mdk in media) mediaMethods.push(mdk); } catch(_) {}
+              try { var mdok = Object.getOwnPropertyNames(media); for (var mdi = 0; mdi < mdok.length; mdi++) { if (mediaMethods.indexOf(mdok[mdi]) < 0) mediaMethods.push(mdok[mdi]); } } catch(_) {}
+              try {
+                var mdp = Object.getPrototypeOf(media);
+                while (mdp && mdp !== Object.prototype) {
+                  var mdpk = Object.getOwnPropertyNames(mdp);
+                  for (var mdpi = 0; mdpi < mdpk.length; mdpi++) { if (mediaMethods.indexOf(mdpk[mdpi]) < 0) mediaMethods.push(mdpk[mdpi]); }
+                  mdp = Object.getPrototypeOf(mdp);
+                }
+              } catch(_) {}
+              console.log('[FS] Media methods (' + mediaMethods.length + '): ' + mediaMethods.join(', '));
+              // Try getComponentChain on media
+              if (typeof media.getComponentChain === 'function') {
+                console.log('[FS] Media HAS getComponentChain!');
+                try {
+                  var mediaChain = await media.getComponentChain();
+                  console.log('[FS] Media chain: ' + typeof mediaChain);
+                } catch(e_mc) { console.log('[FS] Media.getComponentChain() threw: ' + (e_mc ? (e_mc.message || e_mc.toString()) : '')); }
+              }
+            }
+          }
+        } catch(e_med) { console.log('[FS] getMedia() error: ' + (e_med ? e_med.message : '')); }
+
+        // Also try clip.getMatchName()
+        try {
+          var clipMN = await found.clip.getMatchName();
+          console.log('[FS] clip.getMatchName() = "' + clipMN + '"');
+        } catch(e5) { console.log('[FS] clip.getMatchName() threw: ' + (e5 ? e5.message : 'undefined')); }
+      }
+    } catch(e) { console.log('[FS] ClipProjectItem probe error: ' + (e ? (e.message || e.toString()) : 'undefined')); }
+
+    // ── SECTION 9: Negative / special chain indices ──
+    console.log('[FS] ── SECTION 9: Special chain indices ──');
+    try {
+      var specialIdx = [-1, -2, -3, 100, 999];
+      for (var sii = 0; sii < specialIdx.length; sii++) {
+        try {
+          var scomp = await _call(chain, 'getComponentAtIndex', specialIdx[sii]);
+          if (scomp) {
+            var smn = ''; try { smn = await _call(scomp, 'getMatchName'); } catch(_) {}
+            var sdn = ''; try { sdn = await _call(scomp, 'getDisplayName'); } catch(_) {}
+            console.log('[FS] chain[' + specialIdx[sii] + ']: matchName="' + smn + '" display="' + sdn + '"');
+          } else {
+            console.log('[FS] chain[' + specialIdx[sii] + ']: null');
+          }
+        } catch(e) { console.log('[FS] chain[' + specialIdx[sii] + '] threw: ' + (e ? e.message : '')); }
+      }
+    } catch(_) {}
+
+    // ── SECTION 10: VideoClipTrackItem.cast() — might reveal extra methods ──
+    console.log('[FS] ── SECTION 10: VideoClipTrackItem cast + SequenceUtils/Application/Utils ──');
+    try {
+      var vcti = ppro.VideoClipTrackItem;
+      if (vcti && typeof vcti.cast === 'function') {
+        var castClip = await vcti.cast(found.clip);
+        if (castClip) {
+          var ccMethods = [];
+          try { for (var cck in castClip) ccMethods.push(cck); } catch(_) {}
+          try {
+            var ccpro = Object.getPrototypeOf(castClip);
+            while (ccpro && ccpro !== Object.prototype) {
+              var ccpk = Object.getOwnPropertyNames(ccpro);
+              for (var ccpi = 0; ccpi < ccpk.length; ccpi++) { if (ccMethods.indexOf(ccpk[ccpi]) < 0) ccMethods.push(ccpk[ccpi]); }
+              ccpro = Object.getPrototypeOf(ccpro);
+            }
+          } catch(_) {}
+          console.log('[FS] VideoClipTrackItem.cast() methods (' + ccMethods.length + '): ' + ccMethods.join(', '));
+        }
+      } else {
+        console.log('[FS] VideoClipTrackItem has no cast()');
+      }
+    } catch(e) { console.log('[FS] VCTI cast error: ' + (e ? e.message : '')); }
+
+    // Probe SequenceUtils
+    try {
+      var su = ppro.SequenceUtils;
+      console.log('[FS] SequenceUtils type: ' + typeof su);
+      if (su) {
+        var suMethods = [];
+        try { for (var suk in su) suMethods.push(suk); } catch(_) {}
+        try { var suok = Object.getOwnPropertyNames(su); for (var sui = 0; sui < suok.length; sui++) { if (suMethods.indexOf(suok[sui]) < 0) suMethods.push(suok[sui]); } } catch(_) {}
+        try { if (su.prototype) { var supk = Object.getOwnPropertyNames(su.prototype); for (var supi = 0; supi < supk.length; supi++) { if (suMethods.indexOf(supk[supi]) < 0) suMethods.push(supk[supi]); } } } catch(_) {}
+        console.log('[FS] SequenceUtils methods: ' + suMethods.join(', '));
+      }
+    } catch(_) {}
+
+    // Probe Application
+    try {
+      var app = ppro.Application;
+      console.log('[FS] Application type: ' + typeof app);
+      if (app) {
+        var appMethods = [];
+        try { for (var ak in app) appMethods.push(ak); } catch(_) {}
+        try { var aok = Object.getOwnPropertyNames(app); for (var ai = 0; ai < aok.length; ai++) { if (appMethods.indexOf(aok[ai]) < 0) appMethods.push(aok[ai]); } } catch(_) {}
+        try { if (app.prototype) { var apk = Object.getOwnPropertyNames(app.prototype); for (var api2 = 0; api2 < apk.length; api2++) { if (appMethods.indexOf(apk[api2]) < 0) appMethods.push(apk[api2]); } } } catch(_) {}
+        console.log('[FS] Application methods: ' + appMethods.join(', '));
+      }
+    } catch(_) {}
+
+    // Probe Utils
+    try {
+      var ut = ppro.Utils;
+      console.log('[FS] Utils type: ' + typeof ut);
+      if (ut) {
+        var utMethods = [];
+        try { for (var uk in ut) utMethods.push(uk); } catch(_) {}
+        try { var uok = Object.getOwnPropertyNames(ut); for (var ui = 0; ui < uok.length; ui++) { if (utMethods.indexOf(uok[ui]) < 0) utMethods.push(uok[ui]); } } catch(_) {}
+        try { if (ut.prototype) { var upk = Object.getOwnPropertyNames(ut.prototype); for (var upi = 0; upi < upk.length; upi++) { if (utMethods.indexOf(upk[upi]) < 0) utMethods.push(upk[upi]); } } } catch(_) {}
+        console.log('[FS] Utils methods: ' + utMethods.join(', '));
+      }
+    } catch(_) {}
+
+    // Probe Component class for static methods
+    try {
+      var compClass = ppro.Component;
+      console.log('[FS] Component class type: ' + typeof compClass);
+      if (compClass) {
+        var compClassMethods = [];
+        try { for (var cck2 in compClass) compClassMethods.push(cck2); } catch(_) {}
+        try { var ccok = Object.getOwnPropertyNames(compClass); for (var cci = 0; cci < ccok.length; cci++) { if (compClassMethods.indexOf(ccok[cci]) < 0) compClassMethods.push(ccok[cci]); } } catch(_) {}
+        try { if (compClass.prototype) { var ccpk2 = Object.getOwnPropertyNames(compClass.prototype); for (var ccpi2 = 0; ccpi2 < ccpk2.length; ccpi2++) { if (compClassMethods.indexOf(ccpk2[ccpi2]) < 0) compClassMethods.push(ccpk2[ccpi2]); } } } catch(_) {}
+        console.log('[FS] Component class methods: ' + compClassMethods.join(', '));
+      }
+    } catch(_) {}
+
+    // Probe SequenceEditor
+    try {
+      var se = ppro.SequenceEditor;
+      console.log('[FS] SequenceEditor type: ' + typeof se);
+      if (se) {
+        var seMethods = [];
+        try { for (var sek in se) seMethods.push(sek); } catch(_) {}
+        try { var seok = Object.getOwnPropertyNames(se); for (var sei = 0; sei < seok.length; sei++) { if (seMethods.indexOf(seok[sei]) < 0) seMethods.push(seok[sei]); } } catch(_) {}
+        try { if (se.prototype) { var sepk = Object.getOwnPropertyNames(se.prototype); for (var sepi = 0; sepi < sepk.length; sepi++) { if (seMethods.indexOf(sepk[sepi]) < 0) seMethods.push(sepk[sepi]); } } } catch(_) {}
+        console.log('[FS] SequenceEditor methods: ' + seMethods.join(', '));
+      }
+    } catch(_) {}
+
+    console.log('[FS] ══════════════════════════════════════════════');
+    console.log('[FS] DUMP COMPLETE');
+    console.log('[FS] ══════════════════════════════════════════════');
+  } catch(e) {
+    console.error('[FS] dump error:', e);
+  }
+}
+
 // ─── detectContext ────────────────────────────────────────────────────────
 async function _detectContextFull(project, sequence, ph) {
   var bestQualified = null;
@@ -819,11 +1357,12 @@ async function detectContext() {
 
     // Track sustained playhead movement to distinguish playing from scrubbing.
     // Short scrubs (1-2 polls) get real-time detection; sustained playback (3+) pauses it.
+    // If the user has enabled "scan during playback" in Settings, we never pause.
     if (_cache.playhead !== null && ph !== _cache.playhead) {
       _cache.movingCount++;
       _cache.playhead = ph;
       _cache.pollCount = 0;
-      if (_cache.movingCount >= 3) {
+      if (!_scanDuringPlayback && _cache.movingCount >= 3) {
         return { status: 'playing', availableParams: [], hint: 'Keyframe detection paused while playing' };
       }
     } else {
@@ -885,74 +1424,70 @@ async function detectContext() {
 
 // ─── bakeKeyframes ────────────────────────────────────────────────────────
 // Accepts an array of contexts (one per selected param) and bakes all in one transaction.
+//
+// Premiere 26.3+ requires that Keyframe and Action objects be created INSIDE the
+// locked + transaction scope, and that the lockedAccess/executeTransaction
+// callbacks be synchronous. Building actions beforehand (as earlier versions did)
+// silently fails the transaction in 26.x. So we split the work into two phases:
+//   1. Resolve all async values and compute plain per-frame specs (no API objects).
+//   2. Create the keyframes + actions synchronously inside the transaction.
 async function bakeKeyframes(contexts, curve) {
   if (!contexts || contexts.length === 0) throw new Error('No contexts to bake.');
   var project = contexts[0].project;
-  var allActions = [];
 
+  // ── Phase 1: precompute plain specs ({ seconds, value }) — no Premiere objects ──
+  var jobs = [];
   for (var ci = 0; ci < contexts.length; ci++) {
     var context = contexts[ci];
     var param   = context.param;
-    var kf0     = context.kf0;
-    var kf1     = context.kf1;
     var val0    = context.val0;
     var val1    = context.val1;
     var fps     = context.fps;
 
-    var startSec    = kf0.seconds;
-    var totalFrames = Math.round((kf1.seconds - startSec) * fps);
+    var startSec    = context.kf0.seconds;
+    var totalFrames = Math.round((context.kf1.seconds - startSec) * fps);
     if (totalFrames < 2) { console.log('[FS] skipping param — KFs less than 2 frames apart'); continue; }
 
     var isCompound = Array.isArray(val0);
-    console.log('[FS] bake['+ci+']: '+totalFrames+' frames | compound='+isCompound);
-
-    if (isCompound) {
-      for (var f2 = 1; f2 < totalFrames; f2++) {
-        var easedT2    = sampleBezier(f2 / totalFrames, curve);
-        var kfPerFrame = await _call(param, 'getKeyframePtr', kf0);
-        kfPerFrame.position = ppro.TickTime.createWithSeconds(startSec + f2 / fps);
-        kfPerFrame.value    = new ppro.PointF(
-          val0[0] + (val1[0] - val0[0]) * easedT2,
-          val0[1] + (val1[1] - val0[1]) * easedT2
-        );
-        try {
-          var act2 = param.createAddKeyframeAction(kfPerFrame);
-          if (act2 && typeof act2.then === 'function') act2 = await act2;
-          if (act2) allActions.push(act2);
-          else break;
-        } catch(e) { console.log('[FS] compound kf['+f2+'] threw:', e.message); break; }
-      }
-    } else {
-      var keyframes = [];
-      for (var f = 1; f < totalFrames; f++) {
-        var value = val0 + (val1 - val0) * sampleBezier(f / totalFrames, curve);
-        var kf    = param.createKeyframe(0, 0);
-        kf.position = ppro.TickTime.createWithSeconds(startSec + f / fps);
-        kf.value    = value;
-        keyframes.push(kf);
-      }
-      for (var i = 0; i < keyframes.length; i++) {
-        try {
-          var action = param.createAddKeyframeAction(keyframes[i]);
-          if (action && typeof action.then === 'function') action = await action;
-          if (action) allActions.push(action);
-          else break;
-        } catch(e) { console.log('[FS] createAddKeyframeAction threw:', e.message); break; }
+    var specs = [];
+    for (var f = 1; f < totalFrames; f++) {
+      var t       = sampleBezier(f / totalFrames, curve);
+      var seconds = startSec + f / fps;
+      if (isCompound) {
+        specs.push({ seconds: seconds, value: [
+          val0[0] + (val1[0] - val0[0]) * t,
+          val0[1] + (val1[1] - val0[1]) * t
+        ]});
+      } else {
+        specs.push({ seconds: seconds, value: val0 + (val1 - val0) * t });
       }
     }
+    if (specs.length) jobs.push({ param: param, isCompound: isCompound, specs: specs });
+    console.log('[FS] bake['+ci+']: '+totalFrames+' frames | compound='+isCompound+' | '+specs.length+' kf');
   }
 
-  if (allActions.length === 0) { console.log('[FS] bake: all params skipped (already baked or too close)'); return; }
+  if (jobs.length === 0) { console.log('[FS] bake: all params skipped (already baked or too close)'); return; }
 
-  try {
-    await project.lockedAccess(async function() {
-      await project.executeTransaction(function(compound) {
-        for (var j = 0; j < allActions.length; j++) compound.addAction(allActions[j]);
-      }, 'FayeSmoothify bake');
-    });
-  } catch(e) { console.log('[FS] transaction threw:', e.message); }
+  // ── Phase 2: create keyframes + actions INSIDE the locked transaction (26.3+) ──
+  var added = 0;
+  await project.lockedAccess(function() {
+    project.executeTransaction(function(compound) {
+      for (var ji = 0; ji < jobs.length; ji++) {
+        var param = jobs[ji].param;
+        var specs = jobs[ji].specs;
+        for (var si = 0; si < specs.length; si++) {
+          var kf = jobs[ji].isCompound
+            ? param.createKeyframe(new ppro.PointF(specs[si].value[0], specs[si].value[1]))
+            : param.createKeyframe(specs[si].value);
+          kf.position = ppro.TickTime.createWithSeconds(specs[si].seconds);
+          var action = param.createAddKeyframeAction(kf);
+          if (action) { compound.addAction(action); added++; }
+        }
+      }
+    }, 'OpenCurve bake');
+  });
 
-  console.log('[FS] bake done: '+allActions.length+' actions across '+contexts.length+' param(s)');
+  console.log('[FS] bake done: '+added+' keyframes across '+jobs.length+' param(s)');
 }
 
 function _kfCount(param) {
@@ -1948,7 +2483,7 @@ async function poll() {
 window.__opencurvePoll = poll;
 
 // ─── Settings / flyout ─────────────────────────────────────────────────────
-var CURRENT_VERSION     = '1.2.2';
+var CURRENT_VERSION     = '1.2.3';
 var _CURVE_COLOR_KEY    = 'opencurve-line-color';
 var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#4a9eff';
 var _updateAvailable    = false;
@@ -1958,6 +2493,9 @@ var _UPDATE_NOTIF_KEY   = 'opencurve-update-notif';
 var _updateNotifsOn     = localStorage.getItem(_UPDATE_NOTIF_KEY) !== 'off';
 var _ANIM_KEY           = 'opencurve-animations';
 var _animationsOn       = localStorage.getItem(_ANIM_KEY) !== 'off';
+var _SCAN_PLAYBACK_KEY  = 'opencurve-scan-during-playback';
+// Defaults to On — only off when the user has explicitly turned it off.
+var _scanDuringPlayback = localStorage.getItem(_SCAN_PLAYBACK_KEY) !== 'off';
 var _GRID_KEY           = 'opencurve-grid-size';
 var _gridSize           = parseInt(localStorage.getItem(_GRID_KEY), 10) || 8;
 var _LAYOUT_KEY         = 'opencurve-preset-layout';
@@ -2312,7 +2850,13 @@ function _confirmReset() {
     localStorage.removeItem(_CURVE_COLOR_KEY);
     localStorage.removeItem(_GRID_KEY);
     localStorage.removeItem(_LAYOUT_KEY);
+    localStorage.removeItem(_ANIM_KEY);
+    localStorage.removeItem(_UPDATE_NOTIF_KEY);
+    localStorage.removeItem(_SCAN_PLAYBACK_KEY);
     _applyCurveColor('#4a9eff');
+    _animationsOn       = true;
+    _updateNotifsOn     = true;
+    _scanDuringPlayback = true;
     setState({ curve: { p1x: 0.625, p1y: 0.000, p2x: 0.375, p2y: 1.000 } });
     document.body.removeChild(overlay);
     _showCopyToast('Reset all settings');
@@ -2521,6 +3065,35 @@ function _showSettingsModal() {
     _updateAnimCheck();
   });
   rowsCol.appendChild(animRow);
+
+  // Scan during playback toggle row
+  var scanRow = document.createElement('div');
+  scanRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);cursor:pointer;';
+  var scanLabel = document.createElement('span');
+  scanLabel.style.cssText = 'font-size:14px;flex:1;color:#b0b0b0;';
+  scanLabel.textContent = 'Scan During Playback';
+  var scanCheck = document.createElement('span');
+  scanCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
+  function _updateScanCheck() {
+    scanCheck.innerHTML = _scanDuringPlayback ? _svgCheck : _svgCross;
+    scanLabel.textContent = 'Scan During Playback ' + (_scanDuringPlayback ? 'On' : 'Off');
+    scanRow.style.background = _scanDuringPlayback ? 'rgba(61,220,132,0.08)' : 'rgba(240,96,96,0.08)';
+  }
+  var scanIcon = document.createElement('span');
+  scanIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
+  scanIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><polygon points="4,2 4,14 13,8" fill="none" stroke="#b0b0b0" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+  _updateScanCheck();
+  scanRow.appendChild(scanIcon);
+  scanRow.appendChild(scanLabel);
+  scanRow.appendChild(scanCheck);
+  scanRow.addEventListener('mouseenter', function() { scanRow.style.background = _scanDuringPlayback ? 'rgba(61,220,132,0.15)' : 'rgba(240,96,96,0.15)'; });
+  scanRow.addEventListener('mouseleave', function() { scanRow.style.background = _scanDuringPlayback ? 'rgba(61,220,132,0.08)' : 'rgba(240,96,96,0.08)'; });
+  scanRow.addEventListener('click', function() {
+    _scanDuringPlayback = !_scanDuringPlayback;
+    localStorage.setItem(_SCAN_PLAYBACK_KEY, _scanDuringPlayback ? 'on' : 'off');
+    _updateScanCheck();
+  });
+  rowsCol.appendChild(scanRow);
 
   // Grid size row
   var gridRow = document.createElement('div');

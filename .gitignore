@@ -1,1 +1,12 @@
 CLAUDE.md
+
+# Build artifacts & tooling — never commit these (they bloat .git, which then
+# bloats every packaged .ccx since UXP packaging includes the whole folder).
+# Distribute releases via GitHub Releases instead.
+node_modules/
+packages/
+dist/
+tools/
+*.ccx
+*.zxp
+*.ccx.bak
