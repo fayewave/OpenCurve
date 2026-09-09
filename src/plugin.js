@@ -2698,7 +2698,15 @@ function renderUI(s) {
           var idx  = keys.indexOf(p.key);
           if (idx >= 0) keys.splice(idx, 1);
           else          keys.push(p.key);
-          setState({ selectedParamKeys: keys });
+          // Flip the status here too (like the strip click does): the CEP host
+          // answers "unchanged" while the timeline is still, and that answer
+          // leaves the state alone, so Go would otherwise stay grey until the
+          // heartbeat scan (~2s, longer when the idle panel's timer is throttled)
+          var valid  = s2.validParamKeys || [];
+          var active = keys.filter(function(k){ return valid.indexOf(k) >= 0; }).length;
+          var upd = { selectedParamKeys: keys };
+          if (s2.status === 'valid' || s2.status === 'no-selection') upd.status = active > 0 ? 'valid' : 'no-selection';
+          setState(upd);
         });
         propBtns.appendChild(btn);
       });
