@@ -2611,6 +2611,16 @@ var _tlLanes = [];    // per lane: { key, name, bg, kf: [{ x, t }] }
 var _tlPh    = null;  // playhead { line, tri }
 var _tlHoverKey = null; // row lit up because its lane is hovered
 var _tlHoverText = '';  // shown in the status strip while the pointer is over a lane
+// Lane colours follow the property row's state (same values as the row and pin
+// CSS), not the graph theme colour. bg/hover: lane tint; bar: the playhead's
+// pair; dot: keyframes; pairDot: the pair's two keyframes.
+var _TL_COLORS = {
+  none:    { bg: 'rgba(255,255,255,0)',   hover: 'rgba(255,255,255,0.07)', bar: 'rgba(74,158,255,0.15)', dot: '#8c8c8c', pairDot: '#7dc4ff' },
+  ready:   { bg: 'rgba(255,255,255,0)',   hover: 'rgba(255,255,255,0.07)', bar: 'rgba(74,158,255,0.15)', dot: '#8c8c8c', pairDot: '#7dc4ff' },
+  active:  { bg: 'rgba(74,158,255,0.12)', hover: 'rgba(74,158,255,0.24)',  bar: 'rgba(74,158,255,0.34)', dot: '#8c8c8c', pairDot: '#7dc4ff' },
+  pending: { bg: 'rgba(240,160,48,0.10)', hover: 'rgba(240,160,48,0.22)',  bar: 'rgba(240,160,48,0.28)', dot: '#f7b95a', pairDot: '#f7b95a' },
+  baked:   { bg: 'rgba(61,220,132,0.10)', hover: 'rgba(61,220,132,0.22)',  bar: 'rgba(61,220,132,0.30)', dot: '#8c8c8c', pairDot: '#4ce890' },
+};
 
 function _tlMk(tag, attrs) {
   var e = document.createElementNS(_TL_NS, tag);
@@ -2683,13 +2693,13 @@ function _tlRender(s, force) {
   var laneH  = _tlLaneH(n);
   var H      = Math.max(_tlUserH || _TL_MIN_H, n * laneH + 6); // the dragged height, unless the lanes need more
   var W      = _tlW;
-  var sel    = s.selectedParamKeys || [], valid = s.validParamKeys || [];
-  var sig = [W, H, n, _tlZoomKeys ? 'k' : 'c', range ? range.a.toFixed(4) + '-' + range.b.toFixed(4) : '', _curveColor, n === 0 ? s.status : ''].join('|');
+  var sel    = s.selectedParamKeys || [], valid = s.validParamKeys || [], baked = s.bakedParamKeys || [];
+  var sig = [W, H, n, _tlZoomKeys ? 'k' : 'c', range ? range.a.toFixed(4) + '-' + range.b.toFixed(4) : '', n === 0 ? s.status : ''].join('|');
   if (range) params.forEach(function(p) {
     sig += '|' + p.key + ':' + p.displayName + ':' + (p.tlKf || []).map(function(t){ return Math.round(t * 1000); }).join(',')
          + ':' + (p.tlOut ? 'o' : Math.round(p.tlKf0 * 1000) + '/' + Math.round(p.tlKf1 * 1000))
          + ':' + (p.tlSpans || []).map(function(sp){ return Math.round(sp[0] * 1000) + '~' + Math.round(sp[1] * 1000); }).join(',')
-         + ':' + (sel.indexOf(p.key) >= 0 ? 's' : '') + (valid.indexOf(p.key) >= 0 ? 'v' : '');
+         + ':' + (sel.indexOf(p.key) >= 0 ? 's' : '') + (valid.indexOf(p.key) >= 0 ? 'v' : '') + (baked.indexOf(p.key) >= 0 ? 'b' : '');
   });
   if (force || sig !== _tlSig) {
     _tlSig = sig;
@@ -2720,14 +2730,17 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
   if (cx1 > cx0) els.svg.appendChild(_tlMk('rect', { x: cx0, y: 0, width: cx1 - cx0, height: H, fill: 'rgba(255,255,255,0.035)' }));
   var d    = Math.max(3, Math.min(9, laneH - 3)); // diamond size
   var barH = Math.max(2, Math.min(12, laneH - 4));
-  var sel  = s.selectedParamKeys || [], valid = s.validParamKeys || [];
+  var sel  = s.selectedParamKeys || [], valid = s.validParamKeys || [], baked = s.bakedParamKeys || [];
   params.forEach(function(p, i) {
     var top = g.y0 + i * laneH, cy = top + laneH / 2;
-    var bg = _tlMk('rect', { x: 0, y: top, width: W, height: laneH, fill: 'rgba(255,255,255,0)' });
+    // Same state logic as the row: green beats selection, selected is blue when the
+    // playhead is over the pair and amber until it is, unselected-but-ready gets a blue pair
+    var isSel = sel.indexOf(p.key) >= 0, isValid = valid.indexOf(p.key) >= 0, isBaked = baked.indexOf(p.key) >= 0 && !isSel;
+    var c = _TL_COLORS[isBaked ? 'baked' : isSel ? (isValid ? 'active' : 'pending') : isValid ? 'ready' : 'none'];
+    var bg = _tlMk('rect', { x: 0, y: top, width: W, height: laneH, fill: c.bg });
     els.svg.appendChild(bg);
     if (i < n - 1) els.svg.appendChild(_tlMk('line', { x1: 0, y1: top + laneH, x2: W, y2: top + laneH, stroke: 'rgba(255,255,255,0.05)', 'stroke-width': 1 }));
     var kf = (p.tlKf || []).slice().sort(function(x, y){ return x - y; });
-    var isSel = sel.indexOf(p.key) >= 0, isValid = valid.indexOf(p.key) >= 0;
     // Bars: bakes (green), other per-frame runs (grey), then the pair the playhead is in
     var spans = (p.tlSpans || []).map(function(sp){ return { a: sp[0], b: sp[1], kind: 'bake' }; });
     _tlRuns(kf, fps, spans).forEach(function(r){ spans.push(r); });
@@ -2743,10 +2756,10 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
     if (pair && isValid) {
       var px0 = _tlX(pair.a, g), px1 = _tlX(pair.b, g);
       els.svg.appendChild(_tlMk('rect', { x: px0, y: cy - barH / 2, width: Math.max(1, px1 - px0), height: barH, rx: 1,
-        fill: _hexToRgba(_curveColor, isSel ? 0.42 : 0.18) }));
+        fill: c.bar }));
     }
     // Diamonds: every keyframe except the ones inside a bar (its two ends are kept)
-    var lane = { key: p.key, name: p.displayName, bg: bg, kf: [] };
+    var lane = { key: p.key, name: p.displayName, bg: bg, fill: c.bg, hover: c.hover, kf: [] };
     var lastX = -Infinity;
     kf.forEach(function(t) {
       var x = _tlX(t, g);
@@ -2760,9 +2773,9 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
       if (inside && !edge) return;
       if (!edge && x - lastX < 1.5) return; // too dense to tell apart at this zoom
       lastX = x;
-      var col = '#8c8c8c';
+      var col = c.dot;
       if (edge && edge.kind === 'bake') col = '#4ce890';
-      else if (pair && isValid && (Math.abs(t - pair.a) < 1e-4 || Math.abs(t - pair.b) < 1e-4)) col = _curveColor;
+      else if (pair && isValid && (Math.abs(t - pair.a) < 1e-4 || Math.abs(t - pair.b) < 1e-4)) col = c.pairDot;
       var h = d / 2;
       els.svg.appendChild(_tlMk('polygon', { points: x + ',' + (cy - h) + ' ' + (x + h) + ',' + cy + ' ' + x + ',' + (cy + h) + ' ' + (x - h) + ',' + cy, fill: col }));
     });
@@ -2793,7 +2806,7 @@ function _tlPlacePlayhead(s) {
 
 // Lane highlight: a hovered row lights its lane, a hovered lane lights its row
 function _tlHighlightLane(key) {
-  _tlLanes.forEach(function(l) { l.bg.setAttribute('fill', l.key === key ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0)'); });
+  _tlLanes.forEach(function(l) { l.bg.setAttribute('fill', l.key === key ? l.hover : l.fill); });
 }
 function _tlRowHover(key) {
   if (_tlHoverKey === key) return;
@@ -4631,7 +4644,6 @@ function _applyCurveColor(color) {
     root.style.setProperty('--oc-active-bg',    bg);
     root.style.setProperty('--oc-active-bg2',   bg2);
   }
-  if (_tlEls) _tlRender(getState(), true); // the timeline's pair highlight uses the theme colour
 }
 
 function _showCopyToast(msg, color) {
