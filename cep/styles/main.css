@@ -902,10 +902,12 @@ input, textarea {
 }
 
 /* Go row (undo + go) */
+/* Width is set inline to the property column's width (_tlSetGoWidth), so Go
+   sits under the rows and the status strip under the lanes */
 .go-row {
   display: flex;
-  flex: 0 0 112px;
-  width: 112px;
+  flex: 0 0 180px;
+  width: 180px;
   border-left: 1px solid var(--border);
   position: relative; /* anchors the floating Undo button */
 }

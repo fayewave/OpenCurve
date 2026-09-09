@@ -1418,13 +1418,24 @@ function _tlApplyHeight(live) {
   _tlRender(getState(), true);
 }
 // Property column width: the saved value beside the strip, the whole row without it.
-// Saved on its own key so it is independent of the preset column's width.
+// Saved on its own key so it is independent of the preset column's width. The Go
+// button in the bottom row is kept the same width, so it sits under the rows and
+// the status strip runs under the lanes; the same divider sizes both.
+function _tlSavedPropsWidth() {
+  var w = parseInt(localStorage.getItem(_TL_PROPS_KEY), 10);
+  return (w >= _TL_PROPS_MIN && w <= _TL_PROPS_MAX) ? w : _TL_PROPS_DEF;
+}
+function _tlSetGoWidth(w) {
+  var go = document.querySelector('.go-row');
+  if (!go) return;
+  go.style.width = w + 'px';
+  go.style.flex  = '0 0 ' + w + 'px';
+}
 function _tlApplyPropsWidth() {
   var props = document.getElementById('prop-btns');
   if (!props) return;
+  var w = _tlSavedPropsWidth();
   if (_tlVisible) {
-    var w = parseInt(localStorage.getItem(_TL_PROPS_KEY), 10);
-    if (!(w >= _TL_PROPS_MIN && w <= _TL_PROPS_MAX)) w = _TL_PROPS_DEF;
     props.style.width    = w + 'px';
     props.style.flex     = '0 0 ' + w + 'px';
     props.style.maxWidth = '';
@@ -1433,6 +1444,7 @@ function _tlApplyPropsWidth() {
     props.style.flex     = '1 1 auto';
     props.style.maxWidth = 'none';
   }
+  _tlSetGoWidth(w); // Go keeps the column's width even with the timeline off
 }
 
 function _tlInit() {
@@ -1550,6 +1562,7 @@ function _tlInit() {
       var w = Math.max(_TL_PROPS_MIN, Math.min(_TL_PROPS_MAX, _rw + (_rx - e.clientX)));
       props.style.width = w + 'px';
       props.style.flex  = '0 0 ' + w + 'px';
+      _tlSetGoWidth(w);
     });
     function _endResize() {
       if (_resizing) localStorage.setItem(_TL_PROPS_KEY, props.offsetWidth);
@@ -2840,8 +2853,9 @@ function _applyGraphVisibility() {
   _applyPresetLayout(true);
 }
 
-// The Undo button floats over the right end of Go, which is a 112px button at
-// the end of the bottom row, so nudge the label left while Undo is showing.
+// The Undo button floats over the right end of Go, which is a narrow button
+// (the property column's width) at the end of the bottom row, so nudge the
+// label left while Undo is showing.
 // Inline style because UXP doesn't relayout on class changes.
 function _fitGoForUndo() {
   var goBtn = document.getElementById('go-btn');
