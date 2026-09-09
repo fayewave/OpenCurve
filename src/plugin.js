@@ -2924,13 +2924,21 @@ function _tlSavedPropsWidth() {
 // Go is as wide as the property column plus whatever a vertical scrollbar in
 // #tl-scroll takes: the scrollbar narrows the rows' column, so without this Go's
 // left edge (and the divider beside it) drifted out of line with the handle above.
+// Measured from the rows' actual left edge to the bottom row's right edge with
+// bounding rects (offsetWidth - clientWidth reports 0 for the scrollbar in UXP).
 // Called after every render, since the scrollbar comes and goes with the row count.
 function _tlSetGoWidth() {
   var go = document.querySelector('.go-row');
   if (!go) return;
-  var sc = _tlEls && _tlEls.scroll;
-  var sbw = sc ? Math.max(0, sc.offsetWidth - sc.clientWidth) : 0;
-  var w = _tlPropsW + sbw;
+  var w = _tlPropsW;
+  if (_tlVisible) {
+    try {
+      var props = document.getElementById('prop-btns');
+      var pr = props ? props.getBoundingClientRect() : null;
+      var rr = go.parentNode ? go.parentNode.getBoundingClientRect() : null;
+      if (pr && rr && pr.width > 0 && rr.right > pr.left) w = Math.round(rr.right - pr.left);
+    } catch(_) {}
+  }
   if (go.style.width === w + 'px') return;
   go.style.width = w + 'px';
   go.style.flex  = '0 0 ' + w + 'px';
