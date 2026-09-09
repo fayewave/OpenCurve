@@ -4848,11 +4848,7 @@ function _applyPresetLayout(force) {
   _presetCols = cols;
   var multi = cols > 1;
   var btnCount = list.querySelectorAll('.preset-btn').length;
-  // Two-column list: whole-pixel column widths so the divider between them
-  // sits on a pixel boundary (at 50% of an odd width it smeared over two).
-  var cw = list.clientWidth || w;
-  var leftW = Math.floor(cw / 2), rightW = cw - leftW;
-  var cacheKey = (isGrid ? 'g' : 'l') + cols + '_' + btnCount + (multi && !isGrid ? '_' + cw : '');
+  var cacheKey = (isGrid ? 'g' : 'l') + cols + '_' + btnCount;
   if (!force && _applyPresetLayout._lastKey === cacheKey) return;
   _applyPresetLayout._lastKey = cacheKey;
   var itemW = multi ? (100/cols).toFixed(3) + '%' : '100%';
@@ -4893,14 +4889,14 @@ function _applyPresetLayout(force) {
     } else if (multi) {
       // Two-column list: ordinary rows, half width each, so the whole
       // button set (width, wrap) is inline like the grid (UXP relayout rule).
-      btn.style.width = (idx % 2 === 0 ? leftW : rightW) + 'px';
+      btn.style.width = itemW;
       btn.style.flexDirection = '';
       btn.style.padding = '';
       btn.style.border = '';
       btn.style.borderBottom = '';
       // Left-column rows carry the divider between the columns, in the same
       // colour as the row separators
-      btn.style.borderRight = (idx % 2 === 0) ? '1px solid var(--row-sep)' : '';
+      btn.style.borderRight = (idx % 2 === 0) ? '1px solid var(--border)' : '';
       btn.style.marginRight = '0';
       btn.style.marginBottom = '0';
       btn.style.textAlign = '';
