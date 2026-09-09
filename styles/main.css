@@ -119,7 +119,7 @@ html, body {
   overflow-y: auto;
   overflow-x: hidden;
   contain: layout style;
-  background: #171717; /* a step darker than --bg so the list area reads as a well */
+  background: #111111; /* the same ground as the graph and the timeline */
 }
 
 
