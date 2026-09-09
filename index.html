@@ -7,6 +7,10 @@
 </head>
 <body>
   <div id="app">
+    <!-- Key sink: UXP only fires keydown on inputs, so this concealed read-only field takes focus
+         on any press in the panel and gives the Enter-to-Go shortcut something to listen on (plugin.js initPanel) -->
+    <input id="oc-key-sink" type="text" readonly tabindex="-1" aria-hidden="true"
+           style="position:absolute;left:-2000px;top:0;width:1px;height:1px;opacity:0;border:0;padding:0;margin:0;">
     <div class="main-row">
 
       <!-- Left column: graph + status -->

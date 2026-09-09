@@ -1329,33 +1329,35 @@ function initPanel() {
     invertBtn.addEventListener('click', function() { _applyCurveOp(_invertCurve); });
   }
 
-  // Enter presses Go. UXP only delivers key events to a focused element (a
-  // window-level listener never fires), so the panel root is made focusable
-  // and takes focus on any press inside the panel that isn't on a field. The
-  // listener sits on the document in the capture phase so it sees the key
-  // whichever element inside the panel holds focus. CEP gets the same code.
-  var appRoot = document.getElementById('app') || document.body;
-  if (appRoot && !appRoot.hasAttribute('tabindex')) {
-    appRoot.setAttribute('tabindex', '-1');
-    appRoot.style.outline = 'none';
-  }
+  // Enter presses Go. UXP only delivers keydown to inputs and buttons, and
+  // Premiere keeps Enter for itself unless a text field in the panel has
+  // focus. So #oc-key-sink (a concealed read-only input in index.html) takes
+  // focus on any press inside the panel that isn't on a real field, and the
+  // key is read from it. CEP runs the same code; there the document listener
+  // alone would do, but sharing keeps the two editions identical.
+  var keySink = document.getElementById('oc-key-sink');
   document.addEventListener('pointerdown', function(e) {
+    if (!keySink) return;
     var t   = e.target;
     var tag = t && t.tagName ? String(t.tagName).toLowerCase() : '';
     if (tag === 'input' || tag === 'textarea' || tag === 'select' || (t && t.isContentEditable)) return;
-    try { appRoot.focus(); } catch(_) {}
+    // After the press has been handled, so the sink doesn't steal a click's focus mid-way
+    setTimeout(function() { try { keySink.focus(); } catch(_) {} }, 0);
   }, true);
-  document.addEventListener('keydown', function(e) {
-    if ((e.key !== 'Enter' && e.keyCode !== 13) || e.repeat) return;
+  function _enterGo(e) {
+    if ((e.key !== 'Enter' && e.keyCode !== 13) || e.repeat || e._ocEnter) return;
+    e._ocEnter = true; // the sink's own listener and the document one both see it
     var t   = e.target;
     var tag = t && t.tagName ? String(t.tagName).toLowerCase() : '';
-    if (tag === 'input' || tag === 'textarea' || tag === 'select' || (t && t.isContentEditable)) return;
+    if (t !== keySink && (tag === 'input' || tag === 'textarea' || tag === 'select' || (t && t.isContentEditable))) return;
     if (document.getElementById('settings-modal') || document.getElementById('oc-confirm')) return;
     var go = document.getElementById('go-btn');
     if (!go || go.classList.contains('btn-disabled')) return;
     e.preventDefault();
     go.click();
-  }, true);
+  }
+  if (keySink) keySink.addEventListener('keydown', _enterGo);
+  document.addEventListener('keydown', _enterGo, true);
 
   // Settings: same modal as the flyout menu and the context menus
   var settingsBtn = document.getElementById('graph-settings');
