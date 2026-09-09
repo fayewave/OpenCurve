@@ -3375,7 +3375,7 @@ function renderUI(s) {
       'status-idle':     { dot: '#555',    text: '#888'    },
       'status-warn':     { dot: '#555',    text: '#888'    },
       'status-detected': { dot: '#555',    text: '#888'    },
-      'status-valid':    { dot: '#6cb8ff', text: '#6cb8ff' },
+      'status-valid':    { dot: '#555',    text: '#888'    }, // grey like detected; the rows carry the blue
       'status-error':    { dot: '#f06060', text: '#f06060' },
       'status-done':     { dot: '#4ce890', text: '#4ce890' },
     }[cfg.cls] || { dot: '#555', text: '#888' };
