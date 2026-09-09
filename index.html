@@ -102,6 +102,9 @@
           <div id="prop-btns" class="prop-btns"></div>
         </div>
       </div>
+      <!-- Fade along the bottom edge while there is more to scroll to (_tlUpdateFade). Stacked
+           translucent bands rather than a gradient, which UXP can't be relied on to draw. -->
+      <div id="tl-fade" class="tl-fade"><div style="background:rgba(17,17,17,0.05)"></div><div style="background:rgba(17,17,17,0.12)"></div><div style="background:rgba(17,17,17,0.21)"></div><div style="background:rgba(17,17,17,0.32)"></div><div style="background:rgba(17,17,17,0.45)"></div><div style="background:rgba(17,17,17,0.58)"></div><div style="background:rgba(17,17,17,0.72)"></div><div style="background:rgba(17,17,17,0.86)"></div></div>
     </div>
     <!-- Bottom row: status strip + Go (with its floating Undo), the very bottom of the panel under the
          mini timeline, in both layouts (graph on or off). Go is kept as wide as the property column

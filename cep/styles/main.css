@@ -228,6 +228,28 @@ input, textarea {
   min-height: 32px;
   overflow: hidden;
   background: #111111;
+  position: relative; /* anchors the bottom fade */
+}
+
+/* Fade at the bottom of the lanes + rows while they can scroll further down.
+   Eight bands of the strip's ground colour at rising opacity (inline in the
+   HTML). Opacity is set inline by _tlUpdateFade; right edge stops at the
+   scrollbar. */
+.tl-fade {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 24px;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.tl-fade > div {
+  flex: 1;
 }
 
 /* Drag handle above the timeline row: sets the area's height (up = taller),

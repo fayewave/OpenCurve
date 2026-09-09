@@ -2604,7 +2604,7 @@ var _TL_PROPS_KEY = 'opencurve-props-width';
 var _TL_PROPS_MIN = 100, _TL_PROPS_MAX = 320, _TL_PROPS_DEF = 180; // property column width (px), dragged at #tl-prop-handle
 var _TL_SNAP_PX   = 5;    // a press this close to a keyframe lands exactly on it
 var _TL_DBL_MS    = 400;  // two presses on a lane this close together toggle the property
-var _tlEls   = null;  // { root, scroll, inner, wrap, svg, empty, zoom }
+var _tlEls   = null;  // { root, scroll, inner, wrap, svg, empty, zoom, fade }
 var _tlW     = 0;     // canvas width from the ResizeObserver
 var _tlSig   = '';    // what the lanes were last built from
 var _tlGeo   = null;  // { W, H, laneH, y0, n, a, b } of the last build
@@ -2706,6 +2706,27 @@ function _tlRender(s, force) {
   }
   _tlPlacePlayhead(s);
   _tlSetGoWidth(); // the scrollbar may have appeared or gone with this render
+  _tlUpdateFade();
+}
+
+// Bottom fade: visible while the lanes + rows can scroll further down, gone at
+// the end (and when nothing scrolls). Sizes come from bounding rects, which UXP
+// reports reliably; it stops short of the scrollbar so that stays crisp.
+function _tlUpdateFade() {
+  var els = _tlEls;
+  if (!els || !els.fade || !els.scroll || !els.inner) return;
+  var show = false, rightInset = 0;
+  try {
+    var sr = els.scroll.getBoundingClientRect(), ir = els.inner.getBoundingClientRect();
+    var below = ir.bottom - sr.bottom; // content still hidden under the bottom edge
+    show = below > 1;
+    var props = document.getElementById('prop-btns');
+    var pr = (props && _tlVisible) ? props.getBoundingClientRect() : null;
+    var rr = els.root.getBoundingClientRect();
+    if (pr && pr.width > 0) rightInset = Math.max(0, Math.round(rr.right - pr.right));
+  } catch(_) {}
+  els.fade.style.right   = rightInset + 'px';
+  els.fade.style.opacity = show ? '1' : '0';
 }
 
 function _tlBuild(s, params, range, n, laneH, H, W) {
@@ -2965,7 +2986,9 @@ function _tlInit() {
   if (!root) return;
   _tlEls = { root: root, scroll: document.getElementById('tl-scroll'), inner: root.querySelector('.tl-scroll-inner'),
              wrap: root.querySelector('.tl-canvas-wrap'), svg: document.getElementById('tl-svg'),
-             empty: document.getElementById('tl-empty'), zoom: document.getElementById('tl-zoom') };
+             empty: document.getElementById('tl-empty'), zoom: document.getElementById('tl-zoom'),
+             fade: document.getElementById('tl-fade') };
+  if (_tlEls.scroll) _tlEls.scroll.addEventListener('scroll', _tlUpdateFade);
   var svg = _tlEls.svg;
   function measure() {
     var rect = _tlEls.wrap.getBoundingClientRect();
