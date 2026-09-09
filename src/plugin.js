@@ -2802,12 +2802,12 @@ function initPanel() {
   // Flip / Invert: one-press curve transforms (see _flipCurve / _invertCurve)
   var flipBtn = document.getElementById('flip-curve');
   if (flipBtn) {
-    _attachTooltip(flipBtn, 'Flip the curve: an ease-in becomes the matching ease-out');
+    _attachTooltip(flipBtn, 'Flip');
     flipBtn.addEventListener('click', function() { _applyCurveOp(_flipCurve); });
   }
   var invertBtn = document.getElementById('invert-curve');
   if (invertBtn) {
-    _attachTooltip(invertBtn, 'Invert the curve: swap time and value, so an in-out ease becomes an out-in');
+    _attachTooltip(invertBtn, 'Invert');
     invertBtn.addEventListener('click', function() { _applyCurveOp(_invertCurve); });
   }
 
