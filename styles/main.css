@@ -216,10 +216,10 @@ html, body {
   position: relative; /* anchors the bottom fade */
 }
 
-/* Fade at the bottom of the lanes + rows while they can scroll further down.
-   Eight bands of the strip's ground colour at rising opacity (inline in the
-   HTML). Opacity is set inline by _tlUpdateFade; right edge stops at the
-   scrollbar. */
+/* Fades at the bottom / top of the lanes + rows while they can scroll further
+   that way. Eight bands of the strip's ground colour at rising opacity towards
+   the edge (inline in the HTML). Opacity is set inline by _tlUpdateFade; the
+   right edge stops at the scrollbar. */
 .tl-fade {
   position: absolute;
   left: 0;
@@ -231,6 +231,11 @@ html, body {
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.15s;
+}
+
+.tl-fade-top {
+  bottom: auto;
+  top: 0;
 }
 
 .tl-fade > div {
