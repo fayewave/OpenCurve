@@ -762,7 +762,6 @@ input, textarea {
   align-items: stretch;
   flex-shrink: 0;
   min-width: 0;
-  border-top: 1px solid var(--border);
 }
 
 .status-strip {

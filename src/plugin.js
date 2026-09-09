@@ -2612,6 +2612,7 @@ var _tlLanes = [];    // per lane: { key, name, bg, kf: [{ x, t }] }
 var _tlPh    = null;  // playhead { line, tri }
 var _tlHoverKey = null; // row lit up because its lane is hovered
 var _tlHoverText = '';  // shown in the status strip while the pointer is over a lane
+var _tlPropsW    = 0;   // current property column width (saved value, or live while its handle is dragged)
 // Lane colours follow the property row's state (same values as the row and pin
 // CSS), not the graph theme colour. bg/hover: lane tint; bar: the playhead's
 // pair; dot: keyframes; pairDot: the pair's two keyframes.
@@ -2704,6 +2705,7 @@ function _tlRender(s, force) {
     _tlBuild(s, params, range, n, laneH, H, W);
   }
   _tlPlacePlayhead(s);
+  _tlSetGoWidth(); // the scrollbar may have appeared or gone with this render
 }
 
 function _tlBuild(s, params, range, n, laneH, H, W) {
@@ -2919,9 +2921,17 @@ function _tlSavedPropsWidth() {
   var w = parseInt(localStorage.getItem(_TL_PROPS_KEY), 10);
   return (w >= _TL_PROPS_MIN && w <= _TL_PROPS_MAX) ? w : _TL_PROPS_DEF;
 }
-function _tlSetGoWidth(w) {
+// Go is as wide as the property column plus whatever a vertical scrollbar in
+// #tl-scroll takes: the scrollbar narrows the rows' column, so without this Go's
+// left edge (and the divider beside it) drifted out of line with the handle above.
+// Called after every render, since the scrollbar comes and goes with the row count.
+function _tlSetGoWidth() {
   var go = document.querySelector('.go-row');
   if (!go) return;
+  var sc = _tlEls && _tlEls.scroll;
+  var sbw = sc ? Math.max(0, sc.offsetWidth - sc.clientWidth) : 0;
+  var w = _tlPropsW + sbw;
+  if (go.style.width === w + 'px') return;
   go.style.width = w + 'px';
   go.style.flex  = '0 0 ' + w + 'px';
 }
@@ -2929,6 +2939,7 @@ function _tlApplyPropsWidth() {
   var props = document.getElementById('prop-btns');
   if (!props) return;
   var w = _tlSavedPropsWidth();
+  _tlPropsW = w;
   if (_tlVisible) {
     props.style.width    = w + 'px';
     props.style.flex     = '0 0 ' + w + 'px';
@@ -2938,7 +2949,7 @@ function _tlApplyPropsWidth() {
     props.style.flex     = '1 1 auto';
     props.style.maxWidth = 'none';
   }
-  _tlSetGoWidth(w); // Go keeps the column's width even with the timeline off
+  _tlSetGoWidth(); // Go keeps the column's width even with the timeline off
 }
 
 function _tlInit() {
@@ -3056,7 +3067,8 @@ function _tlInit() {
       var w = Math.max(_TL_PROPS_MIN, Math.min(_TL_PROPS_MAX, _rw + (_rx - e.clientX)));
       props.style.width = w + 'px';
       props.style.flex  = '0 0 ' + w + 'px';
-      _tlSetGoWidth(w);
+      _tlPropsW = w;
+      _tlSetGoWidth();
     });
     function _endResize() {
       if (_resizing) localStorage.setItem(_TL_PROPS_KEY, props.offsetWidth);
