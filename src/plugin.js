@@ -710,6 +710,13 @@ function _stylePeakBtn() {
   btn.style.background = _peakMode ? 'rgba(61,220,132,0.18)' : '';
   btn.style.color      = _peakMode ? '#3ddc84' : '';
   btn.style.opacity    = _peakMode ? '1' : '';
+  // The collapsed toolbar's menu button carries the same tint, so the mode
+  // stays visible while the A-curve button itself is hidden
+  var mb = document.getElementById('graph-tools-menu');
+  if (mb) {
+    mb.style.background = _peakMode ? 'rgba(61,220,132,0.18)' : '';
+    mb.style.color      = _peakMode ? '#3ddc84' : '';
+  }
   // Add Point only makes sense on the bezier view
   // Dim the icon itself (its strokes use currentColor) and pin the background so
   // hover can't light it back up; opacity alone was not reliable in UXP
@@ -3558,6 +3565,102 @@ function initPanel() {
   }
   addHoldZoom(zoomIn,   0.1);
   addHoldZoom(zoomOut, -0.1);
+
+  // Collapsed toolbar: as soon as the bar is too narrow for the left tools and
+  // the zoom/settings group to sit apart, every tool hides and one menu button
+  // takes the top-left spot; its dropdown lists all of them. Widths are the
+  // CSS ones (26px buttons, 5px margins, 12px before settings, 5px padding each
+  // side), plus a little air so they never touch before collapsing.
+  var toolbar  = document.getElementById('graph-toolbar');
+  var menuBtn  = document.getElementById('graph-tools-menu');
+  var _tbTools = [peakBtn, addPtBtn, flipBtn, invertBtn, zoomOut, zoomIn, settingsBtn];
+  var _TB_NEED = (4 * 26 + 3 * 5) + (3 * 26 + 2 * 5 + 12) + 10 + 8;
+  var _tbCollapsed = null;
+  var _tbDismiss   = null;
+  function _hideToolsMenu() {
+    var m = document.getElementById('_tools-menu');
+    if (m && m.parentNode) m.parentNode.removeChild(m);
+    if (_tbDismiss) { window.removeEventListener('pointerdown', _tbDismiss); _tbDismiss = null; }
+  }
+  function _tbLayout() {
+    if (!toolbar || !menuBtn) return;
+    var w = toolbar.clientWidth;
+    if (!(w > 0)) return;
+    var collapse = w < _TB_NEED;
+    if (collapse === _tbCollapsed) return;
+    _tbCollapsed = collapse;
+    // inline display: UXP ignores class-driven display changes
+    _tbTools.forEach(function(b) { if (b) b.style.display = collapse ? 'none' : ''; });
+    menuBtn.style.display = collapse ? '' : 'none';
+    if (!collapse) _hideToolsMenu();
+  }
+  function _showToolsMenu() {
+    _hideToolsMenu();
+    var menu = document.createElement('div');
+    menu.className = 'ctx-menu';
+    menu.id = '_tools-menu';
+    menu.style.display = 'block';
+    function item(label, srcBtn, onClick, opts) {
+      opts = opts || {};
+      var it = document.createElement('div');
+      it.className = 'ctx-menu-item';
+      it.style.display = 'flex';
+      it.style.alignItems = 'center';
+      var ic = document.createElement('span');
+      ic.style.cssText = 'display:flex;align-items:center;justify-content:center;flex-shrink:0;opacity:0.7;margin-right:10px;width:16px;';
+      var svg = srcBtn && srcBtn.querySelector('svg');
+      if (svg) ic.appendChild(svg.cloneNode(true)); // the tool's own icon
+      it.appendChild(ic);
+      var lb = document.createElement('span');
+      lb.textContent = label;
+      it.appendChild(lb);
+      if (opts.active)   { it.style.color = '#3ddc84'; ic.style.opacity = '1'; }
+      if (opts.disabled) { it.style.color = 'rgba(212,212,212,0.35)'; it.style.cursor = 'default'; }
+      it.addEventListener('click', function(ev) {
+        ev.stopPropagation();
+        if (opts.disabled) return;
+        if (!opts.keepOpen) _hideToolsMenu();
+        onClick();
+      });
+      menu.appendChild(it);
+    }
+    item(_peakMode ? 'A-curve Mode: On' : 'A-curve Mode', peakBtn, function() { _setPeakMode(!_peakMode); }, { active: _peakMode });
+    item('Add Point', addPtBtn, function() { _addPoint(); }, { disabled: _peakMode });
+    item('Flip',      flipBtn,   function() { _applyCurveOp(_flipCurve); });
+    item('Invert',    invertBtn, function() { _applyCurveOp(_invertCurve); });
+    item('Zoom In',   zoomIn,    function() { applyZoom(0.1); },  { keepOpen: true });
+    item('Zoom Out',  zoomOut,   function() { applyZoom(-0.1); }, { keepOpen: true });
+    item('Open Settings', settingsBtn, function() { _showSettingsModal(); });
+    menu.style.left = '0px';
+    menu.style.top  = '0px';
+    document.body.appendChild(menu);
+    void menu.offsetHeight;
+    // Below the button, left-aligned with it; above when there is no room below
+    var r  = menuBtn.getBoundingClientRect();
+    var mw = menu.offsetWidth  || 170;
+    var mh = menu.offsetHeight || 100;
+    var ww = document.documentElement.clientWidth  || document.body.clientWidth;
+    var wh = document.documentElement.clientHeight || document.body.clientHeight;
+    var x  = Math.max(0, Math.min(r.left, ww - mw));
+    var y  = (r.bottom + 2 + mh > wh) ? Math.max(0, r.top - 2 - mh) : r.bottom + 2;
+    menu.style.left = x + 'px';
+    menu.style.top  = y + 'px';
+    _tbDismiss = function(ev) {
+      if (menu.contains(ev.target) || menuBtn.contains(ev.target)) return;
+      _hideToolsMenu();
+    };
+    // Deferred so the press that opened it doesn't dismiss it
+    var d = _tbDismiss;
+    setTimeout(function() { if (_tbDismiss === d) window.addEventListener('pointerdown', d); }, 0);
+  }
+  if (menuBtn) {
+    _attachTooltip(menuBtn, 'Graph tools');
+    menuBtn.addEventListener('click', function() {
+      if (document.getElementById('_tools-menu')) _hideToolsMenu(); else _showToolsMenu();
+    });
+  }
+  if (toolbar && typeof ResizeObserver !== 'undefined') new ResizeObserver(_tbLayout).observe(toolbar);
+  _tbLayout();
 
   // ── Unified preset system ─────────────────────────────────────
   var _STORAGE_KEY  = 'opencurve-presets-v10';

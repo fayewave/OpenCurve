@@ -352,8 +352,10 @@ html, body {
   transition: background 0.12s, color 0.12s;
 }
 
-/* First tool on the left sits flush with the toolbar padding */
-.graph-toolbar > .tool-btn:first-child {
+/* First tool on the left sits flush with the toolbar padding (the collapsed
+   menu button and A-curve are never shown together, so both are "first") */
+#graph-tools-menu,
+#peak-mode {
   margin-left: 0;
 }
 
