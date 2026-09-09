@@ -510,8 +510,7 @@ html, body {
   flex-direction: column;
   flex-shrink: 0;
   width: 180px;
-  min-width: 100px;
-  max-width: 320px;
+  min-width: 100px;   /* max is set by the drag: panel width minus 100px for the lanes */
 }
 
 .prop-btn {
