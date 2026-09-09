@@ -2768,6 +2768,9 @@ function renderUI(s) {
     if (clipEl) {
       clipEl.textContent   = showClip ? s.clipName : '';
       clipEl.style.display = showClip ? 'block' : 'none'; // inline: UXP ignores class-driven display
+      // Colour inline too: UXP doesn't restyle the span when only the strip's
+      // class changes, so ".status-detected .status-clip" left it white
+      clipEl.style.color   = s.status === 'valid' ? '#6cb8ff' : '#888';
     }
     if (showClip) msg = '\u00b7 ' + msg;
     // Clickable whenever there are valid params: click selects all, click again clears
