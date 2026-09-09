@@ -198,16 +198,30 @@ html, body {
 }
 
 /* ─── Mini timeline ─────────────────────────────────────────── */
-/* Read-only keyframe lanes along the bottom of the panel (plugin.js _tlRender).
-   Height and lane geometry are set inline from the property count. */
+/* The timeline row: tools column, keyframe lanes (plugin.js _tlRender), a
+   column-resize handle and the property rows at the right. Each lane is one
+   row tall (32px) so the lanes line up with the rows beside them; the row's
+   height comes from the rows / the SVG, never below one row. */
 .oc-timeline {
   display: flex;
   flex-direction: row;
   align-items: stretch;
   flex-shrink: 0;
   min-width: 0;
+  min-height: 32px;
   overflow: hidden;
   background: #111111;
+  border-top: 1px solid var(--border);
+}
+
+/* Narrow column at the left end holding the zoom toggle */
+.tl-tools {
+  width: 30px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 5px;
 }
 
 .tl-canvas-wrap {
@@ -231,38 +245,11 @@ html, body {
   pointer-events: none;
 }
 
-/* Top edge of the strip (sits between the status strip / Go row and the lanes): drag up to make it
-   taller, same look as the sidebar handle */
-.tl-resize-handle {
-  height: 4px;
-  border-top: 1px solid var(--border);
-  flex-shrink: 0;
-  cursor: row-resize;
-  background: transparent;
-  transition: background 0.15s;
-  position: relative;
-}
-
-.tl-resize-handle::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: -6px;
-  bottom: -6px;
-  cursor: row-resize;
-}
-
-.tl-resize-handle:hover {
-  background: var(--border2);
-}
-
-/* Zoom toggle (whole clip / keyframes) at the right end, smaller than the graph tools */
+/* Zoom toggle (whole clip / keyframes), a little smaller than the graph tools */
 .tl-zoom {
-  width: 20px;
-  height: 20px;
-  margin: 0 5px 0 3px;
-  align-self: center;
+  width: 22px;
+  height: 22px;
+  margin: 0;
 }
 
 /* Row lit up because its lane in the timeline is hovered (same look as :hover) */
@@ -464,15 +451,15 @@ html, body {
 }
 
 /* ─── Property buttons ──────────────────────────────────────── */
-.bottom-group {
-  margin-top: auto;
-  display: flex;
-  flex-direction: column;
-}
-
+/* Property rows, at the right end of the timeline row. Width is inline
+   (_tlApplyPropsWidth: the saved value, or the full row with the timeline off). */
 .prop-btns {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
+  width: 180px;
+  min-width: 100px;
+  max-width: 320px;
 }
 
 .prop-btn {

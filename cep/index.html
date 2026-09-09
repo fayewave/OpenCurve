@@ -71,28 +71,29 @@
       <!-- Resize handle -->
       <div id="resize-handle" class="resize-handle"></div>
 
-      <!-- Right column: controls + go -->
+      <!-- Right column: presets -->
       <div id="right-col" class="right-col">
         <div class="controls-panel">
           <div id="all-presets-list"></div>
-          <div class="bottom-group">
-            <div id="prop-btns" class="prop-btns"></div>
-          </div>
         </div>
       </div>
 
     </div>
-    <!-- Mini timeline: read-only keyframe lanes for the clip the rows belong to, one per property, along the
-         bottom of the panel under the status strip and Go. The handle above it drags the height
-         (_tlRender; set inline from the lane count until dragged); the button toggles clip/keyframe zoom.
-         What's under the pointer shows in the status strip. -->
-    <div id="tl-resize" class="tl-resize-handle"></div>
+    <!-- Timeline row: the property rows sit at the right (their own width, dragged at #tl-prop-handle,
+         independent of the preset column above) and each row's lane runs leftwards across the strip at
+         the row's 32px height, so a lane reads as part of its property button (_tlRender). The tools
+         column at the left holds the clip/keyframe zoom toggle. With the timeline off (Settings) only
+         the rows remain and take the full width. What's under the pointer shows in the status strip. -->
     <div id="oc-timeline" class="oc-timeline">
+      <div class="tl-tools">
+        <div id="tl-zoom" class="tool-btn tl-zoom"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3.2 1.5H1.5v9h1.7M8.8 1.5h1.7v9H8.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><polygon points="6,3.4 8.6,6 6,8.6 3.4,6" fill="currentColor"/></svg></div>
+      </div>
       <div class="tl-canvas-wrap">
         <svg id="tl-svg" xmlns="http://www.w3.org/2000/svg"></svg>
         <div id="tl-empty" class="tl-empty"></div>
       </div>
-      <div id="tl-zoom" class="tool-btn tl-zoom"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3.2 1.5H1.5v9h1.7M8.8 1.5h1.7v9H8.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><polygon points="6,3.4 8.6,6 6,8.6 3.4,6" fill="currentColor"/></svg></div>
+      <div id="tl-prop-handle" class="resize-handle"></div>
+      <div id="prop-btns" class="prop-btns"></div>
     </div>
     <!-- Bottom row: status strip + Go (with its floating Undo), the very bottom of the panel under the
          mini timeline, in both layouts (graph on or off). -->

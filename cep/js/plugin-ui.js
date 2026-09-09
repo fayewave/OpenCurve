@@ -1099,15 +1099,12 @@ var _TL_KEY       = 'opencurve-timeline';
 var _tlVisible    = localStorage.getItem(_TL_KEY) !== 'off';
 var _TL_ZOOM_KEY  = 'opencurve-timeline-zoom';
 var _tlZoomKeys   = localStorage.getItem(_TL_ZOOM_KEY) === 'keys'; // zoom to the keyframes instead of the whole clip
-var _TL_H_KEY     = 'opencurve-timeline-height';
-var _tlUserH      = parseInt(localStorage.getItem(_TL_H_KEY), 10) || null; // dragged height (px), null = fit the lanes
-var _TL_H_MAX     = 200;  // drag limit; the minimum is _TL_MIN_H
 var _TL_NS        = 'http://www.w3.org/2000/svg';
 var _TL_PAD_X     = 6;
-var _TL_MIN_H     = 24;   // one lane still leaves room for the zoom button
-var _TL_LANE_MAX  = 10;   // lane height in px with a few properties (24 once the strip has been dragged taller)...
-var _TL_LANE_MIN  = 4;    // ...thinning down to this with many (lanes never merge)
-var _TL_LANES_H   = 40;   // the lanes share this much height before they reach the minimum
+var _TL_ROW_H     = 32;   // lane height = .prop-btn height, so lane i sits beside row i
+var _TL_MIN_H     = 32;   // the empty strip (no rows) keeps one row's height
+var _TL_PROPS_KEY = 'opencurve-props-width';
+var _TL_PROPS_MIN = 100, _TL_PROPS_MAX = 320, _TL_PROPS_DEF = 180; // property column width (px), dragged at #tl-prop-handle
 var _TL_SNAP_PX   = 5;    // a press this close to a keyframe lands exactly on it
 var _TL_DBL_MS    = 400;  // two presses on a lane this close together toggle the property
 var _tlEls   = null;  // { root, wrap, svg, readout, empty, zoom }
@@ -1156,14 +1153,8 @@ function _tlRange(s) {
 function _tlX(t, g)   { return _TL_PAD_X + (t - g.a) / (g.b - g.a) * (g.W - 2 * _TL_PAD_X); }
 function _tlSec(x, g) { return g.a + (x - _TL_PAD_X) / (g.W - 2 * _TL_PAD_X) * (g.b - g.a); }
 
-// Lane height for n lanes: 10px that thin out (never merge) as properties pile
-// up. Once the strip has been dragged to a height, the lanes share that instead
-// and may grow to 24px.
-function _tlLaneH(n) {
-  if (n <= 0) return _TL_LANE_MAX;
-  if (_tlUserH) return Math.max(_TL_LANE_MIN, Math.min(24, Math.floor((_tlUserH - 6) / n)));
-  return Math.max(_TL_LANE_MIN, Math.min(_TL_LANE_MAX, Math.floor(_TL_LANES_H / n)));
-}
+// Every lane is one property row tall, so the lanes line up with the rows beside them
+function _tlLaneH(n) { return _TL_ROW_H; }
 
 function _tlEmptyText(s) {
   var st = s.status;
@@ -1198,7 +1189,7 @@ function _tlRender(s, force) {
   var range  = _tlRange(s);
   var n      = range ? params.length : 0;
   var laneH  = _tlLaneH(n);
-  var H      = Math.max(_tlUserH || _TL_MIN_H, n * laneH + 6); // the dragged height, unless the lanes need more
+  var H      = Math.max(_TL_MIN_H, params.length * laneH); // one lane per row, whatever is drawn in it
   var W      = _tlW;
   var sel    = s.selectedParamKeys || [], valid = s.validParamKeys || [], baked = s.bakedParamKeys || [];
   var sig = [W, H, n, _tlZoomKeys ? 'k' : 'c', range ? range.a.toFixed(4) + '-' + range.b.toFixed(4) : '', n === 0 ? s.status : ''].join('|');
@@ -1217,13 +1208,12 @@ function _tlRender(s, force) {
 
 function _tlBuild(s, params, range, n, laneH, H, W) {
   var els = _tlEls;
-  els.root.style.height = H + 'px';
   els.svg.setAttribute('width', W);
   els.svg.setAttribute('height', H);
   _tlClear(els.svg);
   _tlLanes = [];
   _tlPh = null;
-  var g = { W: W, H: H, laneH: laneH, n: n, a: range ? range.a : 0, b: range ? range.b : 1, y0: Math.floor((H - n * laneH) / 2) };
+  var g = { W: W, H: H, laneH: laneH, n: n, a: range ? range.a : 0, b: range ? range.b : 1, y0: 0 };
   _tlGeo = g;
   var hasLanes = n > 0 && W > 2 * _TL_PAD_X + 10;
   els.empty.textContent   = hasLanes ? '' : _tlEmptyText(s);
@@ -1232,7 +1222,7 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
   if (!hasLanes) { _tlHighlightLane(null); _tlRowHover(null); _tlShowReadout(null); return; }
   var tl = s.tl, fps = tl.fps || 25;
   var d    = Math.max(3, Math.min(9, laneH - 3)); // diamond size
-  var barH = Math.max(2, Math.min(12, laneH - 4));
+  var barH = Math.max(2, Math.min(14, laneH - 4));
   var sel  = s.selectedParamKeys || [], valid = s.validParamKeys || [], baked = s.bakedParamKeys || [];
   params.forEach(function(p, i) {
     var top = g.y0 + i * laneH, cy = top + laneH / 2;
@@ -1242,7 +1232,8 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
     var c = _TL_COLORS[isBaked ? 'baked' : isSel ? (isValid ? 'active' : 'pending') : isValid ? 'ready' : 'none'];
     var bg = _tlMk('rect', { x: 0, y: top, width: W, height: laneH, fill: c.bg });
     els.svg.appendChild(bg);
-    if (i < n - 1) els.svg.appendChild(_tlMk('line', { x1: 0, y1: top + laneH, x2: W, y2: top + laneH, stroke: 'rgba(255,255,255,0.05)', 'stroke-width': 1 }));
+    // Same separator as the row's border-bottom, so the lane and the row read as one
+    els.svg.appendChild(_tlMk('line', { x1: 0, y1: top + laneH - 0.5, x2: W, y2: top + laneH - 0.5, stroke: 'rgba(255,255,255,0.07)', 'stroke-width': 1 }));
     var kf = (p.tlKf || []).slice().sort(function(x, y){ return x - y; });
     // Bars: bakes (green), other per-frame runs (grey), then the pair the playhead is in
     var spans = (p.tlSpans || []).map(function(sp){ return { a: sp[0], b: sp[1], kind: 'bake' }; });
@@ -1382,14 +1373,34 @@ function _tlStyleZoomBtn() {
   btn.style.background = _tlZoomKeys ? 'rgba(61,220,132,0.18)' : '';
   btn.style.color      = _tlZoomKeys ? '#3ddc84' : '';
 }
-// Settings > Timeline. Inline display: UXP doesn't relayout on class changes
+// Settings > Timeline. With the strip off only the property rows remain in the
+// row and take its full width. Inline display: UXP doesn't relayout on class changes
 function _applyTimelineVisibility() {
   var root = document.getElementById('oc-timeline');
   if (!root) return;
-  root.style.display = _tlVisible ? 'flex' : 'none';
-  var handle = document.getElementById('tl-resize');
-  if (handle) handle.style.display = _tlVisible ? 'block' : 'none';
+  ['.tl-tools', '.tl-canvas-wrap', '#tl-prop-handle'].forEach(function(sel) {
+    var el = root.querySelector(sel);
+    if (el) el.style.display = _tlVisible ? '' : 'none';
+  });
+  _tlApplyPropsWidth();
   if (_tlVisible) { _tlSig = ''; _tlRender(getState(), true); }
+}
+// Property column width: the saved value beside the strip, the whole row without it.
+// Saved on its own key so it is independent of the preset column's width.
+function _tlApplyPropsWidth() {
+  var props = document.getElementById('prop-btns');
+  if (!props) return;
+  if (_tlVisible) {
+    var w = parseInt(localStorage.getItem(_TL_PROPS_KEY), 10);
+    if (!(w >= _TL_PROPS_MIN && w <= _TL_PROPS_MAX)) w = _TL_PROPS_DEF;
+    props.style.width    = w + 'px';
+    props.style.flex     = '0 0 ' + w + 'px';
+    props.style.maxWidth = '';
+  } else {
+    props.style.width    = '';
+    props.style.flex     = '1 1 auto';
+    props.style.maxWidth = 'none';
+  }
 }
 
 function _tlInit() {
@@ -1481,24 +1492,27 @@ function _tlInit() {
     });
     _tlEls.zoom.addEventListener('click', function() { _tlSetZoom(!_tlZoomKeys); });
   }
-  // Top edge drags the strip taller or shorter (same pattern as the sidebar handle): up = taller
-  var handle = document.getElementById('tl-resize');
-  if (handle) {
-    var _ry = 0, _rh = 0, _resizing = false;
+  // Handle between the lanes and the property rows drags the rows' width (same
+  // pattern as the sidebar handle; the lanes re-measure through the ResizeObserver)
+  var handle = document.getElementById('tl-prop-handle');
+  var props  = document.getElementById('prop-btns');
+  if (handle && props) {
+    var _rx = 0, _rw = 0, _resizing = false;
     handle.addEventListener('pointerdown', function(e) {
       _resizing = true;
-      _ry = e.clientY;
-      _rh = root.offsetHeight;
+      _rx = e.clientX;
+      _rw = props.offsetWidth;
       handle.setPointerCapture(e.pointerId);
       e.preventDefault();
     });
     handle.addEventListener('pointermove', function(e) {
       if (!_resizing) return;
-      _tlUserH = Math.max(_TL_MIN_H, Math.min(_TL_H_MAX, _rh + (_ry - e.clientY)));
-      _tlRender(getState(), true);
+      var w = Math.max(_TL_PROPS_MIN, Math.min(_TL_PROPS_MAX, _rw + (_rx - e.clientX)));
+      props.style.width = w + 'px';
+      props.style.flex  = '0 0 ' + w + 'px';
     });
     function _endResize() {
-      if (_resizing && _tlUserH) localStorage.setItem(_TL_H_KEY, _tlUserH);
+      if (_resizing) localStorage.setItem(_TL_PROPS_KEY, props.offsetWidth);
       _resizing = false;
     }
     handle.addEventListener('pointerup',     _endResize);
@@ -3141,7 +3155,7 @@ function _confirmReset() {
     localStorage.removeItem(_DENSITY_KEY);
     localStorage.removeItem(_TL_KEY);
     localStorage.removeItem(_TL_ZOOM_KEY);
-    localStorage.removeItem(_TL_H_KEY);
+    localStorage.removeItem(_TL_PROPS_KEY);
     _bakeDensity        = 1;
     _applyCurveColor('#4a9eff');
     _animationsOn       = true;
@@ -3150,7 +3164,6 @@ function _confirmReset() {
     _peakMode           = false;
     _tlVisible          = true;
     _tlZoomKeys         = false;
-    _tlUserH            = null;
     setState({ curve: { p1x: 0.625, p1y: 0.000, p2x: 0.375, p2y: 1.000 } });
     _showCopyToast('Reset all settings');
     try { location.reload(); } catch(e) {}
