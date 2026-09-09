@@ -1109,6 +1109,7 @@ var _TL_LANE_MAX  = 10;   // lane height in px with a few properties (24 once th
 var _TL_LANE_MIN  = 4;    // ...thinning down to this with many (lanes never merge)
 var _TL_LANES_H   = 40;   // the lanes share this much height before they reach the minimum
 var _TL_SNAP_PX   = 5;    // a press this close to a keyframe lands exactly on it
+var _TL_DBL_MS    = 400;  // two presses on a lane this close together toggle the property
 var _tlEls   = null;  // { root, wrap, svg, readout, empty, zoom }
 var _tlW     = 0;     // canvas width from the ResizeObserver
 var _tlSig   = '';    // what the lanes were last built from
@@ -1306,6 +1307,31 @@ function _tlPlacePlayhead(s) {
   _tlPh.tri.setAttribute('points', (x - 3.5) + ',0 ' + (x + 3.5) + ',0 ' + x + ',4');
 }
 
+// Select or deselect a property for baking: the row click, and a double press
+// on the property's lane in the mini timeline.
+function _togglePropKey(key) {
+  var s2 = getState();
+  // A baked (green) row stays green: toggling does nothing unless the
+  // playhead is over another, unbaked pair of this property, in which
+  // case it selects normally (blue) so that pair can be baked too.
+  var isBakedRow = (s2.bakedParamKeys || []).indexOf(key) >= 0;
+  var isValidRow = (s2.validParamKeys || []).indexOf(key) >= 0;
+  if (isBakedRow && !isValidRow) return;
+  var keys = (s2.selectedParamKeys || []).slice();
+  var idx  = keys.indexOf(key);
+  if (idx >= 0) keys.splice(idx, 1);
+  else          keys.push(key);
+  // Flip the status here too (like the strip click does): the CEP host
+  // answers "unchanged" while the timeline is still, and that answer
+  // leaves the state alone, so Go would otherwise stay grey until the
+  // heartbeat scan (~2s, longer when the idle panel's timer is throttled)
+  var valid  = s2.validParamKeys || [];
+  var active = keys.filter(function(k){ return valid.indexOf(k) >= 0; }).length;
+  var upd = { selectedParamKeys: keys };
+  if (s2.status === 'valid' || s2.status === 'no-selection') upd.status = active > 0 ? 'valid' : 'no-selection';
+  setState(upd);
+}
+
 // Lane highlight: a hovered row lights its lane, a hovered lane lights its row
 function _tlHighlightLane(key) {
   _tlLanes.forEach(function(l) { l.bg.setAttribute('fill', l.key === key ? l.hover : l.fill); });
@@ -1400,15 +1426,26 @@ function _tlInit() {
     sec = Math.max(s.tl.clipStart, Math.min(s.tl.clipEnd - 1 / fps, sec));
     return { sec: sec, kf: !!snap };
   }
-  // Press and release without moving = jump (no scrubbing, one jump per press)
-  var down = null;
+  // Press and release without moving = jump (no scrubbing, one jump per press).
+  // A second press on the same lane within _TL_DBL_MS toggles that property for
+  // baking, like clicking its row (the first press already moved the playhead
+  // there, so the row is usually blue by the time it is selected). Detected by
+  // hand: dblclick is not relied on in UXP.
+  var down = null, lastUp = null;
   svg.addEventListener('pointerdown', function(e) { if (e.button === 0) down = pos(e); });
   svg.addEventListener('pointerup', function(e) {
     if (!down) return;
     var p = pos(e), moved = Math.abs(p.x - down.x) > 4 || Math.abs(p.y - down.y) > 4;
     down = null;
-    if (moved) return;
-    var t = target(p.x, laneAt(p.y));
+    if (moved) { lastUp = null; return; }
+    var li = laneAt(p.y), now = Date.now();
+    if (lastUp && li >= 0 && lastUp.lane === li && now - lastUp.t < _TL_DBL_MS && Math.abs(p.x - lastUp.x) < 6) {
+      lastUp = null;
+      if (_tlLanes[li]) _togglePropKey(_tlLanes[li].key);
+      return;
+    }
+    lastUp = { t: now, x: p.x, lane: li };
+    var t = target(p.x, li);
     if (t) _jumpToParam({ jumpSec: t.sec });
   });
   svg.addEventListener('pointermove', function(e) {
@@ -1614,28 +1651,7 @@ function renderUI(s) {
         // Hovering a row lights its lane in the mini timeline (a hovered lane lights the row)
         btn.addEventListener('mouseenter', function() { _tlHighlightLane(p.key); });
         btn.addEventListener('mouseleave', function() { _tlHighlightLane(null); });
-        btn.addEventListener('click', function() {
-          var s2   = getState();
-          // A baked (green) row stays green: clicking does nothing unless the
-          // playhead is over another, unbaked pair of this property, in which
-          // case it selects normally (blue) so that pair can be baked too.
-          var isBakedRow = (s2.bakedParamKeys || []).indexOf(p.key) >= 0;
-          var isValidRow = (s2.validParamKeys || []).indexOf(p.key) >= 0;
-          if (isBakedRow && !isValidRow) return;
-          var keys = (s2.selectedParamKeys || []).slice();
-          var idx  = keys.indexOf(p.key);
-          if (idx >= 0) keys.splice(idx, 1);
-          else          keys.push(p.key);
-          // Flip the status here too (like the strip click does): the CEP host
-          // answers "unchanged" while the timeline is still, and that answer
-          // leaves the state alone, so Go would otherwise stay grey until the
-          // heartbeat scan (~2s, longer when the idle panel's timer is throttled)
-          var valid  = s2.validParamKeys || [];
-          var active = keys.filter(function(k){ return valid.indexOf(k) >= 0; }).length;
-          var upd = { selectedParamKeys: keys };
-          if (s2.status === 'valid' || s2.status === 'no-selection') upd.status = active > 0 ? 'valid' : 'no-selection';
-          setState(upd);
-        });
+        btn.addEventListener('click', function() { _togglePropKey(p.key); });
         propBtns.appendChild(btn);
       });
     }
