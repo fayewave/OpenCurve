@@ -600,6 +600,32 @@ html, body {
   color: #ffffff;
 }
 
+/* Curve button on a baked row: loads the curve that bake used (same look as undo) */
+.prop-curve {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin-left: 6px;
+  border-radius: 3px;
+  background: rgba(61,220,132,0.18);
+  color: #7ddc9a;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.prop-curve:hover {
+  background: rgba(61,220,132,0.42);
+  color: #ffffff;
+}
+
+.prop-curve:active, .prop-curve.pressed {
+  background: rgba(61,220,132,0.62);
+  color: #ffffff;
+}
+
 /* Pin on a baked (green) row: tint to match */
 .prop-btn.baked .prop-pin {
   background: rgba(61,220,132,0.18);

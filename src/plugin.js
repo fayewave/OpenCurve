@@ -438,6 +438,42 @@ function _curveFromText(text) {
   return _normalizeCurve(c);
 }
 
+// ─── Flip / Invert (toolbar #flip-curve, #invert-curve) ───────────────────
+// Flip rotates the curve 180 degrees about the centre, so an ease-in becomes
+// the matching ease-out (a symmetric ease-in-out is unchanged). Invert
+// reflects it across the diagonal, which is the inverse easing: an in-out
+// becomes an out-in. Both undo themselves when pressed twice.
+function _flipCurve(c) {
+  var o = { p1x: 1 - c.p2x, p1y: 1 - c.p2y, p2x: 1 - c.p1x, p2y: 1 - c.p1y };
+  if (_hasPts(c)) {
+    o.pts = [];
+    for (var i = c.pts.length - 1; i >= 0; i--) {
+      var p = c.pts[i]; // the incoming and outgoing handles swap roles
+      o.pts.push({ x: 1 - p.x, y: 1 - p.y, ix: 1 - p.ox, iy: 1 - p.oy, ox: 1 - p.ix, oy: 1 - p.iy, smooth: p.smooth !== false });
+    }
+  }
+  return _normalizeCurve(o);
+}
+function _invertCurve(c) {
+  // x and y swap. y may sit outside 0..1 (overshoot) but x can't, so clamp it.
+  function cx(v) { return Math.max(0, Math.min(1, v)); }
+  var o = { p1x: cx(c.p1y), p1y: c.p1x, p2x: cx(c.p2y), p2y: c.p2x };
+  if (_hasPts(c)) {
+    o.pts = [];
+    for (var i = 0; i < c.pts.length; i++) {
+      var p = c.pts[i];
+      o.pts.push({ x: cx(p.y), y: p.x, ix: cx(p.iy), iy: p.ix, ox: cx(p.oy), oy: p.ox, smooth: p.smooth !== false });
+    }
+  }
+  return _normalizeCurve(o);
+}
+// Replace the current curve with fn(curve), animated like a preset click
+function _applyCurveOp(fn) {
+  var c = fn(_cloneCurve(getState().curve));
+  clearPresetActive();
+  _animateToCurve(c, function(cur) { if (_svgW > 0 && _svgH > 0) updateDynamicSVG(cur, _svgW, _svgH); });
+}
+
 // SVG for the interior points: a tangent line, a handle and an anchor per side.
 // Elements are created once per point (createElementNS: UXP has no SVG innerHTML)
 // and re-positioned on every redraw; the set is rebuilt only when the count changes.
@@ -1912,7 +1948,8 @@ async function _detectContextFull(project, sequence, ph) {
     // _kf0/_kf1/_out: the playhead's bracket, so bake records only colour the row while it sits inside their span
     var jp = _jumpPair(p.kfSecs, ph - jumpOffset, fps);
     var entry = { key: p.key, displayName: p.displayName, jumpSec: (jp ? jp.start : p.kf0.seconds) + jumpOffset,
-                  _param: p.param, _kf: p.kfSecs, _kf0: p.kf0.seconds, _kf1: p.kf1.seconds, _out: !!p.isOutside };
+                  _param: p.param, _kf: p.kfSecs, _kf0: p.kf0.seconds, _kf1: p.kf1.seconds, _out: !!p.isOutside,
+                  _fc: Math.round((p.kf1.seconds - p.kf0.seconds) * fps) };
     // Nearest 2+ frame pair, for the status strip's click-to-jump
     var near = _nearestPair(p.kfSecs, ph - jumpOffset, fps);
     if (near) { entry.nearSec = near.start + jumpOffset; entry.nearDist = near.dist; }
@@ -1947,14 +1984,18 @@ async function _detectContextFull(project, sequence, ph) {
     };
   }
 
+  // A pair inside a live bake record is that bake's own keyframes (2+ frames
+  // apart when it was written with a wider spacing), so it isn't bakeable again
+  var covered = _bakedKeysFor(clipId, paramList);
+  covered.forEach(function(k){ delete paramContexts[k]; });
   var validParamKeys = validParams
     .filter(function(p){ return paramContexts[p.key] && paramContexts[p.key].frameCount >= 2; })
     .map(function(p){ return p.key; });
 
   if (validParamKeys.length === 0) {
-    // Playhead is inside keyframe pairs, but every pair is only a frame apart,
-    // which is what a previous bake leaves behind. Nothing here can be eased
-    // again, so say so instead of reporting "valid" with nothing to bake.
+    // Playhead is inside keyframe pairs, but every pair is one a previous bake
+    // left behind (a frame apart, or inside a bake record). Nothing here can be
+    // eased again, so say so instead of reporting "valid" with nothing to bake.
     return {
       status: 'outside', availableParams: paramList, validParamKeys: [], clipId: clipId, clipName: clipName,
       hint: 'Already baked here. Move the playhead to an unbaked keyframe pair',
@@ -2101,8 +2142,11 @@ async function bakeKeyframes(contexts, curve) {
     if (totalFrames < 2) { console.log('[FS] skipping param — KFs less than 2 frames apart'); continue; }
 
     var isCompound = Array.isArray(val0);
+    // Keyframe spacing from Settings (1, 2 or 4 frames). Short pairs are always
+    // written densely enough to get at least two keyframes.
+    var step  = Math.max(1, Math.min(_bakeDensity, Math.floor((totalFrames - 1) / 2)));
     var specs = [];
-    for (var f = 1; f < totalFrames; f++) {
+    for (var f = step; f < totalFrames; f += step) {
       var t       = sampleBezier(f / totalFrames, curve);
       var seconds = startSec + f / fps;
       if (isCompound) {
@@ -2114,8 +2158,8 @@ async function bakeKeyframes(contexts, curve) {
         specs.push({ seconds: seconds, value: val0 + (val1 - val0) * t });
       }
     }
-    if (specs.length) jobs.push({ ci: ci, param: param, isCompound: isCompound, specs: specs });
-    console.log('[FS] bake['+ci+']: '+totalFrames+' frames | compound='+isCompound+' | '+specs.length+' kf');
+    if (specs.length) jobs.push({ ci: ci, param: param, isCompound: isCompound, specs: specs, step: step });
+    console.log('[FS] bake['+ci+']: '+totalFrames+' frames | compound='+isCompound+' | every '+step+' | '+specs.length+' kf');
   }
 
   if (jobs.length === 0) { console.log('[FS] bake: all params skipped (already baked or too close)'); return []; }
@@ -2141,26 +2185,81 @@ async function bakeKeyframes(contexts, curve) {
 
   console.log('[FS] bake done: '+added+' keyframes across '+jobs.length+' param(s)');
   // What was written, per input context, so the caller can record it for undo
-  return jobs.map(function(j){ return { ci: j.ci, times: j.specs.map(function(x){ return x.seconds; }) }; });
+  return jobs.map(function(j){ return { ci: j.ci, step: j.step, times: j.specs.map(function(x){ return x.seconds; }) }; });
 }
 
 // ─── Bake records / per-property undo ────────────────────────────────────
-// Every successful bake is remembered for the session so a row's undo button
-// can remove just the keyframes that bake added (the two original keyframes
-// are never touched). Records are matched to rows by clip identity
-// (name|start|end) + property key. A record is dropped when a 2+ frame pair
-// turns up inside its range, which means the bake was undone with Ctrl+Z.
-// Records live in memory only; they are gone when the panel closes.
-var _bakeRecords = [];   // { id, clipId, key, displayName, param, project, fps, kf0Sec, kf1Sec, times }
+// Every successful bake is remembered so a row's undo button can remove just
+// the keyframes that bake added (the two original keyframes are never
+// touched), and so the row's curve button can put the curve that was baked
+// there back on the graph. Records are matched to rows by clip identity
+// (sequence|name|in-point) + property key. A record is dropped when a pair
+// wider than the bake's keyframe spacing turns up inside its range, which
+// means the bake was undone with Ctrl+Z.
+// Records are saved to localStorage (minus the live Premiere handles) so they
+// survive closing the panel and Premiere. A loaded record still colours its
+// row and loads its curve, and its row undo works once the playhead is over
+// the clip again (the live handle comes from the scan). Only bakes made this
+// session feed the Undo button next to Go.
+var _bakeRecords = [];   // { id, batch, clipId, key, displayName, param, project, fps, kf0Sec, kf1Sec, times, step, curve }
 var _bakeSeq     = 0;
 var _bakeBatchSeq = 0;   // one batch per Go press; the panel-wide Undo button reverts the latest
+var _sessionBatchFloor = 0; // batches at or below this were loaded from a previous session
+var _BAKE_RECORDS_KEY  = 'opencurve-bake-records';
+var _BAKE_RECORDS_MAX  = 300; // newest kept
+
+function _loadBakeRecords() {
+  try {
+    var arr = JSON.parse(localStorage.getItem(_BAKE_RECORDS_KEY) || '[]');
+    if (!Array.isArray(arr)) return;
+    arr.forEach(function(r) {
+      if (!r || typeof r.clipId !== 'string' || !Array.isArray(r.times)) return;
+      _bakeRecords.push({
+        id: r.id || 0, batch: r.batch || 0, clipId: r.clipId, key: r.key, displayName: r.displayName || '',
+        param: null, project: null, fps: r.fps || 0, kf0Sec: r.kf0Sec, kf1Sec: r.kf1Sec,
+        times: r.times, step: r.step || 1, curve: r.curve || null,
+      });
+      if (r.id > _bakeSeq) _bakeSeq = r.id;
+      if (r.batch > _bakeBatchSeq) _bakeBatchSeq = r.batch;
+    });
+    _sessionBatchFloor = _bakeBatchSeq;
+  } catch(_) {}
+}
+function _saveBakeRecords() {
+  try {
+    var r6 = function(v) { return Math.round(v * 1e6) / 1e6; };
+    var out = _bakeRecords.slice(-_BAKE_RECORDS_MAX).map(function(r) {
+      return { id: r.id, batch: r.batch, clipId: r.clipId, key: r.key, displayName: r.displayName, fps: r.fps,
+               kf0Sec: r.kf0Sec, kf1Sec: r.kf1Sec, times: r.times.map(r6), step: r.step || 1, curve: r.curve || null };
+    });
+    localStorage.setItem(_BAKE_RECORDS_KEY, JSON.stringify(out));
+  } catch(_) {}
+}
+_loadBakeRecords();
 
 function _bakesFor(clipId, key) {
   return _bakeRecords.filter(function(r){ return r.clipId === clipId && (key === undefined || r.key === key); });
 }
 function _dropBake(rec) {
   var i = _bakeRecords.indexOf(rec);
-  if (i >= 0) _bakeRecords.splice(i, 1);
+  if (i >= 0) { _bakeRecords.splice(i, 1); _saveBakeRecords(); }
+}
+function _hasSessionBakes() {
+  return _bakeRecords.some(function(r){ return r.batch > _sessionBatchFloor; });
+}
+// Newest record that applies to this row where the playhead is now
+function _bakeRecFor(s, key) {
+  var row  = (s.availableParams || []).filter(function(p){ return p.key === key; })[0];
+  var recs = _bakesFor(s.clipId, key).filter(function(r){ return !row || (_recForRow(r, row) && _recHere(r, row)); });
+  return recs.length ? recs[recs.length - 1] : null;
+}
+// Row curve button: put the curve that was baked here back on the graph
+function _loadBakedCurve(key) {
+  var rec = _bakeRecFor(getState(), key);
+  if (!rec || !rec.curve) { _showCopyToast('No curve was recorded for this bake', '#f0a030'); return; }
+  clearPresetActive();
+  _animateToCurve(_cloneCurve(rec.curve), function(cur) { if (_svgW > 0 && _svgH > 0) updateDynamicSVG(cur, _svgW, _svgH); });
+  _showCopyToast('Loaded the curve baked on ' + (rec.displayName || 'this property'));
 }
 // Keys in `avail` that have a bake to undo on this clip
 // Guards against undoing the wrong thing:
@@ -2194,11 +2293,14 @@ function _bakedKeysFor(clipId, avail) {
   (avail || []).forEach(function(p) {
     var recs = _bakesFor(clipId, p.key).filter(function(r){ return _recForRow(r, p); });
     if (recs.length === 0) return;
-    if (Array.isArray(p._kf)) {
-      recs.forEach(function(rec) { if (!_recAlive(rec, p._kf)) _dropBake(rec); });
-      recs = recs.filter(function(r){ return _bakeRecords.indexOf(r) >= 0; });
-    }
-    recs = recs.filter(function(r){ return _recHere(r, p); });
+    recs.forEach(function(rec) {
+      // Fingerprint gone, or the playhead's bracketing pair inside the span is
+      // wider than the bake's keyframe spacing (one of ours would be narrower):
+      // the bake was undone or edited outside the panel, so forget it
+      if (Array.isArray(p._kf) && !_recAlive(rec, p._kf)) { _dropBake(rec); return; }
+      if (_recHere(rec, p) && typeof p._fc === 'number' && p._fc > (rec.step || 1)) _dropBake(rec);
+    });
+    recs = recs.filter(function(r){ return _bakeRecords.indexOf(r) >= 0 && _recHere(r, p); });
     if (recs.length === 0) return;
     keys.push(p.key);
   });
@@ -2216,8 +2318,10 @@ function _recordBakes(s, keys, contexts, written) {
       displayName: ap ? ap.displayName : key,
       param: ctx.param, project: ctx.project, fps: ctx.fps,
       kf0Sec: ctx.kf0.seconds, kf1Sec: ctx.kf1.seconds, times: w.times,
+      step: w.step || 1, curve: _cloneCurve(s.curve),
     });
   }
+  if (written.length) _saveBakeRecords();
 }
 
 // Panel-wide Undo button (next to Go, same control as the CEP edition)
@@ -2244,10 +2348,13 @@ async function _undoBakeForKey(key) {
 // whichever clip it was on. Each press again steps back one more bake.
 async function _undoLastBake() {
   var s = getState();
-  if (s.isBaking || _bakeRecords.length === 0) return;
+  // Only bakes made this session: records loaded from a previous session are
+  // undone from their row button, once the playhead is over the clip
+  var mine = _bakeRecords.filter(function(r){ return r.batch > _sessionBatchFloor; });
+  if (s.isBaking || mine.length === 0) return;
   var last = 0;
-  for (var i = 0; i < _bakeRecords.length; i++) if (_bakeRecords[i].batch > last) last = _bakeRecords[i].batch;
-  var recs = _bakeRecords.filter(function(r){ return r.batch === last; });
+  for (var i = 0; i < mine.length; i++) if (mine[i].batch > last) last = mine[i].batch;
+  var recs = mine.filter(function(r){ return r.batch === last; });
   var names = [];
   recs.forEach(function(r){ if (names.indexOf(r.displayName) < 0) names.push(r.displayName); });
   await _undoRecords(recs, names.join(', '), null);
@@ -2264,11 +2371,15 @@ async function _undoRecords(recs, label, key) {
     // from the current scan (a proxy kept from bake time can go stale), but only
     // when that row is the same-named property.
     var jobs = [];
+    var unreachable = 0;
     for (var ri = 0; ri < recs.length; ri++) {
       var rec = recs[ri];
       var liveRow = (rec.clipId === s.clipId)
         ? (s.availableParams || []).filter(function(p){ return p.key === rec.key && _recForRow(rec, p); })[0] : null;
       var param = (liveRow && liveRow._param) ? liveRow._param : rec.param;
+      // A record loaded from a previous session has no handle until the scan
+      // sees its clip again; leave it alone rather than dropping it
+      if (!param) { unreachable++; continue; }
       if (typeof param.createRemoveKeyframeAction !== 'function') {
         throw new Error('This Premiere version cannot remove keyframes from a plugin. Use Ctrl+Z in Premiere instead.');
       }
@@ -2284,10 +2395,14 @@ async function _undoRecords(recs, label, key) {
       });
       if (times.length) jobs.push({ rec: rec, param: param, times: times });
     }
+    if (jobs.length === 0 && unreachable > 0) {
+      _showCopyToast('Move the playhead over that clip to undo its bake', '#f0a030');
+      return;
+    }
     if (jobs.length === 0) {
       // Nothing of ours is left (undone with Ctrl+Z, or the keyframes were edited away)
       recs.forEach(_dropBake);
-      _showUndoBtn(_bakeRecords.length > 0);
+      _showUndoBtn(_hasSessionBakes());
       _invalidateCache();
       _showCopyToast('Nothing to undo: those keyframes are already gone', '#f0a030');
       return;
@@ -2313,7 +2428,7 @@ async function _undoRecords(recs, label, key) {
     });
 
     jobs.forEach(function(j){ _dropBake(j.rec); });
-    _showUndoBtn(_bakeRecords.length > 0);
+    _showUndoBtn(_hasSessionBakes());
     _invalidateCache();
     _lastStatus   = '';
     _skipPollUntil = 0;
@@ -2542,6 +2657,18 @@ function renderUI(s) {
           ev.stopPropagation();
           _undoBakeForKey(p.key);
         });
+        // Curve: put the curve that was baked here back on the graph. Shown
+        // next to the undo button whenever the row's bake record has one.
+        var propCurve = document.createElement('span');
+        propCurve.className = 'prop-curve';
+        _addPressState(propCurve);
+        propCurve.style.display = 'none';
+        _attachTooltip(propCurve, 'Load the curve that was baked on this property');
+        propCurve.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2.5 11.5C6 11.5 8 2.5 11.5 2.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="2.5" cy="11.5" r="1.6" fill="currentColor"/><circle cx="11.5" cy="2.5" r="1.6" fill="currentColor"/></svg>';
+        propCurve.addEventListener('click', function(ev) {
+          ev.stopPropagation();
+          _loadBakedCurve(p.key);
+        });
         // Pin: jump the playhead to this property's keyframes (doesn't toggle selection)
         var propPin = document.createElement('span');
         propPin.className = 'prop-pin';
@@ -2555,6 +2682,7 @@ function renderUI(s) {
           var live = (getState().availableParams || []).filter(function(x){ return x.key === p.key; })[0];
           _jumpToParam(live || p);
         });
+        btn.appendChild(propCurve);
         btn.appendChild(propUndo);
         btn.appendChild(propPin);
         btn.dataset.key = p.key;
@@ -2591,6 +2719,11 @@ function renderUI(s) {
       // Undo button only on rows with a bake to undo (inline style: UXP ignores class-driven display changes)
       var undoEl = btn.querySelector('.prop-undo');
       if (undoEl) undoEl.style.display = bakedKeys.indexOf(k) >= 0 ? 'flex' : 'none';
+      var curveEl = btn.querySelector('.prop-curve');
+      if (curveEl) {
+        var brec = bakedKeys.indexOf(k) >= 0 ? _bakeRecFor(s, k) : null;
+        curveEl.style.display = (brec && brec.curve) ? 'flex' : 'none';
+      }
     });
   }
 
@@ -2665,6 +2798,31 @@ function initPanel() {
     });
     addPtBtn.addEventListener('click', function() { if (!_peakMode) _addPoint(); });
   }
+
+  // Flip / Invert: one-press curve transforms (see _flipCurve / _invertCurve)
+  var flipBtn = document.getElementById('flip-curve');
+  if (flipBtn) {
+    _attachTooltip(flipBtn, 'Flip the curve: an ease-in becomes the matching ease-out');
+    flipBtn.addEventListener('click', function() { _applyCurveOp(_flipCurve); });
+  }
+  var invertBtn = document.getElementById('invert-curve');
+  if (invertBtn) {
+    _attachTooltip(invertBtn, 'Invert the curve: swap time and value, so an in-out ease becomes an out-in');
+    invertBtn.addEventListener('click', function() { _applyCurveOp(_invertCurve); });
+  }
+
+  // Enter presses Go (when the panel has focus and nothing else is taking keys)
+  window.addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter' || e.repeat) return;
+    var t   = e.target;
+    var tag = t && t.tagName ? String(t.tagName).toLowerCase() : '';
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || (t && t.isContentEditable)) return;
+    if (document.getElementById('settings-modal') || document.getElementById('oc-confirm')) return;
+    var go = document.getElementById('go-btn');
+    if (!go || go.classList.contains('btn-disabled')) return;
+    e.preventDefault();
+    go.click();
+  });
 
   // Settings: same modal as the flyout menu and the context menus
   var settingsBtn = document.getElementById('graph-settings');
@@ -3512,7 +3670,7 @@ function initPanel() {
       try {
         var written = (await bakeKeyframes(contexts, s.curve)) || [];
         _recordBakes(s, bakedKeys, contexts, written); // remembered for the undo buttons
-        _showUndoBtn(_bakeRecords.length > 0);
+        _showUndoBtn(_hasSessionBakes());
         _invalidateCache(); // keyframes changed — force full re-scan on next poll
         _skipPollUntil = Date.now() + DONE_DISPLAY_MS;
         var newBaked = (s.bakedParamKeys || []).concat(bakedKeys.filter(function(k){ return (s.bakedParamKeys || []).indexOf(k) < 0; }));
@@ -3701,15 +3859,8 @@ async function poll() {
       updates.selectedParamKeys = currentSel;
       updates.validParamKeys    = validKeys;
       updates.paramContexts     = result.paramContexts || {};
-      // Bake records drive the green state. A 2+ frame pair inside a baked
-      // range means the bake was undone outside the panel (Ctrl+Z): forget it.
-      validKeys.forEach(function(k) {
-        var ctx = result.paramContexts && result.paramContexts[k];
-        if (!ctx) return;
-        _bakesFor(result.clipId, k).forEach(function(rec) {
-          if (ctx.kf0.seconds >= rec.kf0Sec - 1e-4 && ctx.kf1.seconds <= rec.kf1Sec + 1e-4) _dropBake(rec);
-        });
-      });
+      // Bake records drive the green state; _bakedKeysFor drops any record
+      // whose bake was undone outside the panel (Ctrl+Z)
       updates.bakedParamKeys    = _bakedKeysFor(result.clipId, avail);
       // A green (baked) row can't stay selected unless the playhead is over an unbaked pair of it
       updates.selectedParamKeys = updates.selectedParamKeys.filter(function(k){
@@ -3773,6 +3924,12 @@ var _presetLayout       = localStorage.getItem(_LAYOUT_KEY) || 'list';
 var _GRAPH_KEY          = 'opencurve-graph-visible';
 // Defaults to On — only hidden when the user has explicitly disabled the graph.
 var _graphVisible       = localStorage.getItem(_GRAPH_KEY) !== 'off';
+var _DENSITY_KEY        = 'opencurve-bake-density';
+// Keyframe spacing when baking, in frames: 1 (every frame, exact), 2 or 4.
+// Premiere draws straight lines between the baked keyframes, so wider spacing
+// trades a little accuracy for a lighter keyframe track (see bakeKeyframes).
+var _bakeDensity        = parseInt(localStorage.getItem(_DENSITY_KEY), 10) || 1;
+if ([1, 2, 4].indexOf(_bakeDensity) < 0) _bakeDensity = 1;
 
 // Show or hide the whole graph column. When hidden, the preset list takes the
 // full panel width and the status strip moves above the Go button so clip
@@ -4178,6 +4335,7 @@ function _checkForUpdates(silent) {
 // onOk runs after the dialog has closed. Used by reset-all and preset delete.
 function _confirmDialog(titleText, msgText, okLabel, onOk) {
   var overlay = document.createElement('div');
+  overlay.id = 'oc-confirm';
   overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.65);z-index:99998;display:flex;align-items:center;justify-content:center;';
 
   var box = document.createElement('div');
@@ -4232,6 +4390,8 @@ function _confirmReset() {
     localStorage.removeItem(_SCAN_PLAYBACK_KEY);
     localStorage.removeItem(_GRAPH_KEY);
     localStorage.removeItem(_PEAK_KEY);
+    localStorage.removeItem(_DENSITY_KEY);
+    _bakeDensity        = 1;
     _applyCurveColor('#4a9eff');
     _animationsOn       = true;
     _updateNotifsOn     = true;
@@ -4537,6 +4697,46 @@ function _showSettingsModal() {
   gridRow.appendChild(gridLabel);
   gridRow.appendChild(gridBtns);
   rowsCol.appendChild(gridRow);
+
+  // Keyframe spacing row (how far apart the baked keyframes are)
+  var densRow = document.createElement('div');
+  densRow.style.cssText = 'display:flex;align-items:center;padding:0 0 0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);';
+  _attachTooltip(densRow, 'How far apart the baked keyframes are. Every frame follows the curve exactly; 2 or 4 frames writes fewer keyframes, with straight lines between them');
+  var densIcon = document.createElement('span');
+  densIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
+  densIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><line x1="1" y1="8" x2="15" y2="8" stroke="#b0b0b0" stroke-width="1.2"/><polygon points="3.5,5.5 6,8 3.5,10.5 1,8" fill="#b0b0b0"/><polygon points="8,5.5 10.5,8 8,10.5 5.5,8" fill="#b0b0b0"/><polygon points="12.5,5.5 15,8 12.5,10.5 10,8" fill="#b0b0b0"/></svg>';
+  var densLabel = document.createElement('span');
+  densLabel.style.cssText = 'font-size:14px;flex:1;color:#d4d4d4;';
+  densLabel.textContent = 'Keyframe Spacing';
+  var densBtns = document.createElement('div');
+  densBtns.style.cssText = 'display:flex;gap:0;flex-shrink:0;align-self:stretch;';
+  var densSteps = [1, 2, 4];
+  var densBtnEls = [];
+  densSteps.forEach(function(step) {
+    var db = document.createElement('div');
+    db.textContent = step + ' fr';
+    var isActive = _bakeDensity === step;
+    db.style.cssText = 'font-size:12px;padding:0 8px;cursor:pointer;display:flex;align-items:center;justify-content:center;min-width:48px;'
+      + 'color:' + (isActive ? '#3ddc84' : '#666') + ';'
+      + 'background:' + (isActive ? 'rgba(61,220,132,0.08)' : 'transparent') + ';';
+    db.addEventListener('mouseenter', function() { db.style.background = _bakeDensity === step ? 'rgba(61,220,132,0.15)' : 'rgba(255,255,255,0.05)'; });
+    db.addEventListener('mouseleave', function() { db.style.background = _bakeDensity === step ? 'rgba(61,220,132,0.08)' : 'transparent'; });
+    db.addEventListener('click', function() {
+      _bakeDensity = step;
+      localStorage.setItem(_DENSITY_KEY, step);
+      densBtnEls.forEach(function(el, idx) {
+        var a = densSteps[idx] === step;
+        el.style.color = a ? '#3ddc84' : '#666';
+        el.style.background = a ? 'rgba(61,220,132,0.08)' : 'transparent';
+      });
+    });
+    densBtnEls.push(db);
+    densBtns.appendChild(db);
+  });
+  densRow.appendChild(densIcon);
+  densRow.appendChild(densLabel);
+  densRow.appendChild(densBtns);
+  rowsCol.appendChild(densRow);
 
   // Preset layout row
   var layoutRow = document.createElement('div');
