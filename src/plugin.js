@@ -497,11 +497,19 @@ function _mkPtEls() {
     g.appendChild(_mkCircle(5, '#fff', '#fff', 1.5));
     return g;
   }
-  // Anchor: same empty circle as the two end points (#sg-ep0 / #sg-ep3)
+  // Anchor: same empty circle as the two end points (#sg-ep0 / #sg-ep3) while
+  // the point is smooth; a square of the same size once its handles are broken.
+  // Both live in the group and _updatePtsSVG shows one (opacity + visibility
+  // attributes, as UXP ignores display/class changes on SVG).
   var a = document.createElementNS(NS, 'g');
   var inner = _mkCircle(4, '#1e1e1e', _curveColor || '#4a9eff', 2);
-  a.appendChild(inner);
-  return { li: line(), lo: line(), hi: handle(), ho: handle(), a: a, inner: inner };
+  var sq = document.createElementNS(NS, 'rect');
+  sq.setAttribute('x', -4); sq.setAttribute('y', -4); sq.setAttribute('width', 8); sq.setAttribute('height', 8);
+  sq.setAttribute('rx', 1); sq.setAttribute('fill', '#1e1e1e');
+  sq.setAttribute('stroke', _curveColor || '#4a9eff'); sq.setAttribute('stroke-width', 2);
+  sq.setAttribute('opacity', '0'); sq.setAttribute('visibility', 'hidden');
+  a.appendChild(inner); a.appendChild(sq);
+  return { li: line(), lo: line(), hi: handle(), ho: handle(), a: a, inner: inner, sq: sq };
 }
 function _updatePtsSVG(curve, W, H) {
   var lines = document.getElementById('sg-pts-lines'), g = document.getElementById('sg-pts');
@@ -526,6 +534,10 @@ function _updatePtsSVG(curve, W, H) {
     e.hi.setAttribute('transform', 'translate(' + hi.cx + ',' + hi.cy + ')');
     e.ho.setAttribute('transform', 'translate(' + ho.cx + ',' + ho.cy + ')');
     e.a.setAttribute('transform', 'translate(' + a.cx + ',' + a.cy + ')');
+    // Circle for a smooth point, square once its handles are broken
+    var broken = p.smooth === false;
+    e.inner.setAttribute('opacity', broken ? '0' : '1'); e.inner.setAttribute('visibility', broken ? 'hidden' : 'visible');
+    e.sq.setAttribute('opacity',    broken ? '1' : '0'); e.sq.setAttribute('visibility',    broken ? 'visible' : 'hidden');
   }
 }
 
@@ -4215,7 +4227,7 @@ function _applyCurveColor(color) {
   if (ep0) ep0.setAttribute('stroke', color);
   var ep3 = document.getElementById('sg-ep3');
   if (ep3) ep3.setAttribute('stroke', color);
-  for (var pi = 0; pi < _ptEls.length; pi++) _ptEls[pi].inner.setAttribute('stroke', color);
+  for (var pi = 0; pi < _ptEls.length; pi++) { _ptEls[pi].inner.setAttribute('stroke', color); _ptEls[pi].sq.setAttribute('stroke', color); }
   document.querySelectorAll('.preset-thumb path').forEach(function(p) {
     p.setAttribute('stroke', color);
   });
