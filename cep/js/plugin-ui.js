@@ -1084,7 +1084,7 @@ function _jumpToParam(p) {
 }
 
 // ─── Mini timeline ────────────────────────────────────────────────────────
-// Read-only strip across the top of the panel: one lane per property row,
+// Read-only strip along the bottom of the panel: one lane per property row,
 // showing that property's keyframes on the clip the rows belong to, its bakes
 // (green bars), the pair the playhead is in and the playhead itself. Pressing
 // a lane moves the playhead there (a keyframe within a few pixels snaps to it).
@@ -1419,7 +1419,7 @@ function _tlInit() {
     });
     _tlEls.zoom.addEventListener('click', function() { _tlSetZoom(!_tlZoomKeys); });
   }
-  // Bottom edge drags the strip taller or shorter (same pattern as the sidebar handle)
+  // Top edge drags the strip taller or shorter (same pattern as the sidebar handle): up = taller
   var handle = document.getElementById('tl-resize');
   if (handle) {
     var _ry = 0, _rh = 0, _resizing = false;
@@ -1432,7 +1432,7 @@ function _tlInit() {
     });
     handle.addEventListener('pointermove', function(e) {
       if (!_resizing) return;
-      _tlUserH = Math.max(_TL_MIN_H, Math.min(_TL_H_MAX, _rh + (e.clientY - _ry)));
+      _tlUserH = Math.max(_TL_MIN_H, Math.min(_TL_H_MAX, _rh + (_ry - e.clientY)));
       _tlRender(getState(), true);
     });
     function _endResize() {
@@ -1735,7 +1735,7 @@ function initPanel() {
   }
 
   // A-curve (peak) mode toggle
-  _tlInit(); // mini timeline strip across the top
+  _tlInit(); // mini timeline strip along the bottom
 
   var peakBtn = document.getElementById('peak-mode');
   if (peakBtn) {
@@ -3356,7 +3356,7 @@ function _showSettingsModal() {
   });
   rowsCol.appendChild(graphRow);
 
-  // Timeline visibility toggle row (the keyframe strip across the top of the panel)
+  // Timeline visibility toggle row (the keyframe strip along the bottom of the panel)
   var tlRow = document.createElement('div');
   tlRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);cursor:pointer;';
   var tlLabel = document.createElement('span');

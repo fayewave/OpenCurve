@@ -198,7 +198,7 @@ html, body {
 }
 
 /* ─── Mini timeline ─────────────────────────────────────────── */
-/* Read-only keyframe lanes across the top of the panel (plugin.js _tlRender).
+/* Read-only keyframe lanes along the bottom of the panel (plugin.js _tlRender).
    Height and lane geometry are set inline from the property count. */
 .oc-timeline {
   display: flex;
@@ -208,7 +208,6 @@ html, body {
   min-width: 0;
   overflow: hidden;
   background: #111111;
-  border-bottom: 1px solid var(--border);
 }
 
 .tl-canvas-wrap {
@@ -232,9 +231,11 @@ html, body {
   pointer-events: none;
 }
 
-/* Bottom edge of the strip: drag to change its height (same look as the sidebar handle) */
+/* Top edge of the strip (sits between the status strip / Go row and the lanes): drag up to make it
+   taller, same look as the sidebar handle */
 .tl-resize-handle {
   height: 4px;
+  border-top: 1px solid var(--border);
   flex-shrink: 0;
   cursor: row-resize;
   background: transparent;

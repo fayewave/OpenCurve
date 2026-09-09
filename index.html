@@ -15,17 +15,6 @@
       <input id="oc-key-sink" type="text" aria-hidden="true" autocomplete="off" spellcheck="false"
              style="position:absolute;left:0;top:0;width:1px;height:1px;padding:0;margin:0;border:0;outline:none;background:transparent;color:transparent;caret-color:transparent;font-size:1px;">
     </div>
-    <!-- Mini timeline: read-only keyframe lanes for the clip the rows belong to, one per property
-         (_tlRender). Its height is set inline from the lane count or the dragged #tl-resize edge; the button
-         toggles clip/keyframe zoom. What's under the pointer shows in the status strip. -->
-    <div id="oc-timeline" class="oc-timeline">
-      <div class="tl-canvas-wrap">
-        <svg id="tl-svg" xmlns="http://www.w3.org/2000/svg"></svg>
-        <div id="tl-empty" class="tl-empty"></div>
-      </div>
-      <div id="tl-zoom" class="tool-btn tl-zoom"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3.2 1.5H1.5v9h1.7M8.8 1.5h1.7v9H8.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><polygon points="6,3.4 8.6,6 6,8.6 3.4,6" fill="currentColor"/></svg></div>
-    </div>
-    <div id="tl-resize" class="tl-resize-handle"></div>
     <div class="main-row">
 
       <!-- Left column: graph + status -->
@@ -114,6 +103,18 @@
         </div>
       </div>
 
+    </div>
+    <!-- Mini timeline: read-only keyframe lanes for the clip the rows belong to, one per property, along the
+         bottom of the panel under the status strip and Go. The handle above it drags the height
+         (_tlRender; set inline from the lane count until dragged); the button toggles clip/keyframe zoom.
+         What's under the pointer shows in the status strip. -->
+    <div id="tl-resize" class="tl-resize-handle"></div>
+    <div id="oc-timeline" class="oc-timeline">
+      <div class="tl-canvas-wrap">
+        <svg id="tl-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div id="tl-empty" class="tl-empty"></div>
+      </div>
+      <div id="tl-zoom" class="tool-btn tl-zoom"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3.2 1.5H1.5v9h1.7M8.8 1.5h1.7v9H8.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><polygon points="6,3.4 8.6,6 6,8.6 3.4,6" fill="currentColor"/></svg></div>
     </div>
   </div>
 
