@@ -826,16 +826,17 @@ input, textarea {
 
 /* Hover feedback whenever clicking the strip would select more properties */
 .status-strip.status-clickable { cursor: pointer; }
-.status-valid.status-clickable:hover    { background: rgba(74,158,255,0.28); }
+.status-valid.status-clickable:hover    { background: rgba(255,255,255,0.12); }
 .status-detected.status-clickable:hover { background: rgba(255,255,255,0.12); }
 
 /* State variants */
 .status-idle .status-dot     { color: var(--text-faint); }
 
-.status-valid { background: var(--accent-dim); }
-.status-valid .status-dot    { color: #6cb8ff; }
+/* Properties selected: stays grey like the detected state (the rows and lanes carry the blue) */
+.status-valid { background: transparent; }
+.status-valid .status-dot    { color: var(--text-faint); }
 .status-valid .status-text,
-.status-valid .status-clip   { color: #6cb8ff; }
+.status-valid .status-clip   { color: var(--text-dim); }
 
 .status-warn  { background: transparent; }
 .status-warn .status-dot     { color: var(--text-faint); }
