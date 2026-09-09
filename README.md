@@ -29,6 +29,9 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 - **Auto-detects keyframes** — finds keyframes on clips at the playhead without requiring you to select them first
 - **Presets** — Save any curve as a named preset and share them easily
 - **Snap to grid** — Hold shift to snap the bezier handles to the grid
+- **Flip and invert** — One click turns an ease-in into the matching ease-out, or swaps time and value for the inverse ease
+- **Load a baked curve back** — Baked properties remember their curve, even after reopening the project, so you can pick it up again and tweak it
+- **Keyframe spacing** — Bake a keyframe every frame for an exact match, or every 2 or 4 frames for a lighter timeline
 - **Undo and redo** — Supports Premiere's history system for full undo/redo support (`.ccx` version only)
 - **Customization** — List/grid view, change the grid size, and custom themes
 - **Free forever** — No bloat, no logins. Made by an actual video editor for the editing community
