@@ -2891,11 +2891,23 @@ function _applyTimelineVisibility() {
 // Height of the lanes + rows area: the saved drag height, else whatever the rows
 // need. With a fixed height the inner flex row is kept at least the box tall so
 // the column handle spans it, and the lanes + rows scroll together beyond it.
-function _tlApplyHeight() {
+// `live` = mid-drag: only the box height changes, so just stretch the SVG and
+// the playhead line. A full lane rebuild plus a localStorage write per pointer
+// move made the drag crawl in UXP; those happen once on release.
+function _tlApplyHeight(live) {
   var els = _tlEls;
   if (!els) return;
   els.root.style.height = _tlUserH ? _tlUserH + 'px' : '';
   if (els.inner) els.inner.style.minHeight = (_tlUserH && els.scroll) ? els.scroll.clientHeight + 'px' : '';
+  if (live) {
+    if (_tlGeo) {
+      var H = Math.max(_TL_MIN_H, _tlGeo.n * _TL_ROW_H, els.scroll ? els.scroll.clientHeight : 0);
+      _tlGeo.H = H;
+      els.svg.setAttribute('height', H);
+      if (_tlPh) _tlPh.line.setAttribute('y2', H);
+    }
+    return;
+  }
   if (_tlUserH) localStorage.setItem(_TL_H_KEY, _tlUserH); else localStorage.removeItem(_TL_H_KEY);
   _tlRender(getState(), true);
 }
@@ -2931,7 +2943,14 @@ function _tlInit() {
     _tlW = w;
     _tlRender(getState(), true);
   }
-  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(measure).observe(_tlEls.wrap);
+  // One measure per frame: dragging the width handle fires the observer on every move
+  var _measurePending = false;
+  function measureSoon() {
+    if (_measurePending) return;
+    _measurePending = true;
+    requestAnimationFrame(function() { _measurePending = false; measure(); });
+  }
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(measureSoon).observe(_tlEls.wrap);
   function pos(e) { var r = svg.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
   function laneAt(y) {
     var g = _tlGeo;
@@ -3045,12 +3064,22 @@ function _tlInit() {
       vhandle.setPointerCapture(e.pointerId);
       e.preventDefault();
     });
+    // Moves are coalesced to one layout per frame (UXP relayouts the graph
+    // above on every height change, which is the slow part)
+    var _vTargetY = 0, _vPending = false;
     vhandle.addEventListener('pointermove', function(e) {
       if (!_vresizing) return;
-      var app = document.getElementById('app'), bottom = document.getElementById('oc-bottom-row');
-      var maxH = Math.max(_TL_MIN_H, (app ? app.clientHeight : 600) - _TL_MAIN_MIN - (bottom ? bottom.offsetHeight : 0) - vhandle.offsetHeight);
-      _tlUserH = Math.max(_TL_MIN_H, Math.min(maxH, _vh + (_vy - e.clientY)));
-      _tlApplyHeight();
+      _vTargetY = e.clientY;
+      if (_vPending) return;
+      _vPending = true;
+      requestAnimationFrame(function() {
+        _vPending = false;
+        if (!_vresizing) return;
+        var app = document.getElementById('app'), bottom = document.getElementById('oc-bottom-row');
+        var maxH = Math.max(_TL_MIN_H, (app ? app.clientHeight : 600) - _TL_MAIN_MIN - (bottom ? bottom.offsetHeight : 0) - vhandle.offsetHeight);
+        _tlUserH = Math.max(_TL_MIN_H, Math.min(maxH, _vh + (_vy - _vTargetY)));
+        _tlApplyHeight(true);
+      });
     });
     function _vEnd(e) {
       if (!_vresizing) return;
