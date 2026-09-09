@@ -1016,7 +1016,7 @@ function initGraphEditor(svg) {
   function _setSnapBg(snap) {
     var bg = document.getElementById('sg-range-bg');
     if (bg) {
-      bg.setAttribute('fill', snap ? '#4a9eff' : '#1e1e1e');
+      bg.setAttribute('fill', snap ? '#4a9eff' : '#1c1c1c'); // same as #sg-range-bg in index.html
       bg.setAttribute('fill-opacity', snap ? '0.07' : '1');
     }
     for (var gi = 1; gi < _gridSize; gi++) {
