@@ -247,21 +247,28 @@ input, textarea {
   pointer-events: none;
 }
 
-/* Property name and time under the pointer; positioned by _tlShowReadout */
-.tl-readout {
+/* Bottom edge of the strip: drag to change its height (same look as the sidebar handle) */
+.tl-resize-handle {
+  height: 4px;
+  flex-shrink: 0;
+  cursor: row-resize;
+  background: transparent;
+  transition: background 0.15s;
+  position: relative;
+}
+
+.tl-resize-handle::before {
+  content: '';
   position: absolute;
-  top: 0; left: 0;
-  display: none;
-  font-family: var(--font);
-  font-size: 10px;
-  line-height: 12px;
-  padding: 1px 5px;
-  color: var(--text);
-  background: rgba(24,24,24,0.92);
-  border: 1px solid rgba(255,255,255,0.14);
-  border-radius: 3px;
-  white-space: nowrap;
-  pointer-events: none;
+  left: 0;
+  right: 0;
+  top: -6px;
+  bottom: -6px;
+  cursor: row-resize;
+}
+
+.tl-resize-handle:hover {
+  background: var(--border2);
 }
 
 /* Zoom toggle (whole clip / keyframes) at the right end, smaller than the graph tools */

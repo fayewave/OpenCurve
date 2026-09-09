@@ -1099,10 +1099,13 @@ var _TL_KEY       = 'opencurve-timeline';
 var _tlVisible    = localStorage.getItem(_TL_KEY) !== 'off';
 var _TL_ZOOM_KEY  = 'opencurve-timeline-zoom';
 var _tlZoomKeys   = localStorage.getItem(_TL_ZOOM_KEY) === 'keys'; // zoom to the keyframes instead of the whole clip
+var _TL_H_KEY     = 'opencurve-timeline-height';
+var _tlUserH      = parseInt(localStorage.getItem(_TL_H_KEY), 10) || null; // dragged height (px), null = fit the lanes
+var _TL_H_MAX     = 200;  // drag limit; the minimum is _TL_MIN_H
 var _TL_NS        = 'http://www.w3.org/2000/svg';
 var _TL_PAD_X     = 6;
 var _TL_MIN_H     = 24;   // one lane still leaves room for the zoom button
-var _TL_LANE_MAX  = 10;   // lane height in px with a few properties...
+var _TL_LANE_MAX  = 10;   // lane height in px with a few properties (24 once the strip has been dragged taller)...
 var _TL_LANE_MIN  = 4;    // ...thinning down to this with many (lanes never merge)
 var _TL_LANES_H   = 40;   // the lanes share this much height before they reach the minimum
 var _TL_SNAP_PX   = 5;    // a press this close to a keyframe lands exactly on it
@@ -1113,6 +1116,7 @@ var _tlGeo   = null;  // { W, H, laneH, y0, n, a, b } of the last build
 var _tlLanes = [];    // per lane: { key, name, bg, kf: [{ x, t }] }
 var _tlPh    = null;  // playhead { line, tri }
 var _tlHoverKey = null; // row lit up because its lane is hovered
+var _tlHoverText = '';  // shown in the status strip while the pointer is over a lane
 
 function _tlMk(tag, attrs) {
   var e = document.createElementNS(_TL_NS, tag);
@@ -1141,9 +1145,12 @@ function _tlRange(s) {
 function _tlX(t, g)   { return _TL_PAD_X + (t - g.a) / (g.b - g.a) * (g.W - 2 * _TL_PAD_X); }
 function _tlSec(x, g) { return g.a + (x - _TL_PAD_X) / (g.W - 2 * _TL_PAD_X) * (g.b - g.a); }
 
-// Lane height for n lanes: 10px that thin out (never merge) as properties pile up
+// Lane height for n lanes: 10px that thin out (never merge) as properties pile
+// up. Once the strip has been dragged to a height, the lanes share that instead
+// and may grow to 24px.
 function _tlLaneH(n) {
   if (n <= 0) return _TL_LANE_MAX;
+  if (_tlUserH) return Math.max(_TL_LANE_MIN, Math.min(24, Math.floor((_tlUserH - 6) / n)));
   return Math.max(_TL_LANE_MIN, Math.min(_TL_LANE_MAX, Math.floor(_TL_LANES_H / n)));
 }
 
@@ -1180,7 +1187,7 @@ function _tlRender(s, force) {
   var range  = _tlRange(s);
   var n      = range ? params.length : 0;
   var laneH  = _tlLaneH(n);
-  var H      = Math.max(_TL_MIN_H, n * laneH + 6);
+  var H      = Math.max(_tlUserH || _TL_MIN_H, n * laneH + 6); // the dragged height, unless the lanes need more
   var W      = _tlW;
   var sel    = s.selectedParamKeys || [], valid = s.validParamKeys || [];
   var sig = [W, H, n, _tlZoomKeys ? 'k' : 'c', range ? range.a.toFixed(4) + '-' + range.b.toFixed(4) : '', _curveColor, n === 0 ? s.status : ''].join('|');
@@ -1217,8 +1224,8 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
   var cx0 = Math.max(_TL_PAD_X, Math.min(W - _TL_PAD_X, _tlX(tl.clipStart, g)));
   var cx1 = Math.max(_TL_PAD_X, Math.min(W - _TL_PAD_X, _tlX(tl.clipEnd, g)));
   if (cx1 > cx0) els.svg.appendChild(_tlMk('rect', { x: cx0, y: 0, width: cx1 - cx0, height: H, fill: 'rgba(255,255,255,0.035)' }));
-  var d    = Math.max(3, Math.min(7, laneH - 3)); // diamond size
-  var barH = Math.max(2, laneH - 4);
+  var d    = Math.max(3, Math.min(9, laneH - 3)); // diamond size
+  var barH = Math.max(2, Math.min(12, laneH - 4));
   var sel  = s.selectedParamKeys || [], valid = s.validParamKeys || [];
   params.forEach(function(p, i) {
     var top = g.y0 + i * laneH, cy = top + laneH / 2;
@@ -1301,18 +1308,18 @@ function _tlRowHover(key) {
   if (key) { var row = document.querySelector('.prop-btn[data-key="' + key + '"]'); if (row) row.classList.add('tl-hover'); }
 }
 
-// Property name and clip-relative time under the pointer
-function _tlShowReadout(t, lane, x) {
-  var el = _tlEls && _tlEls.readout;
-  if (!el) return;
-  if (!t || !lane) { el.style.display = 'none'; return; }
-  var s = getState(), fps = (s.tl && s.tl.fps) || 25;
-  var rel = t.sec - (s.tl ? s.tl.clipStart : 0);
-  el.textContent = lane.name + (t.kf ? ' · keyframe' : '') + ' · ' + rel.toFixed(2) + 's · frame ' + Math.round(rel * fps);
-  el.style.display = 'block';
-  var g = _tlGeo, w = el.offsetWidth || 120, h = el.offsetHeight || 14;
-  el.style.left = Math.max(0, Math.min(g.W - w, x + 12)) + 'px';
-  el.style.top  = Math.max(0, Math.floor((g.H - h) / 2)) + 'px';
+// Property name and clip-relative time under the pointer, shown in the status
+// strip in place of its message (renderUI swaps it in while _tlHoverText is set)
+function _tlShowReadout(t, lane) {
+  var text = '';
+  if (t && lane) {
+    var s = getState(), fps = (s.tl && s.tl.fps) || 25;
+    var rel = t.sec - (s.tl ? s.tl.clipStart : 0);
+    text = lane.name + (t.kf ? ' · keyframe' : '') + ' · ' + rel.toFixed(2) + 's · frame ' + Math.round(rel * fps);
+  }
+  if (text === _tlHoverText) return;
+  _tlHoverText = text;
+  renderUI(getState());
 }
 
 function _tlSetZoom(keys) {
@@ -1332,6 +1339,8 @@ function _applyTimelineVisibility() {
   var root = document.getElementById('oc-timeline');
   if (!root) return;
   root.style.display = _tlVisible ? 'flex' : 'none';
+  var handle = document.getElementById('tl-resize');
+  if (handle) handle.style.display = _tlVisible ? 'block' : 'none';
   if (_tlVisible) { _tlSig = ''; _tlRender(getState(), true); }
 }
 
@@ -1339,8 +1348,7 @@ function _tlInit() {
   var root = document.getElementById('oc-timeline');
   if (!root) return;
   _tlEls = { root: root, wrap: root.querySelector('.tl-canvas-wrap'), svg: document.getElementById('tl-svg'),
-             readout: document.getElementById('tl-readout'), empty: document.getElementById('tl-empty'),
-             zoom: document.getElementById('tl-zoom') };
+             empty: document.getElementById('tl-empty'), zoom: document.getElementById('tl-zoom') };
   var svg = _tlEls.svg;
   function measure() {
     var rect = _tlEls.wrap.getBoundingClientRect();
@@ -1386,7 +1394,7 @@ function _tlInit() {
     var lane = li >= 0 ? _tlLanes[li] : null;
     _tlHighlightLane(lane ? lane.key : null);
     _tlRowHover(lane ? lane.key : null);
-    _tlShowReadout(t, lane, p.x);
+    _tlShowReadout(t, lane);
   });
   function leave() { down = null; _tlHighlightLane(null); _tlRowHover(null); _tlShowReadout(null); }
   svg.addEventListener('pointerleave', leave);
@@ -1397,6 +1405,29 @@ function _tlInit() {
       return _tlZoomKeys ? 'Zoomed to the keyframes. Click to show the whole clip' : 'Showing the whole clip. Click to zoom to the keyframes';
     });
     _tlEls.zoom.addEventListener('click', function() { _tlSetZoom(!_tlZoomKeys); });
+  }
+  // Bottom edge drags the strip taller or shorter (same pattern as the sidebar handle)
+  var handle = document.getElementById('tl-resize');
+  if (handle) {
+    var _ry = 0, _rh = 0, _resizing = false;
+    handle.addEventListener('pointerdown', function(e) {
+      _resizing = true;
+      _ry = e.clientY;
+      _rh = root.offsetHeight;
+      handle.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+    handle.addEventListener('pointermove', function(e) {
+      if (!_resizing) return;
+      _tlUserH = Math.max(_TL_MIN_H, Math.min(_TL_H_MAX, _rh + (e.clientY - _ry)));
+      _tlRender(getState(), true);
+    });
+    function _endResize() {
+      if (_resizing && _tlUserH) localStorage.setItem(_TL_H_KEY, _tlUserH);
+      _resizing = false;
+    }
+    handle.addEventListener('pointerup',     _endResize);
+    handle.addEventListener('pointercancel', _endResize);
   }
   _tlStyleZoomBtn();
   _applyTimelineVisibility();
@@ -1655,6 +1686,7 @@ function renderUI(s) {
     if (dotEl)  dotEl.style.color  = _sc.dot;
     txt.style.color = _sc.text;
     if (clipEl) clipEl.style.color = _sc.text;
+    if (_tlHoverText) msg = _tlHoverText; // pointer over the mini timeline: what's under it
     if (showClip) msg = '\u00b7 ' + msg;
     // Clickable whenever there are valid params: click selects all, click again clears
     var _vk = s.validParamKeys || [];
@@ -3082,6 +3114,7 @@ function _confirmReset() {
     localStorage.removeItem(_DENSITY_KEY);
     localStorage.removeItem(_TL_KEY);
     localStorage.removeItem(_TL_ZOOM_KEY);
+    localStorage.removeItem(_TL_H_KEY);
     _bakeDensity        = 1;
     _applyCurveColor('#4a9eff');
     _animationsOn       = true;
@@ -3090,6 +3123,7 @@ function _confirmReset() {
     _peakMode           = false;
     _tlVisible          = true;
     _tlZoomKeys         = false;
+    _tlUserH            = null;
     setState({ curve: { p1x: 0.625, p1y: 0.000, p2x: 0.375, p2y: 1.000 } });
     _showCopyToast('Reset all settings');
     try { location.reload(); } catch(e) {}
