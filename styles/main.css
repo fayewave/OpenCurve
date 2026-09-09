@@ -819,8 +819,9 @@ html, body {
 .status-warn:hover           { background: rgba(255,255,255,0.04); }
 
 /* Properties detected but none selected: quiet grey (the rows carry the colour) */
-.status-detected { background: rgba(255,255,255,0.06); }
-.status-detected .status-dot  { color: var(--text-dim); }
+/* Same dark grey as the warn state ("Move playhead..."); only the hover differs, since this one is clickable */
+.status-detected { background: transparent; }
+.status-detected .status-dot  { color: var(--text-faint); }
 .status-detected .status-text,
 .status-detected .status-clip { color: var(--text-dim); }
 

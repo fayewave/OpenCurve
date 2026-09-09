@@ -3295,7 +3295,7 @@ function renderUI(s) {
     var _sc = {
       'status-idle':     { dot: '#555',    text: '#888'    },
       'status-warn':     { dot: '#555',    text: '#888'    },
-      'status-detected': { dot: '#888',    text: '#888'    },
+      'status-detected': { dot: '#555',    text: '#888'    },
       'status-valid':    { dot: '#6cb8ff', text: '#6cb8ff' },
       'status-error':    { dot: '#f06060', text: '#f06060' },
       'status-done':     { dot: '#4ce890', text: '#4ce890' },
