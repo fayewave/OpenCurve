@@ -1125,8 +1125,10 @@ function _addPressState(el) {
   function up() { el.classList.remove('pressed'); }
   el.addEventListener('pointerdown', function(e) { if (e.button === 0) el.classList.add('pressed'); });
   el.addEventListener('pointerup', up);
-  el.addEventListener('pointerleave', up);
+  el.addEventListener('pointerleave', function() { up(); el.classList.remove('hover'); });
   el.addEventListener('pointercancel', up);
+  // Hover mirrored as a class: UXP applies compound :hover rules unreliably
+  el.addEventListener('pointerenter', function() { el.classList.add('hover'); });
 }
 
 function _attachTooltip(el, text) {
@@ -1247,6 +1249,16 @@ function renderUI(s) {
       // Playhead is already between this property's keyframes: pin shows blue even when unselected
       btn.classList.toggle('ready', validKeys.indexOf(k) >= 0);
       btn.classList.toggle('baked',  bakedKeys.indexOf(k) >= 0 && selKeys.indexOf(k) < 0);
+      // The pin carries its own state classes: UXP doesn't restyle a child when
+      // only the row's class changes, so ".prop-btn.baked .prop-pin" went stale
+      var pinEl = btn.querySelector('.prop-pin');
+      if (pinEl) {
+        var pinReady = validKeys.indexOf(k) >= 0;
+        pinEl.classList.toggle('pin-ready',   pinReady);
+        pinEl.classList.toggle('pin-active',  isSel);
+        pinEl.classList.toggle('pin-pending', isSel && !pinReady);
+        pinEl.classList.toggle('pin-baked',   bakedKeys.indexOf(k) >= 0 && !isSel);
+      }
       // Undo button only on rows with a bake to undo (inline style: UXP ignores class-driven display changes)
       var undoEl = btn.querySelector('.prop-undo');
       if (undoEl) undoEl.style.display = bakedKeys.indexOf(k) >= 0 ? 'flex' : 'none';

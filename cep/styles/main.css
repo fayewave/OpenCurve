@@ -138,7 +138,6 @@ input, textarea {
 }
 
 
-
 /* ─── Select dropdown ───────────────────────────────────────── */
 .select-wrapper {
   position: relative;
@@ -478,6 +477,11 @@ input, textarea {
 }
 
 /* Pin: jumps the playhead to the property's keyframes. Inherits the row colour. */
+/* Pin (jump) button. Its state lives on the pin itself (pin-ready, pin-active,
+   pin-pending, pin-baked, set in renderUI's sync pass) and hover/press are
+   mirrored as .hover / .pressed by _addPressState. UXP doesn't restyle a child
+   when only its parent's class changes and applies descendant + :hover rules
+   unreliably, so rules like ".prop-btn.baked .prop-pin:hover" left pins stale. */
 .prop-pin {
   display: flex;
   align-items: center;
@@ -487,20 +491,18 @@ input, textarea {
   height: 22px;
   margin-left: 6px;
   border-radius: 3px;
-  /* Amber at rest: the playhead isn't over this property's keyframes yet, so the
-     pin is the thing to press. .ready (blue) and .baked (green) override it. */
+  /* Amber at rest: the playhead isn't over this property's keyframes yet, so the pin is the thing to press */
   background: rgba(240,160,48,0.22);
   color: #f7b95a;
   /* no resting opacity: UXP ignores it, so the CEP build looked dimmer than the CCX */
   cursor: pointer;
+  transition: background 0.12s, color 0.12s, opacity 0.12s;
 }
-
-.prop-pin:hover {
+.prop-pin:hover, .prop-pin.hover {
   background: rgba(240,160,48,0.45);
   color: #ffffff;
   opacity: 1;
 }
-
 /* Pressed (held): a step brighter than hover. UXP's :active is unreliable, so
    plugin.js also toggles .pressed on pointer down/up (_addPressState). */
 .prop-pin:active, .prop-pin.pressed {
@@ -509,37 +511,48 @@ input, textarea {
   opacity: 1;
 }
 
-/* Pin on a row the playhead is already over (ready to bake), selected or not: blue */
-.prop-btn.ready .prop-pin {
+/* Playhead over the pair (pin-ready) or row selected (pin-active): blue */
+.prop-pin.pin-ready, .prop-pin.pin-active {
   background: rgba(74,158,255,0.22);
   color: #7dc4ff;
 }
-
-.prop-btn.ready .prop-pin:hover {
+.prop-pin.pin-ready:hover, .prop-pin.pin-ready.hover, .prop-pin.pin-active:hover, .prop-pin.pin-active.hover {
   background: rgba(74,158,255,0.42);
   color: #ffffff;
 }
-
-.prop-btn.ready .prop-pin:active, .prop-btn.ready .prop-pin.pressed {
+.prop-pin.pin-ready:active, .prop-pin.pin-ready.pressed, .prop-pin.pin-active:active, .prop-pin.pin-active.pressed {
   background: rgba(74,158,255,0.62);
   color: #ffffff;
 }
 
-/* Pin on a selected (blue) row: tint to match */
-.prop-btn.active .prop-pin {
-  background: rgba(74,158,255,0.2);
-  color: #7dc4ff;
+/* Selected but the playhead isn't over the pair yet: amber like the row */
+.prop-pin.pin-pending {
+  background: rgba(240,160,48,0.22);
+  color: #f7b95a;
 }
-
-.prop-btn.active .prop-pin:hover {
-  background: rgba(74,158,255,0.4);
+.prop-pin.pin-pending:hover, .prop-pin.pin-pending.hover {
+  background: rgba(240,160,48,0.45);
+  color: #ffffff;
+}
+.prop-pin.pin-pending:active, .prop-pin.pin-pending.pressed {
+  background: rgba(240,160,48,0.65);
   color: #ffffff;
 }
 
-.prop-btn.active .prop-pin:active, .prop-btn.active .prop-pin.pressed {
-  background: rgba(74,158,255,0.6);
+/* Baked (green) row */
+.prop-pin.pin-baked {
+  background: rgba(61,220,132,0.18);
+  color: #7ddc9a;
+}
+.prop-pin.pin-baked:hover, .prop-pin.pin-baked.hover {
+  background: rgba(61,220,132,0.42);
   color: #ffffff;
 }
+.prop-pin.pin-baked:active, .prop-pin.pin-baked.pressed {
+  background: rgba(61,220,132,0.62);
+  color: #ffffff;
+}
+
 
 .prop-btn:hover {
   background: rgba(255,255,255,0.13);
@@ -577,20 +590,6 @@ input, textarea {
   color: #f7b95a;
 }
 
-.prop-btn.active.pending .prop-pin {
-  background: rgba(240,160,48,0.22);
-  color: #f7b95a;
-}
-
-.prop-btn.active.pending .prop-pin:hover {
-  background: rgba(240,160,48,0.45);
-  color: #ffffff;
-}
-
-.prop-btn.active.pending .prop-pin:active, .prop-btn.active.pending .prop-pin.pressed {
-  background: rgba(240,160,48,0.65);
-  color: #ffffff;
-}
 
 /* Undo: removes the keyframes a bake added to this property. Only present on
    baked rows; renderUI toggles display inline. */
@@ -644,21 +643,6 @@ input, textarea {
   color: #ffffff;
 }
 
-/* Pin on a baked (green) row: tint to match */
-.prop-btn.baked .prop-pin {
-  background: rgba(61,220,132,0.18);
-  color: #7ddc9a;
-}
-
-.prop-btn.baked .prop-pin:hover {
-  background: rgba(61,220,132,0.42);
-  color: #ffffff;
-}
-
-.prop-btn.baked .prop-pin:active, .prop-btn.baked .prop-pin.pressed {
-  background: rgba(61,220,132,0.62);
-  color: #ffffff;
-}
 
 /* ─── Status strip ──────────────────────────────────────────── */
 .status-strip {
