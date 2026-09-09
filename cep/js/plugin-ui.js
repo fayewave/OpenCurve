@@ -1329,9 +1329,24 @@ function initPanel() {
     invertBtn.addEventListener('click', function() { _applyCurveOp(_invertCurve); });
   }
 
-  // Enter presses Go (when the panel has focus and nothing else is taking keys)
-  window.addEventListener('keydown', function(e) {
-    if (e.key !== 'Enter' || e.repeat) return;
+  // Enter presses Go. UXP only delivers key events to a focused element (a
+  // window-level listener never fires), so the panel root is made focusable
+  // and takes focus on any press inside the panel that isn't on a field. The
+  // listener sits on the document in the capture phase so it sees the key
+  // whichever element inside the panel holds focus. CEP gets the same code.
+  var appRoot = document.getElementById('app') || document.body;
+  if (appRoot && !appRoot.hasAttribute('tabindex')) {
+    appRoot.setAttribute('tabindex', '-1');
+    appRoot.style.outline = 'none';
+  }
+  document.addEventListener('pointerdown', function(e) {
+    var t   = e.target;
+    var tag = t && t.tagName ? String(t.tagName).toLowerCase() : '';
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || (t && t.isContentEditable)) return;
+    try { appRoot.focus(); } catch(_) {}
+  }, true);
+  document.addEventListener('keydown', function(e) {
+    if ((e.key !== 'Enter' && e.keyCode !== 13) || e.repeat) return;
     var t   = e.target;
     var tag = t && t.tagName ? String(t.tagName).toLowerCase() : '';
     if (tag === 'input' || tag === 'textarea' || tag === 'select' || (t && t.isContentEditable)) return;
@@ -1340,7 +1355,7 @@ function initPanel() {
     if (!go || go.classList.contains('btn-disabled')) return;
     e.preventDefault();
     go.click();
-  });
+  }, true);
 
   // Settings: same modal as the flyout menu and the context menus
   var settingsBtn = document.getElementById('graph-settings');
