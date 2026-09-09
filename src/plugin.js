@@ -2724,10 +2724,6 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
   els.svg.style.cursor    = hasLanes ? 'pointer' : 'default';
   if (!hasLanes) { _tlHighlightLane(null); _tlRowHover(null); _tlShowReadout(null); return; }
   var tl = s.tl, fps = tl.fps || 25;
-  // The clip's extent: the whole width in clip view, possibly narrower when zoomed to the keyframes
-  var cx0 = Math.max(_TL_PAD_X, Math.min(W - _TL_PAD_X, _tlX(tl.clipStart, g)));
-  var cx1 = Math.max(_TL_PAD_X, Math.min(W - _TL_PAD_X, _tlX(tl.clipEnd, g)));
-  if (cx1 > cx0) els.svg.appendChild(_tlMk('rect', { x: cx0, y: 0, width: cx1 - cx0, height: H, fill: 'rgba(255,255,255,0.035)' }));
   var d    = Math.max(3, Math.min(9, laneH - 3)); // diamond size
   var barH = Math.max(2, Math.min(12, laneH - 4));
   var sel  = s.selectedParamKeys || [], valid = s.validParamKeys || [], baked = s.bakedParamKeys || [];
