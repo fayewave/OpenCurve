@@ -996,7 +996,6 @@ function _frameSpan(s, keys) {
 }
 
 var STATUS_CONFIG = {
-  'playing':      { cls:'status-idle',  text: 'Keyframe detection paused while playing' },
   'idle':         { cls:'status-idle',  text: function(s){ return s.hint || 'Open a project and select a clip'; } },
   'no-project':   { cls:'status-idle',  text: 'No project open' },
   'no-sequence':  { cls:'status-idle',  text: 'No active sequence' },
@@ -2253,9 +2252,9 @@ var _UPDATE_NOTIF_KEY   = 'opencurve-update-notif';
 var _updateNotifsOn     = localStorage.getItem(_UPDATE_NOTIF_KEY) !== 'off';
 var _ANIM_KEY           = 'opencurve-animations';
 var _animationsOn       = localStorage.getItem(_ANIM_KEY) !== 'off';
-var _SCAN_PLAYBACK_KEY  = 'opencurve-scan-during-playback';
-// Defaults to On — only off when the user has explicitly turned it off.
-var _scanDuringPlayback = localStorage.getItem(_SCAN_PLAYBACK_KEY) !== 'off';
+// 2.0.0: "Scan During Playback" is always on (the toggle only made the panel
+// worse). Drop the old key so a user who had turned it off comes back on.
+try { localStorage.removeItem('opencurve-scan-during-playback'); } catch(e) {}
 var _GRID_KEY           = 'opencurve-grid-size';
 var _gridSize           = parseInt(localStorage.getItem(_GRID_KEY), 10) || 8;
 var _LAYOUT_KEY         = 'opencurve-preset-layout';
@@ -2720,7 +2719,6 @@ function _confirmReset() {
     localStorage.removeItem(_LAYOUT_KEY);
     localStorage.removeItem(_ANIM_KEY);
     localStorage.removeItem(_UPDATE_NOTIF_KEY);
-    localStorage.removeItem(_SCAN_PLAYBACK_KEY);
     localStorage.removeItem(_GRAPH_KEY);
     localStorage.removeItem(_PEAK_KEY);
     localStorage.removeItem(_DENSITY_KEY);
@@ -2728,7 +2726,6 @@ function _confirmReset() {
     _applyCurveColor('#4a9eff');
     _animationsOn       = true;
     _updateNotifsOn     = true;
-    _scanDuringPlayback = true;
     _graphVisible       = true;
     _peakMode           = false;
     setState({ curve: { p1x: 0.625, p1y: 0.000, p2x: 0.375, p2y: 1.000 } });
@@ -2920,35 +2917,6 @@ function _showSettingsModal() {
     _updateAnimCheck();
   });
   rowsCol.appendChild(animRow);
-
-  // Scan during playback toggle row
-  var scanRow = document.createElement('div');
-  scanRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);cursor:pointer;';
-  var scanLabel = document.createElement('span');
-  scanLabel.style.cssText = 'font-size:14px;flex:1;color:#d4d4d4;';
-  scanLabel.textContent = 'Scan During Playback';
-  var scanCheck = document.createElement('span');
-  scanCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
-  function _updateScanCheck() {
-    scanCheck.innerHTML = _scanDuringPlayback ? _svgCheck : _svgCross;
-    scanLabel.textContent = 'Scan During Playback ' + (_scanDuringPlayback ? 'On' : 'Off');
-    scanRow.style.background = _scanDuringPlayback ? 'rgba(61,220,132,0.08)' : 'rgba(240,96,96,0.08)';
-  }
-  var scanIcon = document.createElement('span');
-  scanIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
-  scanIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><polygon points="4,2 4,14 13,8" fill="none" stroke="#b0b0b0" stroke-width="1.4" stroke-linejoin="round"/></svg>';
-  _updateScanCheck();
-  scanRow.appendChild(scanIcon);
-  scanRow.appendChild(scanLabel);
-  scanRow.appendChild(scanCheck);
-  scanRow.addEventListener('mouseenter', function() { scanRow.style.background = _scanDuringPlayback ? 'rgba(61,220,132,0.15)' : 'rgba(240,96,96,0.15)'; });
-  scanRow.addEventListener('mouseleave', function() { scanRow.style.background = _scanDuringPlayback ? 'rgba(61,220,132,0.08)' : 'rgba(240,96,96,0.08)'; });
-  scanRow.addEventListener('click', function() {
-    _scanDuringPlayback = !_scanDuringPlayback;
-    localStorage.setItem(_SCAN_PLAYBACK_KEY, _scanDuringPlayback ? 'on' : 'off');
-    _updateScanCheck();
-  });
-  rowsCol.appendChild(scanRow);
 
   // Graph visibility toggle row
   var graphRow = document.createElement('div');
@@ -3202,9 +3170,6 @@ return {
 
   // Update notification state (read by bridge)
   get updateNotifsOn() { return _updateNotifsOn; },
-
-  // Scan-during-playback toggle (read by bridge poll loop)
-  get scanDuringPlayback() { return _scanDuringPlayback; },
 
   // Keyframe spacing for the bake (read by the bridge when Go is pressed)
   get bakeDensity() { return _bakeDensity; },

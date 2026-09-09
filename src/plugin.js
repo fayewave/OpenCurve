@@ -2040,24 +2040,12 @@ async function detectContext() {
     var playerPos = await sequence.getPlayerPosition();
     var ph = playerPos.seconds;
 
-    // Track sustained playhead movement to distinguish playing from scrubbing.
-    // Short scrubs (1-2 polls) get real-time detection; sustained playback (3+) pauses it.
-    // If the user has enabled "scan during playback" in Settings, we never pause.
+    // Scanning continues during playback (the 1.x "pause while playing"
+    // option was removed in 2.0.0; every moved playhead gets a scan).
     // NOTE: don't write ph into _cache.playhead here. Doing so made the cache
     // check below think the playhead was static, so a move never triggered a
     // rescan and the UI only caught up on the 1s heartbeat (bug in <= 1.2.3).
     var moved = (_cache.playhead !== null && ph !== _cache.playhead);
-    if (moved) {
-      _cache.movingCount++;
-      if (!_scanDuringPlayback && _cache.movingCount >= PLAYBACK_POLLS) {
-        _cache.playhead = ph;
-        _cache.pollCount = 0;
-        _dbgKind = 'playing';
-        return { status: 'playing', availableParams: [], hint: 'Keyframe detection paused while playing' };
-      }
-    } else {
-      _cache.movingCount = 0;
-    }
 
     // If playhead hasn't moved, check if selection changed before returning cache
     _cache.pollCount++;
@@ -2479,7 +2467,6 @@ function _frameSpan(s, keys) {
 }
 
 var STATUS_CONFIG = {
-  'playing':      { cls:'status-idle',  text: 'Keyframe detection paused while playing' },
   'idle':         { cls:'status-idle',  text: function(s){ return s.hint || 'Open a project and select a clip'; } },
   'no-project':   { cls:'status-idle',  text: 'No project open' },
   'no-sequence':  { cls:'status-idle',  text: 'No active sequence' },
@@ -3784,7 +3771,6 @@ var _cache = {
   lastResult:     null,   // full detectContext result
   lastResultAt:   0,      // timestamp of last full detection
   pollCount:      0,      // polls since last full detection
-  movingCount:    0,      // consecutive polls where playhead moved
 };
 
 var FPS_RECHECK_MS     = 30000; // re-detect fps every 30s to catch mid-session changes
@@ -3802,7 +3788,6 @@ function _invalidateCache() {
 // ─── Polling ──────────────────────────────────────────────────────────────
 var pollTimer      = null;
 var POLL_MS        = 100;  // measured: full scan ~9ms avg / 23ms max, so 100ms leaves 4x headroom (was 200)
-var PLAYBACK_POLLS = 6;    // consecutive moving polls (~600ms) before we treat motion as playback and pause scanning
 var _lastStatus    = '';
 var _skipPollUntil = 0;
 var _pollRunning   = false; // prevents concurrent poll calls piling up
@@ -3973,9 +3958,9 @@ var _UPDATE_NOTIF_KEY   = 'opencurve-update-notif';
 var _updateNotifsOn     = localStorage.getItem(_UPDATE_NOTIF_KEY) !== 'off';
 var _ANIM_KEY           = 'opencurve-animations';
 var _animationsOn       = localStorage.getItem(_ANIM_KEY) !== 'off';
-var _SCAN_PLAYBACK_KEY  = 'opencurve-scan-during-playback';
-// Defaults to On — only off when the user has explicitly turned it off.
-var _scanDuringPlayback = localStorage.getItem(_SCAN_PLAYBACK_KEY) !== 'off';
+// 2.0.0: "Scan During Playback" is always on (the toggle only made the panel
+// worse). Drop the old key so a user who had turned it off comes back on.
+try { localStorage.removeItem('opencurve-scan-during-playback'); } catch(e) {}
 var _GRID_KEY           = 'opencurve-grid-size';
 var _gridSize           = parseInt(localStorage.getItem(_GRID_KEY), 10) || 8;
 var _LAYOUT_KEY         = 'opencurve-preset-layout';
@@ -4446,7 +4431,6 @@ function _confirmReset() {
     localStorage.removeItem(_LAYOUT_KEY);
     localStorage.removeItem(_ANIM_KEY);
     localStorage.removeItem(_UPDATE_NOTIF_KEY);
-    localStorage.removeItem(_SCAN_PLAYBACK_KEY);
     localStorage.removeItem(_GRAPH_KEY);
     localStorage.removeItem(_PEAK_KEY);
     localStorage.removeItem(_DENSITY_KEY);
@@ -4454,7 +4438,6 @@ function _confirmReset() {
     _applyCurveColor('#4a9eff');
     _animationsOn       = true;
     _updateNotifsOn     = true;
-    _scanDuringPlayback = true;
     _graphVisible       = true;
     _peakMode           = false;
     setState({ curve: { p1x: 0.625, p1y: 0.000, p2x: 0.375, p2y: 1.000 } });
@@ -4657,35 +4640,6 @@ function _showSettingsModal() {
     _updateAnimCheck();
   });
   rowsCol.appendChild(animRow);
-
-  // Scan during playback toggle row
-  var scanRow = document.createElement('div');
-  scanRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);cursor:pointer;';
-  var scanLabel = document.createElement('span');
-  scanLabel.style.cssText = 'font-size:14px;flex:1;color:#d4d4d4;';
-  scanLabel.textContent = 'Scan During Playback';
-  var scanCheck = document.createElement('span');
-  scanCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
-  function _updateScanCheck() {
-    scanCheck.innerHTML = _scanDuringPlayback ? _svgCheck : _svgCross;
-    scanLabel.textContent = 'Scan During Playback ' + (_scanDuringPlayback ? 'On' : 'Off');
-    scanRow.style.background = _scanDuringPlayback ? 'rgba(61,220,132,0.08)' : 'rgba(240,96,96,0.08)';
-  }
-  var scanIcon = document.createElement('span');
-  scanIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
-  scanIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><polygon points="4,2 4,14 13,8" fill="none" stroke="#b0b0b0" stroke-width="1.7" stroke-linejoin="round"/></svg>';
-  _updateScanCheck();
-  scanRow.appendChild(scanIcon);
-  scanRow.appendChild(scanLabel);
-  scanRow.appendChild(scanCheck);
-  scanRow.addEventListener('mouseenter', function() { scanRow.style.background = _scanDuringPlayback ? 'rgba(61,220,132,0.15)' : 'rgba(240,96,96,0.15)'; });
-  scanRow.addEventListener('mouseleave', function() { scanRow.style.background = _scanDuringPlayback ? 'rgba(61,220,132,0.08)' : 'rgba(240,96,96,0.08)'; });
-  scanRow.addEventListener('click', function() {
-    _scanDuringPlayback = !_scanDuringPlayback;
-    localStorage.setItem(_SCAN_PLAYBACK_KEY, _scanDuringPlayback ? 'on' : 'off');
-    _updateScanCheck();
-  });
-  rowsCol.appendChild(scanRow);
 
   // Graph visibility toggle row
   var graphRow = document.createElement('div');

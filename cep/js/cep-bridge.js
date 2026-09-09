@@ -21,7 +21,6 @@
   var _lastStatus    = '';
   var _skipPollUntil = 0;
   var _lastPh        = null; // last playhead position (seconds)
-  var _movingCount   = 0;    // consecutive polls where playhead moved
 
   // ─── Bridge object ──────────────────────────────────────────────────────
   var bridge = {
@@ -29,7 +28,7 @@
     onJump: function(sec) {
       cs.evalScript('jumpPlayhead(' + Number(sec) + ')', function(result) {
         if (result !== 'true') { OpenCurve.showCopyToast('Could not move playhead'); return; }
-        _lastPh = null; _movingCount = 0; _skipPollUntil = 0;
+        _lastPh = null; _skipPollUntil = 0;
       });
     },
 
@@ -285,37 +284,13 @@
       // Nothing changed since the last poll — the host skipped the full scan.
       // Keep the current UI state untouched (no setState, no re-render).
       if (result.status === 'unchanged') {
-        _movingCount = 0;
         if (result.ph !== undefined) _lastPh = result.ph;
         if (_debugTiming) _dbgRecord(_dbgK, _tDet, result, _t0, 0, result.ph);
         return;
       }
 
-      // Track sustained playhead movement — pause detection during playback.
-      // If the user has enabled "Scan During Playback" in Settings, skip the pause.
+      // Scanning continues during playback (the 1.x pause option was removed in 2.0.0)
       var ph = result.ph;
-      if (_lastPh !== null && ph !== undefined && ph !== _lastPh) {
-        _movingCount++;
-        _lastPh = ph;
-        if (!OpenCurve.scanDuringPlayback && _movingCount >= 3) {
-          OpenCurve.setState({
-            status: 'playing',
-            availableParams: [],
-            hint: 'Keyframe detection paused while playing',
-            selectedParamKeys: [],
-            validParamKeys: [],
-            paramContexts: {},
-            bakedParamKeys: [],
-          });
-          if ('playing' !== _lastStatus) {
-            _lastStatus = 'playing';
-          }
-          if (_debugTiming) _dbgRecord('playing', _tDet, result, _t0, 0, ph);
-          return;
-        }
-      } else {
-        _movingCount = 0;
-      }
       _lastPh = ph;
 
       var s = OpenCurve.getState();
