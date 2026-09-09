@@ -70,6 +70,7 @@ try {
           { id: 'options',       label: 'Settings' },
           { id: 'check-updates', label: 'Check for Updates' },
           { id: 'dump-comps',    label: 'Dump Components (Debug)' },
+          { id: 'poll-timing',   label: 'Poll Timing (Debug)' },
           { id: 'sep',           label: '-' },
           { id: 'made-by',       label: 'made by faye', enabled: false },
         ],
@@ -77,6 +78,7 @@ try {
           if (id === 'options')       _showSettingsModal();
           if (id === 'check-updates') _checkForUpdates();
           if (id === 'dump-comps')    _dumpComponents();
+          if (id === 'poll-timing')   _toggleDebugTiming();
           if (id === 'reset')         _confirmReset();
         },
       },
@@ -95,6 +97,8 @@ var state = {
   validParamKeys:   [],
   paramContexts:    {},
   bakedParamKeys:   [],
+  clipId:           null,   // identity (name|start|end) of the clip the rows belong to; keys bake records
+  clipName:         '',     // that clip's name, shown in the status strip
   errorMessage:     '',
   hint:             '',
   isBaking:         false,
@@ -103,11 +107,11 @@ var state = {
 var stateListeners = [];
 
 function getState() {
-  return Object.assign({}, state, { curve: Object.assign({}, state.curve) });
+  return Object.assign({}, state, { curve: _cloneCurve(state.curve) });
 }
 function setState(updates) {
   Object.assign(state, updates);
-  if (updates.curve) Object.assign(state.curve, updates.curve);
+  if (updates.curve) state.curve = _cloneCurve(updates.curve);
   var snap = getState();
   stateListeners.forEach(function(fn) { try { fn(snap); } catch(_) {} });
 }
@@ -115,9 +119,10 @@ function setState(updates) {
 // ─── Curve animation ─────────────────────────────────────────────────────
 var _curveAnimRaf = null;
 function _animateToCurve(target, onUpdate) {
-  if (!_animationsOn) { setState({ curve: Object.assign({}, target) }); onUpdate(target); return; }
+  // Multi-point curves don't tween (the point counts differ), they just switch
+  if (!_animationsOn || _hasPts(target) || _hasPts(getState().curve)) { setState({ curve: target }); onUpdate(getState().curve); return; }
   if (_curveAnimRaf) { cancelAnimationFrame(_curveAnimRaf); _curveAnimRaf = null; }
-  var from = Object.assign({}, getState().curve);
+  var from = _cloneCurve(getState().curve);
   var duration = 150;
   var start = null;
   function easeInOut(t) { return t < 0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
@@ -174,8 +179,511 @@ function sampleBezier(x, curve) {
   var cx = Math.max(0, Math.min(1, x));
   if (cx === 0) return 0;
   if (cx === 1) return 1;
+  if (_hasPts(curve)) return _sampleMulti(cx, curve);
   var t = _tForX(cx, curve.p1x, curve.p2x);
   return _by(t, curve.p1y, curve.p2y);
+}
+
+// ─── Multi-point curves ───────────────────────────────────────────────────
+// The Add Point tool (#add-point) turns the single cubic into a chain of them.
+// curve.pts holds the interior anchors, sorted by x:
+//   { x, y, ix, iy, ox, oy, smooth }   ix/iy = incoming handle, ox/oy = outgoing (absolute coords)
+// p1 stays the outgoing handle of (0,0) and p2 the incoming handle of (1,1), so a
+// curve without pts is exactly the old format and old presets still load.
+// Every handle's x is kept inside its own segment so the curve stays a function of time.
+var PT_MIN_GAP = 0.01;
+var _graphHitTest = null; // set by initGraphEditor so the right-click menu can find a point
+
+function _hasPts(c) { return !!(c && c.pts && c.pts.length); }
+
+function _cloneCurve(c) {
+  var out = { p1x: c.p1x, p1y: c.p1y, p2x: c.p2x, p2y: c.p2y };
+  if (_hasPts(c)) {
+    out.pts = [];
+    for (var i = 0; i < c.pts.length; i++) {
+      var p = c.pts[i];
+      out.pts.push({ x: p.x, y: p.y, ix: p.ix, iy: p.iy, ox: p.ox, oy: p.oy, smooth: p.smooth !== false });
+    }
+  }
+  return out;
+}
+
+// Cubic segments of a curve: [{x0,y0, c1x,c1y, c2x,c2y, x3,y3}]
+function _segsOf(c) {
+  var pts = c.pts || [];
+  var segs = [], px = 0, py = 0, cx = c.p1x, cy = c.p1y;
+  for (var i = 0; i < pts.length; i++) {
+    var p = pts[i];
+    segs.push({ x0: px, y0: py, c1x: cx, c1y: cy, c2x: p.ix, c2y: p.iy, x3: p.x, y3: p.y });
+    px = p.x; py = p.y; cx = p.ox; cy = p.oy;
+  }
+  segs.push({ x0: px, y0: py, c1x: cx, c1y: cy, c2x: c.p2x, c2y: c.p2y, x3: 1, y3: 1 });
+  return segs;
+}
+
+// General cubic (any endpoints) and its derivative
+function _cub(t, a, b, c, d) {
+  var mt = 1 - t;
+  return mt*mt*mt*a + 3*mt*mt*t*b + 3*mt*t*t*c + t*t*t*d;
+}
+function _cubd(t, a, b, c, d) {
+  var mt = 1 - t;
+  return 3*mt*mt*(b - a) + 6*mt*t*(c - b) + 3*t*t*(d - c);
+}
+
+// t for a given x inside one segment (Newton, then bisection as a safety net)
+function _segTForX(x, s) {
+  var span = s.x3 - s.x0;
+  if (span <= 1e-9) return 0;
+  var t = (x - s.x0) / span;
+  for (var i = 0; i < 12; i++) {
+    var err = _cub(t, s.x0, s.c1x, s.c2x, s.x3) - x;
+    if (Math.abs(err) < 1e-8) return t;
+    var d = _cubd(t, s.x0, s.c1x, s.c2x, s.x3);
+    if (Math.abs(d) < 1e-8) break;
+    t = Math.max(0, Math.min(1, t - err / d));
+  }
+  var lo = 0, hi = 1;
+  for (var j = 0; j < 24; j++) {
+    var mid = (lo + hi) / 2;
+    if (_cub(mid, s.x0, s.c1x, s.c2x, s.x3) < x) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+function _segAt(x, segs) {
+  for (var i = segs.length - 1; i >= 0; i--) if (x >= segs[i].x0) return segs[i];
+  return segs[0];
+}
+
+function _sampleMulti(x, c) {
+  var s = _segAt(x, _segsOf(c));
+  var t = _segTForX(x, s);
+  return _cub(t, s.y0, s.c1y, s.c2y, s.y3);
+}
+
+// Sort anchors, keep them apart, and pull every handle's x back inside its segment
+function _normalizeCurve(c) {
+  if (!_hasPts(c)) { delete c.pts; return c; }
+  c.pts.sort(function(a, b) { return a.x - b.x; });
+  var n = c.pts.length;
+  for (var i = 0; i < n; i++) {
+    var p = c.pts[i];
+    var lo = (i === 0 ? 0 : c.pts[i-1].x) + PT_MIN_GAP;
+    var hi = 1 - PT_MIN_GAP * (n - i);
+    p.x = Math.max(lo, Math.min(hi, p.x));
+  }
+  for (var k = 0; k < n; k++) {
+    var q = c.pts[k];
+    var prevX = k === 0 ? 0 : c.pts[k-1].x;
+    var nextX = k === n - 1 ? 1 : c.pts[k+1].x;
+    q.ix = Math.max(prevX, Math.min(q.x, q.ix));
+    q.ox = Math.max(q.x, Math.min(nextX, q.ox));
+    q.y  = Math.max(Y_CLAMP_MIN, Math.min(Y_CLAMP_MAX, q.y));
+    q.iy = Math.max(Y_CLAMP_MIN, Math.min(Y_CLAMP_MAX, q.iy));
+    q.oy = Math.max(Y_CLAMP_MIN, Math.min(Y_CLAMP_MAX, q.oy));
+  }
+  c.p1x = Math.max(0, Math.min(c.pts[0].x, c.p1x));
+  c.p2x = Math.max(c.pts[n-1].x, Math.min(1, c.p2x));
+  return c;
+}
+
+// Curve outline as an SVG path; tx/ty map normalised coords to pixels
+function _curvePathTx(c, tx, ty) {
+  var segs = _segsOf(c), d = 'M' + tx(0) + ',' + ty(0);
+  for (var i = 0; i < segs.length; i++) {
+    var s = segs[i];
+    d += ' C' + tx(s.c1x) + ',' + ty(s.c1y) + ' ' + tx(s.c2x) + ',' + ty(s.c2y) + ' ' + tx(s.x3) + ',' + ty(s.y3);
+  }
+  return d;
+}
+function _curvePathD(c, W, H) {
+  return _curvePathTx(c,
+    function(x) { return normToSVG(x, 0, W, H).cx; },
+    function(y) { return normToSVG(0, y, W, H).cy; });
+}
+
+// Handle descriptors used by the graph editor: {k:'p1'} {k:'p2'} {k:'a',i} {k:'in',i} {k:'out',i}
+function _handlePos(c, d) {
+  if (d.k === 'p1') return { x: c.p1x, y: c.p1y };
+  if (d.k === 'p2') return { x: c.p2x, y: c.p2y };
+  var p = c.pts[d.i];
+  if (d.k === 'a')  return { x: p.x,  y: p.y  };
+  if (d.k === 'in') return { x: p.ix, y: p.iy };
+  return { x: p.ox, y: p.oy };
+}
+
+// Move a handle or anchor to (x, y) with the segment constraints applied. On a
+// smooth anchor both handles move together as exact mirrors; alt keeps them in
+// line but lets each keep its own length; ctrl moves only the dragged handle and
+// breaks the pair, so the point becomes a corner.
+function _setHandle(c, d, x, y, alt, ctrl) {
+  var pts = c.pts || [], n = pts.length;
+  y = Math.max(Y_CLAMP_MIN, Math.min(Y_CLAMP_MAX, y));
+  if (d.k === 'p1') { c.p1x = Math.max(0, Math.min(n ? pts[0].x : 1, x)); c.p1y = y; return; }
+  if (d.k === 'p2') { c.p2x = Math.max(n ? pts[n-1].x : 0, Math.min(1, x)); c.p2y = y; return; }
+  var p = pts[d.i];
+  var prevX = d.i === 0 ? 0 : pts[d.i-1].x;
+  var nextX = d.i === n - 1 ? 1 : pts[d.i+1].x;
+  if (d.k === 'a') {
+    var nx = Math.max(prevX + PT_MIN_GAP, Math.min(nextX - PT_MIN_GAP, x));
+    var dx = nx - p.x, dy = y - p.y;
+    p.x = nx; p.y = y;
+    p.ix += dx; p.iy += dy; p.ox += dx; p.oy += dy;
+    _normalizeCurve(c);
+    return;
+  }
+  if (ctrl) p.smooth = false;
+  var link = ctrl ? false : (p.smooth || alt); // alt also re-links a broken point for this drag
+  if (d.k === 'in') {
+    p.ix = Math.max(prevX, Math.min(p.x, x)); p.iy = y;
+    if (link) _mirrorHandle(p, 'in', p.x, nextX, !alt);
+  } else {
+    p.ox = Math.max(p.x, Math.min(nextX, x)); p.oy = y;
+    if (link) _mirrorHandle(p, 'out', prevX, p.x, !alt);
+  }
+}
+
+// Point the other handle straight away from the one just moved, keeping its length
+// (or matching the moved handle's length when sameLen is set)
+function _mirrorHandle(p, moved, loX, hiX, sameLen) {
+  var fx = moved === 'in' ? p.ix : p.ox, fy = moved === 'in' ? p.iy : p.oy;
+  var vx = p.x - fx, vy = p.y - fy;
+  var len = Math.hypot(vx, vy);
+  if (len < 1e-6) return;
+  var ox = moved === 'in' ? p.ox : p.ix, oy = moved === 'in' ? p.oy : p.iy;
+  var olen = sameLen ? len : Math.hypot(ox - p.x, oy - p.y);
+  var nx = p.x + vx / len * olen, ny = p.y + vy / len * olen;
+  nx = Math.max(loX, Math.min(hiX, nx));
+  ny = Math.max(Y_CLAMP_MIN, Math.min(Y_CLAMP_MAX, ny));
+  if (moved === 'in') { p.ox = nx; p.oy = ny; } else { p.ix = nx; p.iy = ny; }
+}
+
+function _commitCurve(c) {
+  _normalizeCurve(c);
+  setState({ curve: c });
+  clearPresetActive();
+  if (_svgW > 0 && _svgH > 0) updateDynamicSVG(getState().curve, _svgW, _svgH);
+}
+
+// Add Point: split the widest segment at its middle (de Casteljau), so the shape
+// is unchanged until the new point is dragged
+function _addPoint() {
+  var c = _cloneCurve(getState().curve);
+  var segs = _segsOf(c), si = 0;
+  for (var i = 1; i < segs.length; i++) if (segs[i].x3 - segs[i].x0 > segs[si].x3 - segs[si].x0) si = i;
+  var s = segs[si];
+  if (s.x3 - s.x0 < PT_MIN_GAP * 3) return;
+  var t = _segTForX((s.x0 + s.x3) / 2, s);
+  function lerp(a, b) { return a + (b - a) * t; }
+  var q0x = lerp(s.x0, s.c1x),  q0y = lerp(s.y0, s.c1y);
+  var q1x = lerp(s.c1x, s.c2x), q1y = lerp(s.c1y, s.c2y);
+  var q2x = lerp(s.c2x, s.x3),  q2y = lerp(s.c2y, s.y3);
+  var r0x = lerp(q0x, q1x), r0y = lerp(q0y, q1y);
+  var r1x = lerp(q1x, q2x), r1y = lerp(q1y, q2y);
+  var mx  = lerp(r0x, r1x), my  = lerp(r0y, r1y);
+  var pts = c.pts || [];
+  if (si === 0) { c.p1x = q0x; c.p1y = q0y; } else { pts[si-1].ox = q0x; pts[si-1].oy = q0y; }
+  if (si === segs.length - 1) { c.p2x = q2x; c.p2y = q2y; } else { pts[si].ix = q2x; pts[si].iy = q2y; }
+  pts.splice(si, 0, { x: mx, y: my, ix: r0x, iy: r0y, ox: r1x, oy: r1y, smooth: true });
+  c.pts = pts;
+  _commitCurve(c);
+}
+
+function _removePoint(i) {
+  var c = _cloneCurve(getState().curve);
+  if (!_hasPts(c) || i < 0 || i >= c.pts.length) return;
+  c.pts.splice(i, 1);
+  _commitCurve(c);
+}
+
+function _setPointSmooth(i, on) {
+  var c = _cloneCurve(getState().curve);
+  if (!_hasPts(c) || !c.pts[i]) return;
+  var p = c.pts[i];
+  p.smooth = !!on;
+  if (on) {
+    // swing the outgoing handle in line with the incoming one
+    var nextX = i === c.pts.length - 1 ? 1 : c.pts[i+1].x;
+    _mirrorHandle(p, 'in', p.x, nextX, true);
+  }
+  _commitCurve(c);
+}
+
+// Text form for copy/paste: cubic-bezier() for a plain curve, opencurve() once it has
+// points:  opencurve(p1x, p1y, p2x, p2y, x y ix iy ox oy smooth, ...)
+function _curveToText(c) {
+  if (!_hasPts(c)) return 'cubic-bezier(' + c.p1x + ', ' + c.p1y + ', ' + c.p2x + ', ' + c.p2y + ')';
+  var r = function(v) { return Math.round(v * 1000) / 1000; };
+  var parts = [r(c.p1x), r(c.p1y), r(c.p2x), r(c.p2y)];
+  for (var i = 0; i < c.pts.length; i++) {
+    var p = c.pts[i];
+    parts.push([r(p.x), r(p.y), r(p.ix), r(p.iy), r(p.ox), r(p.oy), p.smooth !== false ? 1 : 0].join(' '));
+  }
+  return 'opencurve(' + parts.join(', ') + ')';
+}
+function _curveFromText(text) {
+  var m = text && text.match(/opencurve\(([^)]*)\)/i);
+  if (!m) return null;
+  var parts = m[1].split(',');
+  if (parts.length < 5) return null;
+  var head = parts.slice(0, 4).map(function(s) { return parseFloat(s); });
+  if (head.some(isNaN)) return null;
+  var c = { p1x: head[0], p1y: head[1], p2x: head[2], p2y: head[3], pts: [] };
+  for (var i = 4; i < parts.length; i++) {
+    var v = parts[i].trim().split(/\s+/).map(function(s) { return parseFloat(s); });
+    if (v.length < 6 || v.slice(0, 6).some(isNaN)) return null;
+    c.pts.push({ x: v[0], y: v[1], ix: v[2], iy: v[3], ox: v[4], oy: v[5], smooth: v[6] !== 0 });
+  }
+  return _normalizeCurve(c);
+}
+
+// SVG for the interior points: a tangent line, a handle and an anchor per side.
+// Elements are created once per point (createElementNS: UXP has no SVG innerHTML)
+// and re-positioned on every redraw; the set is rebuilt only when the count changes.
+var _ptEls = [];
+function _mkCircle(r, fill, stroke, sw) {
+  var el = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  el.setAttribute('r', r); el.setAttribute('fill', fill);
+  if (stroke) { el.setAttribute('stroke', stroke); el.setAttribute('stroke-width', sw); }
+  return el;
+}
+function _mkPtEls() {
+  var NS = 'http://www.w3.org/2000/svg';
+  function line() {
+    var l = document.createElementNS(NS, 'line');
+    l.setAttribute('stroke', 'rgba(255,255,255,0.18)'); l.setAttribute('stroke-width', '4');
+    return l;
+  }
+  function handle() {
+    var g = document.createElementNS(NS, 'g');
+    g.appendChild(_mkCircle(7, 'rgba(74,158,255,0.12)'));
+    g.appendChild(_mkCircle(5, '#fff', '#fff', 1.5));
+    return g;
+  }
+  // Anchor: same empty circle as the two end points (#sg-ep0 / #sg-ep3)
+  var a = document.createElementNS(NS, 'g');
+  var inner = _mkCircle(4, '#1e1e1e', _curveColor || '#4a9eff', 2);
+  a.appendChild(inner);
+  return { li: line(), lo: line(), hi: handle(), ho: handle(), a: a, inner: inner };
+}
+function _updatePtsSVG(curve, W, H) {
+  var lines = document.getElementById('sg-pts-lines'), g = document.getElementById('sg-pts');
+  if (!lines || !g) return;
+  var pts = curve.pts || [];
+  while (_ptEls.length > pts.length) {
+    var old = _ptEls.pop();
+    lines.removeChild(old.li); lines.removeChild(old.lo);
+    g.removeChild(old.hi); g.removeChild(old.ho); g.removeChild(old.a);
+  }
+  while (_ptEls.length < pts.length) {
+    var mk = _mkPtEls();
+    lines.appendChild(mk.li); lines.appendChild(mk.lo);
+    g.appendChild(mk.hi); g.appendChild(mk.ho); g.appendChild(mk.a);
+    _ptEls.push(mk);
+  }
+  for (var i = 0; i < pts.length; i++) {
+    var p = pts[i], e = _ptEls[i];
+    var a = normToSVG(p.x, p.y, W, H), hi = normToSVG(p.ix, p.iy, W, H), ho = normToSVG(p.ox, p.oy, W, H);
+    e.li.setAttribute('x1', a.cx); e.li.setAttribute('y1', a.cy); e.li.setAttribute('x2', hi.cx); e.li.setAttribute('y2', hi.cy);
+    e.lo.setAttribute('x1', a.cx); e.lo.setAttribute('y1', a.cy); e.lo.setAttribute('x2', ho.cx); e.lo.setAttribute('y2', ho.cy);
+    e.hi.setAttribute('transform', 'translate(' + hi.cx + ',' + hi.cy + ')');
+    e.ho.setAttribute('transform', 'translate(' + ho.cx + ',' + ho.cy + ')');
+    e.a.setAttribute('transform', 'translate(' + a.cx + ',' + a.cy + ')');
+  }
+}
+
+// ─── Peak (A-curve) mode ──────────────────────────────────────────────────
+// Toolbar toggle (#peak-mode). While on, the graph draws the easing's velocity
+// (dy/dx) instead of the bezier: an "A"/bell whose peak is where the motion is
+// fastest. The bell is normalised so its peak always touches the top of the
+// range box; one drag shapes it: left/right biases where the fastest point
+// sits, up narrows the bell (sharper ease), down widens it (flatter, linear is
+// a flat line along the top). The result is still a plain cubic-bezier of the
+// form (a, 0, b, 1), so presets, copy and bake are unchanged.
+var _PEAK_KEY   = 'opencurve-peak-mode';
+var _peakMode   = localStorage.getItem(_PEAK_KEY) === 'on';
+var _PEAK_K_FRAC = 0.98; // top of the box = this fraction of the sharpest ease possible at that x (1 would be a step)
+var _PEAK_EPS   = 1e-4; // keep t off the exact endpoints so 0/0 never happens
+var _peakThumbRefresh = null; // set by initPanel: redraws preset thumbnails when the mode flips
+
+// Velocity dy/dx of the easing at bezier parameter t
+function _velAt(t, c) {
+  var dx = _bxd(t, c.p1x, c.p2x);
+  var dy = _bxd(t, c.p1y, c.p2y);
+  if (dx < 1e-9) return dy > 0 ? 1e6 : (dy < 0 ? -1e6 : 1);
+  return dy / dx;
+}
+
+// N velocity samples along the curve as [{x, v}]. Plain curves sample by t (dense
+// where the curve is steep); multi-point curves take a numeric slope at even x.
+function _velSamples(c, N) {
+  var out = [], step = (1 - 2 * _PEAK_EPS) / (N - 1);
+  if (_hasPts(c)) {
+    var h = 5e-4;
+    for (var j = 0; j < N; j++) {
+      var x = _PEAK_EPS + j * step;
+      var xa = Math.max(0, x - h), xb = Math.min(1, x + h);
+      out.push({ x: x, v: (sampleBezier(xb, c) - sampleBezier(xa, c)) / (xb - xa) });
+    }
+    return out;
+  }
+  for (var i = 0; i < N; i++) {
+    var t = _PEAK_EPS + i * step;
+    out.push({ x: _bx(t, c.p1x, c.p2x), v: _velAt(t, c) });
+  }
+  return out;
+}
+
+// Highest velocity of a curve: coarse scan over t, then a ternary refinement
+// (multi-point curves: the best of a dense numeric scan)
+function _peakOf(c, N) {
+  N = N || 96;
+  if (_hasPts(c)) {
+    var sm = _velSamples(c, Math.max(N, 192)), best = sm[0];
+    for (var q = 1; q < sm.length; q++) if (sm[q].v > best.v) best = sm[q];
+    return { t: best.x, x: best.x, v: best.v };
+  }
+  var step = (1 - 2 * _PEAK_EPS) / (N - 1);
+  var bestT = _PEAK_EPS, bestV = -Infinity;
+  for (var i = 0; i < N; i++) {
+    var t = _PEAK_EPS + i * step;
+    var v = _velAt(t, c);
+    if (v > bestV) { bestV = v; bestT = t; }
+  }
+  var lo = Math.max(_PEAK_EPS, bestT - step), hi = Math.min(1 - _PEAK_EPS, bestT + step);
+  for (var j = 0; j < 14; j++) {
+    var m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3;
+    if (_velAt(m1, c) < _velAt(m2, c)) lo = m1; else hi = m2;
+  }
+  var tt = (lo + hi) / 2;
+  var vv = _velAt(tt, c);
+  if (vv < bestV) { tt = bestT; vv = bestV; }
+  return { t: tt, x: _bx(tt, c.p1x, c.p2x), v: vv };
+}
+
+// The family peak mode edits: p1 = (a, 0), p2 = (b, 1). px biases where the peak
+// sits (0 = ease-out, 1 = ease-in); k is the ease strength (0 = linear, 2 = step).
+function _peakCurve(px, k) {
+  return {
+    p1x: Math.max(0, Math.min(1, px * k)),
+    p1y: 0,
+    p2x: Math.max(0, Math.min(1, 1 - (1 - px) * k)),
+    p2y: 1,
+  };
+}
+
+// Curve for a pointer position: x is where the peak should sit, ny (0 = bottom of
+// the box, 1 = top) is the bell's narrowness. The family stops changing once a or b
+// saturates, which happens at k = 1 / max(x, 1 - x), so ny is scaled to that range:
+// the bottom is always linear and the top always the sharpest ease possible at that x.
+// The bias is then nudged a few times so the real velocity peak lands at x.
+function _solvePeak(targetX, ny) {
+  var tx = Math.max(0, Math.min(1, targetX));
+  var k  = Math.max(0, Math.min(1, ny)) * _PEAK_K_FRAC / Math.max(tx, 1 - tx);
+  if (k < 0.02) return { p1x: 0, p1y: 0, p2x: 1, p2y: 1 };
+  var px = tx, curve = _peakCurve(px, k);
+  for (var it = 0; it < 4; it++) {
+    var pk = _peakOf(curve, 96);
+    px = Math.max(0, Math.min(1, px + (tx - pk.x)));
+    curve = _peakCurve(px, k);
+  }
+  return {
+    p1x: Math.round(curve.p1x * 1000) / 1000, p1y: 0,
+    p2x: Math.round(curve.p2x * 1000) / 1000, p2y: 1,
+  };
+}
+
+// The normalised bell (peak at the top) as an SVG path; tx/ty map 0..1 to pixels.
+// Shared by the graph and the preset thumbnails.
+function _peakBellPath(curve, N, tx, ty) {
+  var sm = _velSamples(curve, N), vmax = 0;
+  for (var i = 0; i < N; i++) if (sm[i].v > vmax) vmax = sm[i].v;
+  if (!(vmax > 1e-9)) vmax = 1;
+  var d = '';
+  for (var j = 0; j < N; j++) {
+    var x  = (j === 0) ? 0 : (j === N - 1) ? 1 : sm[j].x;
+    var ny = Math.max(0, Math.min(1, sm[j].v / vmax));
+    d += (j === 0 ? 'M' : ' L') + tx(x).toFixed(2) + ',' + ty(ny).toFixed(2);
+  }
+  return d;
+}
+
+// Draw the velocity "A" for a curve, peak pinned to the top of the range box
+// (replaces updateDynamicSVG while peak mode is on)
+function _updatePeakSVG(curve, W, H) {
+  var pk = _peakOf(curve, 96);
+  var sm = _velSamples(curve, 96), vmax = 0;
+  for (var vi = 0; vi < sm.length; vi++) if (sm[vi].v > vmax) vmax = sm[vi].v;
+  if (!(vmax > 1e-9)) vmax = 1;
+  var d = _peakBellPath(curve, 96,
+    function(x) { return normToSVG(x, 0, W, H).cx; },
+    function(y) { return normToSVG(0, y, W, H).cy; });
+  var first = normToSVG(0, Math.max(0, Math.min(1, sm[0].v / vmax)), W, H);
+  var last  = normToSVG(1, Math.max(0, Math.min(1, sm[sm.length - 1].v / vmax)), W, H);
+  var cp = document.getElementById('sg-curve');
+  if (cp) cp.setAttribute('d', d);
+  // The bezier itself stays visible behind the bell, greyed, so both views read at once
+  var ghost = document.getElementById('sg-ghost');
+  if (ghost) ghost.setAttribute('d', _curvePathD(curve, W, H));
+  var ep0 = document.getElementById('sg-ep0');
+  if (ep0) { ep0.setAttribute('cx', first.cx); ep0.setAttribute('cy', first.cy); }
+  var ep3 = document.getElementById('sg-ep3');
+  if (ep3) { ep3.setAttribute('cx', last.cx); ep3.setAttribute('cy', last.cy); }
+  var px = (pk.v <= 1.02) ? 0.5 : pk.x; // a flat (linear) curve has no peak: centre the marker
+  var pp = normToSVG(px, 1, W, H);
+  var marker = document.getElementById('sg-peak');
+  if (marker) marker.setAttribute('transform', 'translate(' + pp.cx + ',' + pp.cy + ')');
+}
+
+function _svgShow(id, on) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.setAttribute('opacity',    on ? '1' : '0');
+  el.setAttribute('visibility', on ? 'visible' : 'hidden');
+}
+
+// Handles, tangents and the diagonal in bezier mode; the peak marker and bezier ghost in peak mode
+function _applyPeakVisibility() {
+  _svgShow('sg-tan1', !_peakMode);
+  _svgShow('sg-tan2', !_peakMode);
+  _svgShow('sg-h1',   !_peakMode);
+  _svgShow('sg-h2',   !_peakMode);
+  _svgShow('sg-diag', !_peakMode);
+  _svgShow('sg-peak',  _peakMode);
+  _svgShow('sg-ghost', _peakMode);
+  _svgShow('sg-pts',       !_peakMode);
+  _svgShow('sg-pts-lines', !_peakMode);
+}
+
+function _stylePeakBtn() {
+  var btn = document.getElementById('peak-mode');
+  if (!btn) return;
+  btn.style.background = _peakMode ? 'rgba(61,220,132,0.18)' : '';
+  btn.style.color      = _peakMode ? '#3ddc84' : '';
+  btn.style.opacity    = _peakMode ? '1' : '';
+  // Add Point only makes sense on the bezier view
+  // Dim the icon itself (its strokes use currentColor) and pin the background so
+  // hover can't light it back up; opacity alone was not reliable in UXP
+  var add = document.getElementById('add-point');
+  if (add) {
+    add.style.color      = _peakMode ? 'rgba(212,212,212,0.28)' : '';
+    add.style.background = _peakMode ? 'rgba(255,255,255,0.03)' : '';
+    add.style.opacity    = _peakMode ? '0.5' : '';
+    add.style.cursor     = _peakMode ? 'default' : '';
+  }
+}
+
+function _setPeakMode(on) {
+  _peakMode = !!on;
+  localStorage.setItem(_PEAK_KEY, _peakMode ? 'on' : 'off');
+  _applyPeakVisibility();
+  _stylePeakBtn();
+  if (_peakThumbRefresh) _peakThumbRefresh();
+  if (_svgW > 0 && _svgH > 0) {
+    updateStaticSVG(_svgW, _svgH); // puts the endpoints back in the corners when leaving peak mode
+    updateDynamicSVG(getState().curve, _svgW, _svgH);
+  }
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────
@@ -282,14 +790,19 @@ function updateStaticSVG(W, H) {
   }
 
   _setLine('sg-diag', ds.cx, ds.cy, de.cx, de.cy);
-  var ep0 = document.getElementById('sg-ep0');
-  if (ep0) { ep0.setAttribute('cx', ds.cx); ep0.setAttribute('cy', ds.cy); }
-  var ep3 = document.getElementById('sg-ep3');
-  if (ep3) { ep3.setAttribute('cx', de.cx); ep3.setAttribute('cy', de.cy); }
+  // Peak mode owns the endpoints (they sit on the bell's feet); a static redraw
+  // such as a grid-size change must not drop them back into the corners.
+  if (!_peakMode) {
+    var ep0 = document.getElementById('sg-ep0');
+    if (ep0) { ep0.setAttribute('cx', ds.cx); ep0.setAttribute('cy', ds.cy); }
+    var ep3 = document.getElementById('sg-ep3');
+    if (ep3) { ep3.setAttribute('cx', de.cx); ep3.setAttribute('cy', de.cy); }
+  }
 }
 
 // Update only the dynamic elements (curve, tangents, handles) — called on every pointer event
 function updateDynamicSVG(curve, W, H) {
+  if (_peakMode) { _updatePeakSVG(curve, W, H); return; }
   var p0 = normToSVG(0, 0, W, H);
   var p1 = normToSVG(curve.p1x, curve.p1y, W, H);
   var p2 = normToSVG(curve.p2x, curve.p2y, W, H);
@@ -297,11 +810,12 @@ function updateDynamicSVG(curve, W, H) {
   _setLine('sg-tan1', p0.cx, p0.cy, p1.cx, p1.cy);
   _setLine('sg-tan2', p3.cx, p3.cy, p2.cx, p2.cy);
   var cp = document.getElementById('sg-curve');
-  if (cp) cp.setAttribute('d', 'M'+p0.cx+','+p0.cy+' C'+p1.cx+','+p1.cy+' '+p2.cx+','+p2.cy+' '+p3.cx+','+p3.cy);
+  if (cp) cp.setAttribute('d', _curvePathD(curve, W, H));
   var h1 = document.getElementById('sg-h1');
   if (h1) h1.setAttribute('transform', 'translate('+p1.cx+','+p1.cy+')');
   var h2 = document.getElementById('sg-h2');
   if (h2) h2.setAttribute('transform', 'translate('+p2.cx+','+p2.cy+')');
+  _updatePtsSVG(curve, W, H);
 }
 
 function initGraphEditor(svg) {
@@ -310,42 +824,65 @@ function initGraphEditor(svg) {
   var dragRect  = null; // SVG rect cached at drag-start
 
   function hitTest(e) {
+    if (_peakMode) return null;
     var rect = dragRect || svg.getBoundingClientRect();
     var raw  = _unscale(e.clientX - rect.left, e.clientY - rect.top);
     var c    = liveCurve || getState().curve;
-    var p1c  = normToSVG(c.p1x, c.p1y, _svgW, _svgH);
-    var p2c  = normToSVG(c.p2x, c.p2y, _svgW, _svgH);
-    if (Math.hypot(raw.cx - p1c.cx, raw.cy - p1c.cy) <= HANDLE_R + HIT_TOLERANCE) return 'p1';
-    if (Math.hypot(raw.cx - p2c.cx, raw.cy - p2c.cy) <= HANDLE_R + HIT_TOLERANCE) return 'p2';
+    var R    = HANDLE_R + HIT_TOLERANCE;
+    function near(d, r) {
+      var hp = _handlePos(c, d), sp = normToSVG(hp.x, hp.y, _svgW, _svgH);
+      return Math.hypot(raw.cx - sp.cx, raw.cy - sp.cy) <= r;
+    }
+    if (near({ k: 'p1' }, R)) return { k: 'p1' };
+    if (near({ k: 'p2' }, R)) return { k: 'p2' };
+    var pts = c.pts || [];
+    for (var i = 0; i < pts.length; i++) {
+      if (near({ k: 'in',  i: i }, R)) return { k: 'in',  i: i };
+      if (near({ k: 'out', i: i }, R)) return { k: 'out', i: i };
+    }
+    for (var j = 0; j < pts.length; j++) if (near({ k: 'a', i: j }, R + 3)) return { k: 'a', i: j };
     return null;
   }
+  _graphHitTest = hitTest;
 
   svg.addEventListener('pointerdown', function(e) {
     if (e.button !== 0) return;
+    if (_peakMode) {
+      // Peak mode: the pointer is the peak, wherever you press
+      svg.setPointerCapture(e.pointerId);
+      dragging    = 'peak';
+      liveCurve   = _cloneCurve(getState().curve);
+      dragRect    = svg.getBoundingClientRect();
+      _isDragging = true;
+      e.preventDefault();
+      svg.style.cursor = 'grabbing';
+      _applyPeakPointer(e);
+      return;
+    }
     var hit = hitTest(e);
     if (!hit) {
-      // Snap the closest handle to the click position
+      // Snap the closest handle (never an anchor) to the click position
       var rect = svg.getBoundingClientRect();
       var raw  = _unscale(e.clientX - rect.left, e.clientY - rect.top);
-      var c    = getState().curve;
-      var p1c  = normToSVG(c.p1x, c.p1y, _svgW, _svgH);
-      var p2c  = normToSVG(c.p2x, c.p2y, _svgW, _svgH);
-      var d1   = Math.hypot(raw.cx - p1c.cx, raw.cy - p1c.cy);
-      var d2   = Math.hypot(raw.cx - p2c.cx, raw.cy - p2c.cy);
-      hit = (d1 <= d2) ? 'p1' : 'p2';
+      var c    = _cloneCurve(getState().curve);
+      var cands = [{ k: 'p1' }, { k: 'p2' }];
+      for (var pi = 0; pi < (c.pts || []).length; pi++) { cands.push({ k: 'in', i: pi }); cands.push({ k: 'out', i: pi }); }
+      var best = null, bestD = Infinity;
+      for (var ci = 0; ci < cands.length; ci++) {
+        var hp = _handlePos(c, cands[ci]), sp = normToSVG(hp.x, hp.y, _svgW, _svgH);
+        var dd = Math.hypot(raw.cx - sp.cx, raw.cy - sp.cy);
+        if (dd < bestD) { bestD = dd; best = cands[ci]; }
+      }
+      hit = best;
       var n  = svgToNorm(raw.cx, raw.cy, _svgW, _svgH);
-      var sx = Math.max(0, Math.min(1, n.nx));
-      var sy = Math.max(Y_CLAMP_MIN, Math.min(Y_CLAMP_MAX, n.ny));
-      var snap = {};
-      if (hit === 'p1') { snap.p1x = sx; snap.p1y = sy; }
-      else              { snap.p2x = sx; snap.p2y = sy; }
-      setState({ curve: Object.assign({}, c, snap) });
+      _setHandle(c, hit, Math.max(0, Math.min(1, n.nx)), n.ny, e.altKey, e.ctrlKey || e.metaKey);
+      setState({ curve: c });
       clearPresetActive();
       updateDynamicSVG(getState().curve, _svgW, _svgH);
     }
     svg.setPointerCapture(e.pointerId);
     dragging    = hit;
-    liveCurve   = Object.assign({}, getState().curve);
+    liveCurve   = _cloneCurve(getState().curve);
     dragRect    = svg.getBoundingClientRect();
     _isDragging = true;
     e.preventDefault();
@@ -363,16 +900,26 @@ function initGraphEditor(svg) {
   }
 
   svg.addEventListener('pointermove', function(e) {
+    if (dragging === 'peak') { _applyPeakPointer(e); return; }
     if (dragging) {
       // coords updated in hot path below
     } else {
+      if (_peakMode) {
+        svg.style.cursor = 'crosshair';
+        var rectP = svg.getBoundingClientRect();
+        var rp = _unscale(e.clientX - rectP.left, e.clientY - rectP.top);
+        var np = svgToNorm(rp.cx, rp.cy, _svgW, _svgH);
+        var hx = Math.max(0, Math.min(1, np.nx)), hy = Math.max(0, Math.min(1, np.ny));
+        var hp = _peakOf(_solvePeak(hx, hy), 48);
+        _showPeakCoords(hp.v <= 1.02 ? hx : hp.x, hp.v);
+        return;
+      }
       var hit = hitTest(e);
       svg.style.cursor = hit ? 'grab' : 'crosshair';
       if (hit) {
         // Snap to handle position
-        var hc = getState().curve;
-        if (hit === 'p1') _showCoords(hc.p1x, hc.p1y);
-        else              _showCoords(hc.p2x, hc.p2y);
+        var hp0 = _handlePos(getState().curve, hit);
+        _showCoords(hp0.x, hp0.y);
       } else {
         var rect2 = svg.getBoundingClientRect();
         var rc = _unscale(e.clientX - rect2.left, e.clientY - rect2.top);
@@ -387,12 +934,36 @@ function initGraphEditor(svg) {
     var x   = Math.max(0,    Math.min(1,   n.nx));
     var y   = Math.max(Y_CLAMP_MIN, Math.min(Y_CLAMP_MAX, n.ny));
     if (e.shiftKey) { x = Math.round(x * _gridSize) / _gridSize; y = Math.round(y * _gridSize) / _gridSize; }
-    if (dragging === 'p1') { liveCurve.p1x = x; liveCurve.p1y = y; }
-    else                   { liveCurve.p2x = x; liveCurve.p2y = y; }
+    _setHandle(liveCurve, dragging, x, y, e.altKey, e.ctrlKey || e.metaKey);
+    var lp = _handlePos(liveCurve, dragging);
     _setSnapBg(e.shiftKey);
-    _showCoords(x, y);
+    _showCoords(lp.x, lp.y);
     updateDynamicSVG(liveCurve, _svgW, _svgH);
   });
+
+  // Peak mode readout: peak position and how many times faster than linear it is
+  function _showPeakCoords(nx, v) {
+    if (_coordsEl) _coordsEl.textContent = nx.toFixed(3) + ',  ' + v.toFixed(2) + '\u00d7';
+  }
+
+  // Peak mode drag: pointer x = where the peak sits, pointer height = how narrow the bell is.
+  // Shift snaps the peak to the grid, same as the handles.
+  function _applyPeakPointer(e) {
+    var rect = dragRect || svg.getBoundingClientRect();
+    var raw  = _unscale(e.clientX - rect.left, e.clientY - rect.top);
+    var n    = svgToNorm(raw.cx, raw.cy, _svgW, _svgH);
+    var x    = Math.max(0, Math.min(1, n.nx));
+    var ny   = Math.max(0, Math.min(1, n.ny));
+    if (e.shiftKey) {
+      x  = Math.round(x * _gridSize) / _gridSize;
+      ny = Math.round(ny * _gridSize) / _gridSize;
+    }
+    liveCurve = _solvePeak(x, ny);
+    _setSnapBg(e.shiftKey);
+    var pk = _peakOf(liveCurve, 96);
+    _showPeakCoords(pk.v <= 1.02 ? x : pk.x, pk.v);
+    updateDynamicSVG(liveCurve, _svgW, _svgH);
+  }
 
   function _setSnapBg(snap) {
     var bg = document.getElementById('sg-range-bg');
@@ -412,7 +983,7 @@ function initGraphEditor(svg) {
     if (!dragging) return;
     _isDragging = false;
     _setSnapBg(false);
-    setState({ curve: Object.assign({}, liveCurve) });
+    setState({ curve: liveCurve });
     clearPresetActive();
     dragging  = null;
     liveCurve = null;
@@ -694,9 +1265,11 @@ async function _findQualifiedParams(chain, phLocal) {
       if (extracted === null) continue;
 
       var displayName = _paramName(matchName, j, matchName + ' ' + j);
+      var kfSecs = [];
+      for (var ks = 0; ks < kfArr.length; ks++) kfSecs.push(kfArr[ks].seconds);
       qualified.push({ key: i+'_'+j, displayName: displayName,
                        param: param, comp: comp, paramIdx: j,
-                       kf0: kf0, kf1: kf1, totalKf: kfArr.length, isOutside: isOutside });
+                       kf0: kf0, kf1: kf1, totalKf: kfArr.length, isOutside: isOutside, kfSecs: kfSecs });
     }
   }
   return qualified;
@@ -1239,6 +1812,34 @@ async function _dumpComponents() {
 }
 
 // ─── detectContext ────────────────────────────────────────────────────────
+// Start of the keyframe pair with a real (2+ frame) span nearest the playhead,
+// and the playhead's distance from it. Media seconds in and out.
+function _nearestPair(kfSecs, phLocal, fps) {
+  var best = null;
+  for (var i = 0; i + 1 < (kfSecs || []).length; i++) {
+    var a = kfSecs[i], b = kfSecs[i + 1];
+    if ((b - a) * fps < 1.5) continue; // one-frame pair (already baked)
+    var d = phLocal < a ? a - phLocal : (phLocal > b ? phLocal - b : 0);
+    if (!best || d < best.dist) best = { start: a, dist: d };
+  }
+  return best;
+}
+
+// Pin button target: the nearest 2+ frame pair when the playhead is outside every
+// pair, otherwise the pair after the one it is in (wrapping to the first), so
+// repeated presses walk through every keyframed area on the clip
+function _jumpPair(kfSecs, phLocal, fps) {
+  var pairs = [];
+  for (var i = 0; i + 1 < (kfSecs || []).length; i++) {
+    if ((kfSecs[i + 1] - kfSecs[i]) * fps >= 1.5) pairs.push({ start: kfSecs[i], end: kfSecs[i + 1] });
+  }
+  if (!pairs.length) return null;
+  for (var j = 0; j < pairs.length; j++) {
+    if (phLocal >= pairs[j].start - 1e-4 && phLocal < pairs[j].end - 1e-4) return pairs[(j + 1) % pairs.length];
+  }
+  return _nearestPair(kfSecs, phLocal, fps);
+}
+
 async function _detectContextFull(project, sequence, ph) {
   var bestQualified = null;
   var bestFound     = null;
@@ -1290,19 +1891,49 @@ async function _detectContextFull(project, sequence, ph) {
 
   var found = bestFound;
   _cache.clipStartSec = found.clipStart || 0;
+  // Identity for bake records (per-row undo). Name + in-point survive moving the
+  // clip around the timeline, unlike start/end. The UXP API has no stable clip
+  // id, so a copy of the clip shares this identity; the records are also checked
+  // against the property's actual keyframes (see _bakedKeysFor), which limits
+  // any mix-up to copies that carry the same baked keyframes.
+  var clipIn = await _clipInPoint(found.clip);
+  var clipId = '';
+  var seqKey = '';
+  var clipName = '';
+  try { seqKey = String(sequence.guid || ''); } catch(_) {}
+  try { clipName = String((await found.clip.getName()) || ''); } catch(_) {}
+  clipId = seqKey + '|' + (clipName || '?') + '|' + clipIn.toFixed(4);
 
-  var paramList   = bestQualified.map(function(p){ return { key: p.key, displayName: p.displayName }; });
+  // Keyframe times are media time; this offset converts them back to sequence time for the pin buttons
+  var fps = await _fps(sequence);
+  var jumpOffset  = (found.clipStart || 0) - clipIn;
+  var paramList   = bestQualified.map(function(p){
+    // _param: live handle for the row undo button (a proxy kept from bake time can go stale)
+    // _kf0/_kf1/_out: the playhead's bracket, so bake records only colour the row while it sits inside their span
+    var jp = _jumpPair(p.kfSecs, ph - jumpOffset, fps);
+    var entry = { key: p.key, displayName: p.displayName, jumpSec: (jp ? jp.start : p.kf0.seconds) + jumpOffset,
+                  _param: p.param, _kf: p.kfSecs, _kf0: p.kf0.seconds, _kf1: p.kf1.seconds, _out: !!p.isOutside };
+    // Nearest 2+ frame pair, for the status strip's click-to-jump
+    var near = _nearestPair(p.kfSecs, ph - jumpOffset, fps);
+    if (near) { entry.nearSec = near.start + jumpOffset; entry.nearDist = near.dist; }
+    return entry;
+  });
   var validParams = bestQualified.filter(function(p){ return !p.isOutside; });
 
   if (validParams.length === 0) {
-    var first = bestQualified[0];
+    // Use a property with a real (2+ frame) range for the hint. A baked
+    // property's one-frame pairs would otherwise give a useless "302.35s – 302.36s".
+    var hintP = null;
+    for (var hi = 0; hi < bestQualified.length; hi++) {
+      var hq = bestQualified[hi];
+      if ((hq.kf1.seconds - hq.kf0.seconds) * fps >= 2) { hintP = hq; break; }
+    }
+    if (!hintP) hintP = bestQualified[0];
     return {
-      status: 'outside', availableParams: paramList, validParamKeys: [],
-      hint: 'Move playhead between keyframes (' + first.kf0.seconds.toFixed(2) + 's – ' + first.kf1.seconds.toFixed(2) + 's)',
+      status: 'outside', availableParams: paramList, validParamKeys: [], clipId: clipId, clipName: clipName,
+      hint: 'Move playhead between keyframes (' + hintP.kf0.seconds.toFixed(2) + 's – ' + hintP.kf1.seconds.toFixed(2) + 's)',
     };
   }
-
-  var fps = await _fps(sequence);
   var paramContexts = {};
   for (var vi = 0; vi < validParams.length; vi++) {
     var vp   = validParams[vi];
@@ -1320,6 +1951,16 @@ async function _detectContextFull(project, sequence, ph) {
     .filter(function(p){ return paramContexts[p.key] && paramContexts[p.key].frameCount >= 2; })
     .map(function(p){ return p.key; });
 
+  if (validParamKeys.length === 0) {
+    // Playhead is inside keyframe pairs, but every pair is only a frame apart,
+    // which is what a previous bake leaves behind. Nothing here can be eased
+    // again, so say so instead of reporting "valid" with nothing to bake.
+    return {
+      status: 'outside', availableParams: paramList, validParamKeys: [], clipId: clipId, clipName: clipName,
+      hint: 'Already baked here. Move the playhead to an unbaked keyframe pair',
+    };
+  }
+
   var firstCtx  = validParamKeys.length > 0 ? paramContexts[validParamKeys[0]] : null;
   var hintFrames = firstCtx ? firstCtx.frameCount + ' frames' : '';
   var selectionHint = found.viaSelection ? ' (selected clip)' : '';
@@ -1328,12 +1969,15 @@ async function _detectContextFull(project, sequence, ph) {
     status: 'valid',
     availableParams: paramList,
     validParamKeys: validParamKeys,
+    clipId: clipId,
+    clipName: clipName,
     paramContexts: paramContexts,
     hint: hintFrames + selectionHint,
   };
 }
 
 async function detectContext() {
+  _dbgKind = 'early';
   try {
     if (!ppro) return { status: 'error', availableParams: [], hint: 'premierepro module not loaded' };
 
@@ -1358,11 +2002,16 @@ async function detectContext() {
     // Track sustained playhead movement to distinguish playing from scrubbing.
     // Short scrubs (1-2 polls) get real-time detection; sustained playback (3+) pauses it.
     // If the user has enabled "scan during playback" in Settings, we never pause.
-    if (_cache.playhead !== null && ph !== _cache.playhead) {
+    // NOTE: don't write ph into _cache.playhead here. Doing so made the cache
+    // check below think the playhead was static, so a move never triggered a
+    // rescan and the UI only caught up on the 1s heartbeat (bug in <= 1.2.3).
+    var moved = (_cache.playhead !== null && ph !== _cache.playhead);
+    if (moved) {
       _cache.movingCount++;
-      _cache.playhead = ph;
-      _cache.pollCount = 0;
-      if (!_scanDuringPlayback && _cache.movingCount >= 3) {
+      if (!_scanDuringPlayback && _cache.movingCount >= PLAYBACK_POLLS) {
+        _cache.playhead = ph;
+        _cache.pollCount = 0;
+        _dbgKind = 'playing';
         return { status: 'playing', availableParams: [], hint: 'Keyframe detection paused while playing' };
       }
     } else {
@@ -1371,7 +2020,7 @@ async function detectContext() {
 
     // If playhead hasn't moved, check if selection changed before returning cache
     _cache.pollCount++;
-    if (_cache.playhead === ph && _cache.lastResult && _cache.pollCount < HEARTBEAT_POLLS) {
+    if (!moved && _cache.lastResult && _cache.pollCount < HEARTBEAT_POLLS) {
       // Selection identity check — combined identity of ALL selected items
       var selChanged = false;
       try {
@@ -1386,7 +2035,7 @@ async function detectContext() {
           if (combinedId !== _cache.selClipId) selChanged = true;
         }
       } catch(_) {}
-      if (!selChanged) return _cache.lastResult;
+      if (!selChanged) { _dbgKind = 'cache'; return _cache.lastResult; }
       _cache.pollCount = 0;
     }
 
@@ -1410,12 +2059,15 @@ async function detectContext() {
       _cache.selClipId    = null;
     }
 
+    var _tFull = Date.now();
     var result = await _detectContextFull(project, sequence, ph);
+    _dbgKind = 'full'; _dbgFullMs = Date.now() - _tFull;
     _cache.lastResult   = result;
     _cache.lastResultAt = Date.now();
     return result;
 
   } catch(err) {
+    _dbgKind = 'error';
     console.error('[FS] detectContext threw:', err);
     _invalidateCache();
     return { status: 'error', availableParams: [], hint: err && err.message ? err.message : String(err) };
@@ -1462,11 +2114,11 @@ async function bakeKeyframes(contexts, curve) {
         specs.push({ seconds: seconds, value: val0 + (val1 - val0) * t });
       }
     }
-    if (specs.length) jobs.push({ param: param, isCompound: isCompound, specs: specs });
+    if (specs.length) jobs.push({ ci: ci, param: param, isCompound: isCompound, specs: specs });
     console.log('[FS] bake['+ci+']: '+totalFrames+' frames | compound='+isCompound+' | '+specs.length+' kf');
   }
 
-  if (jobs.length === 0) { console.log('[FS] bake: all params skipped (already baked or too close)'); return; }
+  if (jobs.length === 0) { console.log('[FS] bake: all params skipped (already baked or too close)'); return []; }
 
   // ── Phase 2: create keyframes + actions INSIDE the locked transaction (26.3+) ──
   var added = 0;
@@ -1488,6 +2140,193 @@ async function bakeKeyframes(contexts, curve) {
   });
 
   console.log('[FS] bake done: '+added+' keyframes across '+jobs.length+' param(s)');
+  // What was written, per input context, so the caller can record it for undo
+  return jobs.map(function(j){ return { ci: j.ci, times: j.specs.map(function(x){ return x.seconds; }) }; });
+}
+
+// ─── Bake records / per-property undo ────────────────────────────────────
+// Every successful bake is remembered for the session so a row's undo button
+// can remove just the keyframes that bake added (the two original keyframes
+// are never touched). Records are matched to rows by clip identity
+// (name|start|end) + property key. A record is dropped when a 2+ frame pair
+// turns up inside its range, which means the bake was undone with Ctrl+Z.
+// Records live in memory only; they are gone when the panel closes.
+var _bakeRecords = [];   // { id, clipId, key, displayName, param, project, fps, kf0Sec, kf1Sec, times }
+var _bakeSeq     = 0;
+var _bakeBatchSeq = 0;   // one batch per Go press; the panel-wide Undo button reverts the latest
+
+function _bakesFor(clipId, key) {
+  return _bakeRecords.filter(function(r){ return r.clipId === clipId && (key === undefined || r.key === key); });
+}
+function _dropBake(rec) {
+  var i = _bakeRecords.indexOf(rec);
+  if (i >= 0) _bakeRecords.splice(i, 1);
+}
+// Keys in `avail` that have a bake to undo on this clip
+// Guards against undoing the wrong thing:
+//  - a record belongs to a row only if the property name matches too (component
+//    indices shift when effects are added or removed, so the key alone can point
+//    at a different property);
+//  - a record only counts while the property still carries the bake's
+//    fingerprint: both original keyframes plus at least half of the ones we
+//    wrote. Anything less means it was undone or edited outside the panel and
+//    the record is forgotten.
+function _recForRow(rec, p) {
+  return !rec.displayName || !p.displayName || rec.displayName === p.displayName;
+}
+function _recAlive(rec, kfSecs) {
+  function has(t){ return kfSecs.some(function(h){ return Math.abs(h - t) < 1e-4; }); }
+  if (!has(rec.kf0Sec) || !has(rec.kf1Sec)) return false;
+  var n = 0;
+  rec.times.forEach(function(t){ if (has(t)) n++; });
+  return n > 0 && n * 2 >= rec.times.length;
+}
+// A record only applies to the row while the playhead's bracketing pair sits inside
+// the span it baked. Elsewhere on the clip the row is a normal row, so a second
+// keyframed area on the same property can be baked (and undone) on its own.
+function _recHere(rec, p) {
+  if (typeof p._kf0 !== 'number') return true;
+  if (p._out) return false;
+  return p._kf0 >= rec.kf0Sec - 1e-4 && p._kf1 <= rec.kf1Sec + 1e-4;
+}
+function _bakedKeysFor(clipId, avail) {
+  var keys = [];
+  (avail || []).forEach(function(p) {
+    var recs = _bakesFor(clipId, p.key).filter(function(r){ return _recForRow(r, p); });
+    if (recs.length === 0) return;
+    if (Array.isArray(p._kf)) {
+      recs.forEach(function(rec) { if (!_recAlive(rec, p._kf)) _dropBake(rec); });
+      recs = recs.filter(function(r){ return _bakeRecords.indexOf(r) >= 0; });
+    }
+    recs = recs.filter(function(r){ return _recHere(r, p); });
+    if (recs.length === 0) return;
+    keys.push(p.key);
+  });
+  return keys;
+}
+function _recordBakes(s, keys, contexts, written) {
+  var batchId = written.length ? ++_bakeBatchSeq : 0;
+  for (var wi = 0; wi < written.length; wi++) {
+    var w   = written[wi];
+    var ctx = contexts[w.ci];
+    var key = keys[w.ci];
+    var ap  = (s.availableParams || []).filter(function(p){ return p.key === key; })[0];
+    _bakeRecords.push({
+      id: ++_bakeSeq, batch: batchId, clipId: s.clipId, key: key,
+      displayName: ap ? ap.displayName : key,
+      param: ctx.param, project: ctx.project, fps: ctx.fps,
+      kf0Sec: ctx.kf0.seconds, kf1Sec: ctx.kf1.seconds, times: w.times,
+    });
+  }
+}
+
+// Panel-wide Undo button (next to Go, same control as the CEP edition)
+function _showUndoBtn(show) {
+  var btn = document.getElementById('undo-btn');
+  if (!btn) return;
+  btn.classList.toggle('btn-hidden', !show);
+  btn.style.display = show ? 'flex' : 'none'; // inline: UXP doesn't relayout on class changes
+  _fitGoForUndo();
+}
+
+// Row undo button: remove every keyframe our bakes added to this property on
+// the current clip.
+async function _undoBakeForKey(key) {
+  var s = getState();
+  if (s.isBaking) return;
+  var row  = (s.availableParams || []).filter(function(p){ return p.key === key; })[0];
+  var recs = _bakesFor(s.clipId, key).filter(function(r){ return !row || (_recForRow(r, row) && _recHere(r, row)); });
+  if (recs.length === 0) return;
+  await _undoRecords(recs, recs[0].displayName || 'property', key);
+}
+
+// Panel-wide Undo button: revert everything the most recent Go press wrote,
+// whichever clip it was on. Each press again steps back one more bake.
+async function _undoLastBake() {
+  var s = getState();
+  if (s.isBaking || _bakeRecords.length === 0) return;
+  var last = 0;
+  for (var i = 0; i < _bakeRecords.length; i++) if (_bakeRecords[i].batch > last) last = _bakeRecords[i].batch;
+  var recs = _bakeRecords.filter(function(r){ return r.batch === last; });
+  var names = [];
+  recs.forEach(function(r){ if (names.indexOf(r.displayName) < 0) names.push(r.displayName); });
+  await _undoRecords(recs, names.join(', '), null);
+}
+
+// Shared core. Same two-phase shape as bakeKeyframes: await everything first,
+// then create the remove actions synchronously inside the transaction.
+// `key` limits the bakedParamKeys update to one row; null clears them all.
+async function _undoRecords(recs, label, key) {
+  var s = getState();
+  try {
+    // Phase 1: confirm each record's fingerprint is still on the property and
+    // list the keyframes we wrote that are still there. Prefer the param handle
+    // from the current scan (a proxy kept from bake time can go stale), but only
+    // when that row is the same-named property.
+    var jobs = [];
+    for (var ri = 0; ri < recs.length; ri++) {
+      var rec = recs[ri];
+      var liveRow = (rec.clipId === s.clipId)
+        ? (s.availableParams || []).filter(function(p){ return p.key === rec.key && _recForRow(rec, p); })[0] : null;
+      var param = (liveRow && liveRow._param) ? liveRow._param : rec.param;
+      if (typeof param.createRemoveKeyframeAction !== 'function') {
+        throw new Error('This Premiere version cannot remove keyframes from a plugin. Use Ctrl+Z in Premiere instead.');
+      }
+      var have = [];
+      try {
+        var kfTimes = await _call(param, 'getKeyframeListAsTickTimes');
+        var kfArr = kfTimes ? (Array.isArray(kfTimes) ? kfTimes : Array.from(kfTimes)) : [];
+        for (var ki = 0; ki < kfArr.length; ki++) have.push(kfArr[ki].seconds);
+      } catch(_) { continue; }
+      if (!_recAlive(rec, have)) { _dropBake(rec); continue; }
+      var times = rec.times.filter(function(t){
+        return have.some(function(h){ return Math.abs(h - t) < 1e-4; });
+      });
+      if (times.length) jobs.push({ rec: rec, param: param, times: times });
+    }
+    if (jobs.length === 0) {
+      // Nothing of ours is left (undone with Ctrl+Z, or the keyframes were edited away)
+      recs.forEach(_dropBake);
+      _showUndoBtn(_bakeRecords.length > 0);
+      _invalidateCache();
+      _showCopyToast('Nothing to undo: those keyframes are already gone', '#f0a030');
+      return;
+    }
+
+    // Phase 2: remove them inside the locked transaction
+    var project = (await ppro.Project.getActiveProject()) || jobs[0].rec.project;
+    var removed = 0;
+    await project.lockedAccess(function() {
+      project.executeTransaction(function(compound) {
+        for (var ji = 0; ji < jobs.length; ji++) {
+          var param = jobs[ji].param;
+          var ts    = jobs[ji].times;
+          // One remove action per keyframe we wrote; never a range, so keyframes
+          // the user added inside the baked span are left alone.
+          for (var ti = 0; ti < ts.length; ti++) {
+            // updateUI only on the last one: a single redraw per property
+            var action = param.createRemoveKeyframeAction(ppro.TickTime.createWithSeconds(ts[ti]), ti === ts.length - 1);
+            if (action) { compound.addAction(action); removed++; }
+          }
+        }
+      }, 'OpenCurve undo bake');
+    });
+
+    jobs.forEach(function(j){ _dropBake(j.rec); });
+    _showUndoBtn(_bakeRecords.length > 0);
+    _invalidateCache();
+    _lastStatus   = '';
+    _skipPollUntil = 0;
+    setState({
+      bakedParamKeys: key ? (s.bakedParamKeys || []).filter(function(k){ return k !== key; }) : [],
+      status: 'idle',
+    });
+    _showCopyToast('Undone: ' + removed + ' keyframes removed from ' + label, '#f0a030');
+    console.log('[OC] undo bake: removed ' + removed + ' keyframes from ' + label);
+  } catch(err) {
+    console.error('[OC] undo bake error:', err);
+    _showCopyToast('Undo failed: ' + (err && err.message ? err.message : String(err)), '#f06060');
+  }
 }
 
 function _kfCount(param) {
@@ -1510,6 +2349,20 @@ var BUILT_IN_PRESETS = [
   { id: 's-curve',  name: 'S-Curve', curve: PRESETS['s-curve'],  builtIn: true },
 ];
 
+// Frame count of the selected keyframe pairs for the status strip: "24 frames",
+// or "18–24 frames" when the selected properties span different pairs.
+function _frameSpan(s, keys) {
+  var lo = Infinity, hi = -Infinity;
+  (keys || []).forEach(function(k) {
+    var ctx = s.paramContexts && s.paramContexts[k];
+    if (!ctx || typeof ctx.frameCount !== 'number') return;
+    if (ctx.frameCount < lo) lo = ctx.frameCount;
+    if (ctx.frameCount > hi) hi = ctx.frameCount;
+  });
+  if (lo === Infinity) return '';
+  return (lo === hi ? lo : lo + '\u2013' + hi) + ' frames';
+}
+
 var STATUS_CONFIG = {
   'playing':      { cls:'status-idle',  text: 'Keyframe detection paused while playing' },
   'idle':         { cls:'status-idle',  text: function(s){ return s.hint || 'Open a project and select a clip'; } },
@@ -1518,18 +2371,22 @@ var STATUS_CONFIG = {
   'no-clip':      { cls:'status-idle',  text: function(s){ return s.hint || 'No clip found at playhead'; } },
   'no-keyframes': { cls:'status-warn',  text: function(s){ return s.hint || 'No property with exactly 2 keyframes'; } },
   'outside':      { cls:'status-warn',  text: function(s){ return s.hint || 'Move playhead between the two keyframes'; } },
-  'no-selection': { cls:'status-detected',  text: function(s){
-    var names = (s.availableParams || []).map(function(p){ return p.displayName; }).join(', ');
-    return (names || 'Properties detected') + (s.hint ? ' · ' + s.hint : '');
+  // The property rows already list every name, so these two show what the rows
+  // can't: the clip (own span, see renderUI), how many are ready/selected, and
+  // the span being eased.
+  'no-selection': { cls:'status-detected', clip: true, text: function(s){
+    var n = (s.validParamKeys || []).length;
+    if (n === 0) return 'Properties detected';
+    return n === 1 ? '1 property ready' : n + ' properties ready';
   }},
-  'valid':        { cls:'status-valid', text: function(s){
-    var selected = (s.selectedParamKeys || []);
-    var names = selected.map(function(k){
-      var p = (s.availableParams || []).find(function(x){ return x.key === k; });
-      return p ? p.displayName : k;
-    });
-    var paramStr = names.length ? names.join(', ') : 'property';
-    return paramStr + (s.hint ? ' · ' + s.hint : '');
+  'valid':        { cls:'status-valid', clip: true, text: function(s){
+    var valid = s.validParamKeys || [];
+    var sel   = (s.selectedParamKeys || []).filter(function(k){ return valid.indexOf(k) >= 0; });
+    var parts = [];
+    if (valid.length > 1) parts.push(sel.length + ' of ' + valid.length + ' selected');
+    var fr = _frameSpan(s, sel);
+    if (fr) parts.push(fr);
+    return parts.join(' · ') || 'Ready';
   }},
   'error':        { cls:'status-error', text: function(s){ return 'Error: '+(s.hint||s.errorMessage||'unknown'); } },
   'baking':       { cls:'status-idle',  text: 'Applying…' },
@@ -1547,6 +2404,109 @@ function setPresetActive(id) {
   if (btn) { btn.classList.add('active'); btn.dataset.active='true'; }
 }
 
+// Status strip click while the playhead is outside every keyframe pair: the
+// scan tags each property with the start of its nearest 2+ frame pair
+// (nearSec, sequence seconds) and how far the playhead is from it (nearDist).
+function _nearestJumpParam(s) {
+  var best = null;
+  (s.availableParams || []).forEach(function(p) {
+    if (typeof p.nearSec !== 'number') return;
+    if (!best || p.nearDist < best.nearDist) best = p;
+  });
+  return best;
+}
+
+// Pin button: move the playhead to the start of this property's keyframe pair
+// (the bracketing pair when the playhead is inside one, else the first keyframe).
+async function _jumpToParam(p) {
+  if (!p || typeof p.jumpSec !== 'number') return;
+  try {
+    var project  = await ppro.Project.getActiveProject();
+    var sequence = project ? await project.getActiveSequence() : null;
+    if (!sequence) return;
+    // +1us keeps the playhead at or after the keyframe despite tick/float rounding
+    var tt = await ppro.TickTime.createWithSeconds(Math.max(0, p.jumpSec) + 0.000001);
+    await sequence.setPlayerPosition(tt);
+    _invalidateCache();
+    _skipPollUntil = 0;
+  } catch(e) {
+    console.log('[FS] jump failed:', e);
+    _showCopyToast('Could not move playhead');
+  }
+}
+
+// ─── Tooltips ─────────────────────────────────────────────────────────────
+// Custom tooltips (native `title` is unreliable in UXP and can spill outside
+// the panel). Shows after a short hover delay, clamped inside the panel, below
+// the element or above it when there's no room. `text` may be a function so
+// the label can depend on current state; return '' to show nothing.
+var _tipEl = null, _tipTimer = null;
+function _hideTooltip() {
+  if (_tipTimer) { clearTimeout(_tipTimer); _tipTimer = null; }
+  if (_tipEl && _tipEl.parentNode) _tipEl.parentNode.removeChild(_tipEl);
+  _tipEl = null;
+}
+function _showTooltip(el, text) {
+  _hideTooltip();
+  if (!text) return;
+  var tip = document.createElement('div');
+  tip.className = 'oc-tooltip';
+  tip.textContent = text;
+  var r  = el.getBoundingClientRect();
+  var ww = document.documentElement.clientWidth  || document.body.clientWidth;
+  var wh = document.documentElement.clientHeight || document.body.clientHeight;
+  var gap = 6, pad = 4;
+  // UXP can't be relied on to report offsetWidth/Height synchronously, so never
+  // position from measurements. Anchor to whichever edge is nearer instead:
+  // the tooltip then grows away from that edge and can't cross it, and
+  // max-width + wrapping stops it crossing the far edge.
+  var cx = r.left + r.width / 2;
+  var estW = Math.min(ww - pad * 2, text.length * 7 + 18); // rough width for centring only
+  tip.style.maxWidth = (ww - pad * 2) + 'px';
+  if (cx < ww / 2) {
+    tip.style.left  = Math.max(pad, Math.round(cx - estW / 2)) + 'px';
+    tip.style.right = 'auto';
+  } else {
+    tip.style.right = Math.max(pad, Math.round(ww - cx - estW / 2)) + 'px';
+    tip.style.left  = 'auto';
+  }
+  var estH = 24;
+  if (r.bottom + gap + estH <= wh - pad) {
+    tip.style.top    = Math.round(r.bottom + gap) + 'px';   // below the element
+    tip.style.bottom = 'auto';
+  } else {
+    tip.style.bottom = Math.round(wh - r.top + gap) + 'px'; // above, anchored to its top edge
+    tip.style.top    = 'auto';
+  }
+  document.body.appendChild(tip);
+  _tipEl = tip;
+}
+// Pressed look for the small row buttons (pin / undo): CSS :active is not
+// reliable in UXP, so a .pressed class follows the pointer instead
+function _addPressState(el) {
+  if (!el) return;
+  function up() { el.classList.remove('pressed'); }
+  el.addEventListener('pointerdown', function(e) { if (e.button === 0) el.classList.add('pressed'); });
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointerleave', up);
+  el.addEventListener('pointercancel', up);
+}
+
+function _attachTooltip(el, text) {
+  if (!el) return;
+  var DELAY = 500;
+  el.addEventListener('mouseenter', function() {
+    if (_tipTimer) clearTimeout(_tipTimer);
+    _tipTimer = setTimeout(function() {
+      _tipTimer = null;
+      var t = typeof text === 'function' ? text() : text;
+      _showTooltip(el, t);
+    }, DELAY);
+  });
+  el.addEventListener('mouseleave',  _hideTooltip);
+  el.addEventListener('pointerdown', _hideTooltip);
+}
+
 function renderUI(s) {
   // Property buttons
   var propBtns = document.getElementById('prop-btns');
@@ -1555,23 +2515,57 @@ function renderUI(s) {
     var curKeys = propBtns.dataset.keys || '';
     var newKeys = params.map(function(p){ return p.key; }).join(',');
     if (curKeys !== newKeys) {
+      _hideTooltip(); // rows are being replaced; don't leave a tooltip for a removed pin
       propBtns.innerHTML = '';
       propBtns.dataset.keys = newKeys;
       params.forEach(function(p) {
         var btn = document.createElement('div');
         btn.className = 'prop-btn';
-        btn.textContent = p.displayName;
+        // Diamond marker (matches the status strip) + truncating label
+        var propDiamond = document.createElement('span');
+        propDiamond.className = 'prop-diamond';
+        propDiamond.innerHTML = '<svg width="8" height="8" viewBox="0 0 8 8" fill="none"><polygon points="4,0 8,4 4,8 0,4" fill="currentColor"/></svg>';
+        var propLabel = document.createElement('span');
+        propLabel.className = 'prop-label';
+        propLabel.textContent = p.displayName;
+        btn.appendChild(propDiamond);
+        btn.appendChild(propLabel);
+        // Undo: remove the keyframes a bake added to this property. Hidden unless
+        // the row has a bake record (display is toggled inline in the sync pass).
+        var propUndo = document.createElement('span');
+        propUndo.className = 'prop-undo';
+        _addPressState(propUndo);
+        propUndo.style.display = 'none';
+        _attachTooltip(propUndo, 'Undo the bake on this property');
+        propUndo.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3.8 5.5H8.6a2.9 2.9 0 010 5.8H6.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.8 3.3L3.5 5.5l2.3 2.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        propUndo.addEventListener('click', function(ev) {
+          ev.stopPropagation();
+          _undoBakeForKey(p.key);
+        });
+        // Pin: jump the playhead to this property's keyframes (doesn't toggle selection)
+        var propPin = document.createElement('span');
+        propPin.className = 'prop-pin';
+        _addPressState(propPin);
+        _attachTooltip(propPin, 'Jump playhead to keyframes');
+        propPin.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><line x1="1.5" y1="7" x2="9" y2="7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M6 3.8L9.2 7 6 10.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><line x1="12" y1="3.2" x2="12" y2="10.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+        propPin.addEventListener('click', function(ev) {
+          ev.stopPropagation();
+          // Rows persist across polls, so look up the latest jump time by key
+          // rather than using the `p` captured when this row was built.
+          var live = (getState().availableParams || []).filter(function(x){ return x.key === p.key; })[0];
+          _jumpToParam(live || p);
+        });
+        btn.appendChild(propUndo);
+        btn.appendChild(propPin);
         btn.dataset.key = p.key;
         btn.addEventListener('click', function() {
-          var s2    = getState();
-          var baked = (s2.bakedParamKeys || []).slice();
-          var bi    = baked.indexOf(p.key);
-          if (bi >= 0) {
-            // First click on a green button clears baked state, leaves unselected
-            baked.splice(bi, 1);
-            setState({ bakedParamKeys: baked });
-            return;
-          }
+          var s2   = getState();
+          // A baked (green) row stays green: clicking does nothing unless the
+          // playhead is over another, unbaked pair of this property, in which
+          // case it selects normally (blue) so that pair can be baked too.
+          var isBakedRow = (s2.bakedParamKeys || []).indexOf(p.key) >= 0;
+          var isValidRow = (s2.validParamKeys || []).indexOf(p.key) >= 0;
+          if (isBakedRow && !isValidRow) return;
           var keys = (s2.selectedParamKeys || []).slice();
           var idx  = keys.indexOf(p.key);
           if (idx >= 0) keys.splice(idx, 1);
@@ -1584,10 +2578,19 @@ function renderUI(s) {
     // Sync active state
     var selKeys   = s.selectedParamKeys || [];
     var bakedKeys = s.bakedParamKeys   || [];
+    var validKeys = s.validParamKeys   || [];
     propBtns.querySelectorAll('.prop-btn').forEach(function(btn) {
       var k = btn.dataset.key;
-      btn.classList.toggle('active', selKeys.indexOf(k) >= 0);
+      var isSel = selKeys.indexOf(k) >= 0;
+      btn.classList.toggle('active', isSel);
+      // Selected but the playhead isn't between its keyframes yet: orange until it is
+      btn.classList.toggle('pending', isSel && validKeys.indexOf(k) < 0);
+      // Playhead is already between this property's keyframes: pin shows blue even when unselected
+      btn.classList.toggle('ready', validKeys.indexOf(k) >= 0);
       btn.classList.toggle('baked',  bakedKeys.indexOf(k) >= 0 && selKeys.indexOf(k) < 0);
+      // Undo button only on rows with a bake to undo (inline style: UXP ignores class-driven display changes)
+      var undoEl = btn.querySelector('.prop-undo');
+      if (undoEl) undoEl.style.display = bakedKeys.indexOf(k) >= 0 ? 'flex' : 'none';
     });
   }
 
@@ -1598,6 +2601,18 @@ function renderUI(s) {
     var cfg  = STATUS_CONFIG[s.status] || STATUS_CONFIG['idle'];
     var msg  = typeof cfg.text === 'function' ? cfg.text(s) : cfg.text;
     strip.className = 'status-strip ' + cfg.cls;
+    // Clip name lives in its own span so a long name truncates on its own
+    // instead of pushing the count off the end of the strip
+    var clipEl   = document.getElementById('status-clip');
+    var showClip = !!clipEl && !!cfg.clip && !!s.clipName;
+    if (clipEl) {
+      clipEl.textContent   = showClip ? s.clipName : '';
+      clipEl.style.display = showClip ? 'block' : 'none'; // inline: UXP ignores class-driven display
+    }
+    if (showClip) msg = '\u00b7 ' + msg;
+    // Clickable whenever there are valid params: click selects all, click again clears
+    var _vk = s.validParamKeys || [];
+    if (_vk.length > 0 && s.status !== 'done' && !s.isBaking) strip.className += ' status-clickable';
     txt.textContent = msg;
   }
 
@@ -1627,8 +2642,41 @@ function initPanel() {
     initGraphEditor(svg); // handles initial sizing + draw via ResizeObserver
   }
 
+  // A-curve (peak) mode toggle
+  var peakBtn = document.getElementById('peak-mode');
+  if (peakBtn) {
+    _attachTooltip(peakBtn, function() {
+      return _peakMode
+        ? 'A-curve mode is on. Click to go back to the bezier handles'
+        : 'A-curve mode: drag on the graph to move the peak left/right; up narrows the ease, down widens it';
+    });
+    peakBtn.addEventListener('click', function() { _setPeakMode(!_peakMode); });
+  }
+  _stylePeakBtn();
+  _applyPeakVisibility();
+
+  // Add Point: splits the curve's widest segment; unavailable in A-curve mode
+  var addPtBtn = document.getElementById('add-point');
+  if (addPtBtn) {
+    _attachTooltip(addPtBtn, function() {
+      return _peakMode
+        ? 'Add Point is unavailable in A-curve mode'
+        : 'Add a point to the curve. Drag it and its handles, right-click it to delete. Alt-drag a handle to keep both lengths, Ctrl-drag to move it on its own (makes a corner)';
+    });
+    addPtBtn.addEventListener('click', function() { if (!_peakMode) _addPoint(); });
+  }
+
+  // Settings: same modal as the flyout menu and the context menus
+  var settingsBtn = document.getElementById('graph-settings');
+  if (settingsBtn) {
+    _attachTooltip(settingsBtn, 'OpenCurve settings');
+    settingsBtn.addEventListener('click', function() { _showSettingsModal(); });
+  }
+
   var zoomIn  = document.getElementById('zoom-in');
   var zoomOut = document.getElementById('zoom-out');
+  _attachTooltip(zoomIn,  'Zoom in');
+  _attachTooltip(zoomOut, 'Zoom out');
   function applyZoom(delta) {
     _zoom = Math.max(0.25, Math.min(1.0, _zoom + delta));
     _updateContentTransform();
@@ -1706,20 +2754,21 @@ function initPanel() {
       onClick(t);
     });
     _ctxMenu.appendChild(item);
+    return item;
   }
 
-  var _icRename = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path fill="none" d="M8.5 2.5l3 3M2 9l6.5-6.5 3 3L5 12H2V9z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  var _icCopy = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><rect x="4.5" y="4.5" width="7" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path fill="none" d="M9.5 4.5V3a1 1 0 00-1-1H3a1 1 0 00-1 1v5.5a1 1 0 001 1h1.5" stroke="currentColor" stroke-width="1.3"/></svg>';
-  var _icOverwrite = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path fill="none" d="M7 2v7M4.5 6.5L7 9l2.5-2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path fill="none" d="M2 11h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
-  var _icDelete = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path fill="none" d="M3 4h8M5.5 4V3a1 1 0 011-1h1a1 1 0 011 1v1M4.5 4l.5 7.5a1 1 0 001 .5h2a1 1 0 001-.5L9.5 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var _icRename = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path fill="none" d="M8.5 2.5l3 3M2 9l6.5-6.5 3 3L5 12H2V9z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var _icCopy = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><rect x="4.5" y="4.5" width="7" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.6"/><path fill="none" d="M9.5 4.5V3a1 1 0 00-1-1H3a1 1 0 00-1 1v5.5a1 1 0 001 1h1.5" stroke="currentColor" stroke-width="1.6"/></svg>';
+  var _icOverwrite = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path fill="none" d="M7 2v7M4.5 6.5L7 9l2.5-2.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path fill="none" d="M2 11h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+  var _icDelete = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path fill="none" d="M3 4h8M5.5 4V3a1 1 0 011-1h1a1 1 0 011 1v1M4.5 4l.5 7.5a1 1 0 001 .5h2a1 1 0 001-.5L9.5 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
-  _ctxItem('Rename', false, function(t) {
+  _ctxItem('Rename Preset', false, function(t) {
     if (t) t.startRename();
   }, _icRename);
   _ctxItem('Copy Preset', false, function(t) {
     if (!t) return;
     var c = t.preset.curve;
-    var text = 'cubic-bezier(' + c.p1x + ', ' + c.p1y + ', ' + c.p2x + ', ' + c.p2y + ')';
+    var text = _curveToText(c);
     console.log('[FS] Coordinates:', text);
     var copied = false;
     try {
@@ -1739,23 +2788,47 @@ function initPanel() {
   _ctxItem('Overwrite with current', false, function(t) {
     if (!t) return;
     var c = getState().curve;
-    t.preset.curve = { p1x: c.p1x, p1y: c.p1y, p2x: c.p2x, p2y: c.p2y };
+    t.preset.curve = _cloneCurve(c);
     _savePresetList(_presetList);
     var thumb = t.btn.querySelector('.preset-thumb path');
     if (thumb) thumb.setAttribute('d', _thumbPathD(t.preset.curve));
     _showCopyToast('Preset updated');
   }, _icOverwrite);
-  _ctxItem('Delete', true, function(t) {
+  _ctxItem('Delete Preset', true, function(t) {
     if (!t) return;
-    _presetList = _presetList.filter(function(p) { return p.id !== t.preset.id; });
-    _savePresetList(_presetList);
-    if (t.btn && t.btn.parentNode) t.btn.parentNode.removeChild(t.btn);
+    _confirmDialog('Delete Preset', 'Delete "' + t.preset.name + '"? This cannot be undone.', 'Delete', function() {
+      _presetList = _presetList.filter(function(p) { return p.id !== t.preset.id; });
+      _savePresetList(_presetList);
+      if (t.btn && t.btn.parentNode) t.btn.parentNode.removeChild(t.btn);
+    });
   }, _icDelete);
+  var _icSettingsCtx = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="8" r="1.8" fill="none" stroke="currentColor" stroke-width="1.6"/><line x1="13" y1="8" x2="15" y2="8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="3" y1="8" x2="1" y2="8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="8" y1="13" x2="8" y2="15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="8" y1="3" x2="8" y2="1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="11.54" y1="11.54" x2="12.95" y2="12.95" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="4.46" y1="11.54" x2="3.05" y2="12.95" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="4.46" y1="4.46" x2="3.05" y2="3.05" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="11.54" y1="4.46" x2="12.95" y2="3.05" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+  _ctxItem('Open Settings', false, function() {
+    _showSettingsModal();
+  }, _icSettingsCtx);
+  // List/Grid toggle at the bottom, same action as the empty-space menu.
+  // Label and icon are refreshed each time the menu opens.
+  var _icGridCtx = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="1.5" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="8" y="1.5" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="1.5" y="8" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="8" y="8" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
+  var _icListCtx = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><line x1="1.5" y1="3.5" x2="12.5" y2="3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="1.5" y1="7" x2="12.5" y2="7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="1.5" y1="10.5" x2="12.5" y2="10.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+  var _layoutCtxItem = _ctxItem('Grid View', false, function() {
+    _presetLayout = _presetLayout === 'list' ? 'grid' : 'list';
+    localStorage.setItem(_LAYOUT_KEY, _presetLayout);
+    _applyPresetLayout(true);
+  }, _icGridCtx);
+  function _syncLayoutCtxItem() {
+    // Children are [iconSpan, labelSpan]; no expando properties (UXP may drop them)
+    var kids = _layoutCtxItem.children;
+    var lbl  = kids[kids.length - 1];
+    var ic   = kids.length > 1 ? kids[0] : null;
+    if (lbl) lbl.textContent = _presetLayout === 'list' ? 'Grid View' : 'List View';
+    if (ic)  ic.innerHTML    = _presetLayout === 'list' ? _icGridCtx : _icListCtx;
+  }
 
   function _showCtxMenu(preset, btn, startRename, e) {
     var existingMini = document.getElementById('_mini-ctx');
     if (existingMini && existingMini.parentNode) existingMini.parentNode.removeChild(existingMini);
     _ctxTarget = { preset: preset, btn: btn, startRename: startRename };
+    _syncLayoutCtxItem();
     _ctxMenu.style.left = '0px';
     _ctxMenu.style.top = '0px';
     _ctxMenu.style.display = 'block';
@@ -1781,7 +2854,8 @@ function initPanel() {
     var W = 28, H = 28, pad = 3, gW = W - 2*pad, gH = H - 2*pad;
     function tx(n) { return pad + n * gW; }
     function ty(n) { return pad + (1 - n) * gH; }
-    return 'M'+tx(0)+','+ty(0)+' C'+tx(c.p1x)+','+ty(c.p1y)+' '+tx(c.p2x)+','+ty(c.p2y)+' '+tx(1)+','+ty(1);
+    if (_peakMode) return _peakBellPath(c, 40, tx, ty); // A-curve mode: thumbnails show the bell too
+    return _curvePathTx(c, tx, ty);
   }
 
   function _buildPresetBtn(preset) {
@@ -1975,6 +3049,22 @@ function initPanel() {
     _initDragSort(list);
   }
 
+  // A-curve mode swaps every thumbnail between the bezier and its bell
+  _peakThumbRefresh = function() {
+    var list = document.getElementById('all-presets-list');
+    if (!list) return;
+    var kids = list.children;
+    for (var i = 0; i < kids.length; i++) {
+      var id = kids[i].dataset ? kids[i].dataset.id : null;
+      if (!id) continue;
+      var preset = null;
+      for (var j = 0; j < _presetList.length; j++) { if (String(_presetList[j].id) === String(id)) { preset = _presetList[j]; break; } }
+      if (!preset || !preset.curve) continue;
+      var path = kids[i].querySelector('.preset-thumb path');
+      if (path) path.setAttribute('d', _thumbPathD(preset.curve));
+    }
+  };
+
   _renderPresets();
   _refreshUpdateNotification();
 
@@ -1987,6 +3077,8 @@ function initPanel() {
   // Parse cubic-bezier string → curve object or null
   function _parseCubicBezier(text) {
     if (!text) return null;
+    var multi = _curveFromText(text); // opencurve(...) form carries points
+    if (multi) return multi;
     var m = text.match(/cubic-bezier\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/i);
     if (!m) return null;
     var vals = [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]), parseFloat(m[4])];
@@ -2048,7 +3140,7 @@ function initPanel() {
     box.appendChild(title);
 
     var desc = document.createElement('div');
-    desc.textContent = 'Paste a cubic-bezier() value:';
+    desc.textContent = 'Paste a cubic-bezier() or opencurve() value:';
     desc.style.cssText = 'color:#888;font-size:13px;margin-bottom:10px;';
     box.appendChild(desc);
 
@@ -2072,7 +3164,7 @@ function initPanel() {
     addBtn.addEventListener('mouseleave', function() { addBtn.style.color='#4a9eff'; addBtn.style.borderColor='rgba(74,158,255,0.4)'; });
     addBtn.addEventListener('click', function() {
       var curve = _parseCubicBezier(input.value.trim());
-      if (!curve) { err.textContent = 'Invalid format — expected cubic-bezier(x1, y1, x2, y2)'; return; }
+      if (!curve) { err.textContent = 'Invalid format — expected cubic-bezier(x1, y1, x2, y2) or an opencurve(...) value'; return; }
       close();
       _createPresetFromCurve(curve);
     });
@@ -2110,7 +3202,7 @@ function initPanel() {
   }
 
   // Mini Settings-only context menu (used in preset list empty space + graph)
-  function _showMiniCtxMenu(e, showPaste, showLayout, showGrid) {
+  function _showMiniCtxMenu(e, showPaste, showLayout, showGrid, pointIdx) {
     console.log('[OC] _showMiniCtxMenu called');
     e.preventDefault();
     e.stopPropagation();
@@ -2123,10 +3215,12 @@ function initPanel() {
     mini.id = '_mini-ctx';
     mini.style.display = 'block';
 
-    var _icSettings = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="4" cy="8" r="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="8" r="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="12" cy="8" r="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>';
-    var _icGrid = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="1.5" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="8" y="1.5" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="1.5" y="8" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="8" y="8" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>';
-    var _icList = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><line x1="1.5" y1="3.5" x2="12.5" y2="3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="1.5" y1="7" x2="12.5" y2="7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="1.5" y1="10.5" x2="12.5" y2="10.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
-    var _icPaste = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><rect x="3" y="2" width="8" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path fill="none" d="M5.5 2V1.5a1 1 0 011-1h1a1 1 0 011 1V2" stroke="currentColor" stroke-width="1.3"/><line x1="5.5" y1="6" x2="8.5" y2="6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="5.5" y1="8.5" x2="8.5" y2="8.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+    var _icSettings = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="8" r="1.8" fill="none" stroke="currentColor" stroke-width="1.6"/><line x1="13" y1="8" x2="15" y2="8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="3" y1="8" x2="1" y2="8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="8" y1="13" x2="8" y2="15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="8" y1="3" x2="8" y2="1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="11.54" y1="11.54" x2="12.95" y2="12.95" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="4.46" y1="11.54" x2="3.05" y2="12.95" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="4.46" y1="4.46" x2="3.05" y2="3.05" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="11.54" y1="4.46" x2="12.95" y2="3.05" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+    var _icGrid = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="1.5" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="8" y="1.5" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="1.5" y="8" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="8" y="8" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
+    var _icList = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><line x1="1.5" y1="3.5" x2="12.5" y2="3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="1.5" y1="7" x2="12.5" y2="7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="1.5" y1="10.5" x2="12.5" y2="10.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+    var _icPaste = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><rect x="3" y="2" width="8" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.6"/><path fill="none" d="M5.5 2V1.5a1 1 0 011-1h1a1 1 0 011 1V2" stroke="currentColor" stroke-width="1.6"/><line x1="5.5" y1="6" x2="8.5" y2="6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="5.5" y1="8.5" x2="8.5" y2="8.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+    var _icGraphOn = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M1.5 12.5C5 12.5 9 1.5 12.5 1.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="1.5" cy="12.5" r="1.3" fill="currentColor"/><circle cx="12.5" cy="1.5" r="1.3" fill="currentColor"/></svg>';
+    var _icGraphOff = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M1.5 12.5C5 12.5 9 1.5 12.5 1.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity="0.45"/><line x1="2" y1="2" x2="12" y2="12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
 
     function _miniItem(label, icon, onClick) {
       var item = document.createElement('div');
@@ -2148,6 +3242,17 @@ function initPanel() {
       mini.appendChild(item);
     }
 
+    var _icPtDelete = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path fill="none" d="M3 4h8M5.5 4V3a1 1 0 011-1h1a1 1 0 011 1v1M4.5 4l.5 7.5a1 1 0 001 .5h2a1 1 0 001-.5L9.5 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    var _icPtSmooth = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M1.5 11C5 11 9 3 12.5 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="7" cy="7" r="1.6" fill="currentColor"/></svg>';
+    var _icPtBreak  = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M1.5 11L7 7L12.5 11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7" cy="7" r="1.6" fill="currentColor"/></svg>';
+
+    if (typeof pointIdx === 'number') {
+      // Right-click on a curve point
+      var pc = getState().curve, pp = (pc.pts || [])[pointIdx];
+      var isSmooth = !pp || pp.smooth !== false;
+      _miniItem(isSmooth ? 'Break Handles' : 'Smooth Handles', isSmooth ? _icPtBreak : _icPtSmooth, function() { _setPointSmooth(pointIdx, !isSmooth); });
+      _miniItem('Delete Point', _icPtDelete, function() { _removePoint(pointIdx); });
+    } else {
     _miniItem('Open Settings', _icSettings, function() { _showSettingsModal(); });
 
     if (showLayout !== false) {
@@ -2161,6 +3266,16 @@ function initPanel() {
         }
       );
     }
+
+    _miniItem(
+      _graphVisible ? 'Disable Graph' : 'Enable Graph',
+      _graphVisible ? _icGraphOff : _icGraphOn,
+      function() {
+        _graphVisible = !_graphVisible;
+        localStorage.setItem(_GRAPH_KEY, _graphVisible ? 'on' : 'off');
+        _applyGraphVisibility();
+      }
+    );
 
     if (showPaste) {
       _miniItem('Paste Preset', _icPaste, function() { _pasteCoordinates(); });
@@ -2201,6 +3316,7 @@ function initPanel() {
       mini.appendChild(gridRow);
       mini.style.paddingBottom = '0';
     }
+    } // end of the non-point menu
 
     mini.style.left = '0px';
     mini.style.top = '0px';
@@ -2230,7 +3346,8 @@ function initPanel() {
     if (!list) return;
     list.addEventListener('contextmenu', function(e) {
       var onPreset = e.target.closest && e.target.closest('.preset-btn');
-      if (onPreset) return;
+      // Real presets have their own menu; the New Preset tile gets the list menu
+      if (onPreset && onPreset.id !== 'new-preset-btn') return;
       _showMiniCtxMenu(e, true);
     });
   })();
@@ -2240,6 +3357,8 @@ function initPanel() {
     var graph = document.getElementById('bezier-svg');
     if (!graph) return;
     graph.addEventListener('contextmenu', function(e) {
+      var hit = _graphHitTest ? _graphHitTest(e) : null;
+      if (hit && hit.k === 'a') { _showMiniCtxMenu(e, false, false, false, hit.i); return; }
       _showMiniCtxMenu(e, false, false, true);
     });
   })();
@@ -2253,6 +3372,7 @@ function initPanel() {
       var newBtn = document.createElement('div');
       newBtn.id = 'new-preset-btn';
       newBtn.className = 'preset-btn new-preset-btn';
+      _attachTooltip(newBtn, 'Save the current curve as a preset');
 
       // "+" thumbnail
       var thumb = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -2279,7 +3399,7 @@ function initPanel() {
         var preset = {
           id: 'c' + Date.now(),
           name: 'Custom ' + (_presetList.filter(function(p){ return !p.builtIn; }).length + 1),
-          curve: { p1x: c.p1x, p1y: c.p1y, p2x: c.p2x, p2y: c.p2y },
+          curve: _cloneCurve(c),
         };
         _presetList.push(preset);
         _savePresetList(_presetList);
@@ -2326,19 +3446,50 @@ function initPanel() {
     resizeHandle.addEventListener('pointercancel', _endResize);
   }
 
+  // Apply saved graph visibility (hides the whole left column when disabled)
+  _applyGraphVisibility();
+
   // Status strip — click to select all valid params
   var statusStrip = document.getElementById('status-strip');
   if (statusStrip) {
+    _attachTooltip(statusStrip, function() {
+      var st = getState();
+      if (st.status === 'outside') return _nearestJumpParam(st) ? 'Click to jump to the nearest keyframe pair' : '';
+      var valid = st.validParamKeys || [];
+      if (valid.length === 0 || st.status === 'done' || st.isBaking) return '';
+      var selN = (st.selectedParamKeys || []).filter(function(k){ return valid.indexOf(k) >= 0; }).length;
+      return selN < valid.length ? 'Click to select all properties' : 'Click to clear selection';
+    });
     statusStrip.addEventListener('click', function() {
       var s = getState();
+      if (s.status === 'outside') {
+        // "Move playhead between keyframes": take the user there
+        var np = _nearestJumpParam(s);
+        if (np) _jumpToParam({ jumpSec: np.nearSec });
+        return;
+      }
       var valid = s.validParamKeys || [];
-      if (valid.length > 0) setState({ selectedParamKeys: valid.slice() });
+      if (valid.length === 0) return;
+      var selNow = (s.selectedParamKeys || []).filter(function(k){ return valid.indexOf(k) >= 0; });
+      if (selNow.length < valid.length) {
+        // Select every valid property
+        var up = { selectedParamKeys: valid.slice() };
+        if (s.status === 'no-selection') up.status = 'valid';
+        setState(up);
+      } else {
+        // Everything already selected: second click clears the selection
+        var down = { selectedParamKeys: [] };
+        if (s.status === 'valid') down.status = 'no-selection';
+        setState(down);
+      }
     });
   }
 
   function _updateStripCursor(s) {
     if (!statusStrip) return;
-    var clickable = s.status !== 'valid' && s.status !== 'done' && (s.validParamKeys || []).length > 0;
+    var valid = s.validParamKeys || [];
+    var clickable = (valid.length > 0 && s.status !== 'done' && !s.isBaking)
+                 || (s.status === 'outside' && !!_nearestJumpParam(s));
     statusStrip.style.cursor = clickable ? 'pointer' : 'default';
   }
   stateListeners.push(_updateStripCursor);
@@ -2346,6 +3497,11 @@ function initPanel() {
   // Go button
   var goBtn = document.getElementById('go-btn');
   if (goBtn) {
+    _attachTooltip(goBtn, function() {
+      return goBtn.classList.contains('btn-disabled')
+        ? 'Select a property that the playhead is over'
+        : 'Apply the curve to the selected properties';
+    });
     goBtn.addEventListener('click', async function() {
       var s = getState();
       var bakedKeys = (s.selectedParamKeys || [])
@@ -2354,13 +3510,22 @@ function initPanel() {
       if (s.status !== 'valid' || s.isBaking || contexts.length === 0) return;
       setState({ isBaking: true, status: 'baking' });
       try {
-        await bakeKeyframes(contexts, s.curve);
+        var written = (await bakeKeyframes(contexts, s.curve)) || [];
+        _recordBakes(s, bakedKeys, contexts, written); // remembered for the undo buttons
+        _showUndoBtn(_bakeRecords.length > 0);
         _invalidateCache(); // keyframes changed — force full re-scan on next poll
         _skipPollUntil = Date.now() + DONE_DISPLAY_MS;
         var newBaked = (s.bakedParamKeys || []).concat(bakedKeys.filter(function(k){ return (s.bakedParamKeys || []).indexOf(k) < 0; }));
+        // The baked pairs are one frame apart now, so those properties are no
+        // longer bakeable; drop them from the valid set straight away rather
+        // than waiting for the next poll (polling pauses while "Done" shows).
+        var ctxLeft = {};
+        Object.keys(s.paramContexts || {}).forEach(function(k){ if (bakedKeys.indexOf(k) < 0) ctxLeft[k] = s.paramContexts[k]; });
         setState({
           isBaking: false, status: 'done',
           bakedParamKeys:    newBaked,
+          validParamKeys:    (s.validParamKeys || []).filter(function(k){ return bakedKeys.indexOf(k) < 0; }),
+          paramContexts:     ctxLeft,
           selectedParamKeys: (s.selectedParamKeys || []).filter(function(k){ return bakedKeys.indexOf(k) < 0; }),
         });
         setTimeout(function() {
@@ -2373,6 +3538,13 @@ function initPanel() {
         setState({ isBaking: false, status: 'error', hint: err && err.message ? err.message : String(err) });
       }
     });
+  }
+
+  // Undo button (next to Go): reverts the most recent Go press
+  var undoBtn = document.getElementById('undo-btn');
+  if (undoBtn) {
+    _attachTooltip(undoBtn, 'Undo last bake');
+    undoBtn.addEventListener('click', function() { _undoLastBake(); });
   }
 
   // State → UI
@@ -2399,7 +3571,7 @@ var _cache = {
 };
 
 var FPS_RECHECK_MS     = 30000; // re-detect fps every 30s to catch mid-session changes
-var HEARTBEAT_POLLS    = 5;     // force full re-scan every N polls even if playhead is static (~1s)
+var HEARTBEAT_POLLS    = 10;    // force full re-scan every N polls even if playhead is static (~1s at 100ms)
 
 function _invalidateCache() {
   _cache.playhead      = null;
@@ -2412,23 +3584,100 @@ function _invalidateCache() {
 
 // ─── Polling ──────────────────────────────────────────────────────────────
 var pollTimer      = null;
-var POLL_MS        = 200;
+var POLL_MS        = 100;  // measured: full scan ~9ms avg / 23ms max, so 100ms leaves 4x headroom (was 200)
+var PLAYBACK_POLLS = 6;    // consecutive moving polls (~600ms) before we treat motion as playback and pause scanning
 var _lastStatus    = '';
 var _skipPollUntil = 0;
 var _pollRunning   = false; // prevents concurrent poll calls piling up
 var _isDragging    = false; // pause polling while handle is being dragged
 
+// ─── Debug: poll timing ──────────────────────────────────────────────────
+// Toggle from the flyout menu (or set localStorage 'opencurve-debug-timing' to 'on').
+// Logs every poll to the console with what it did and how long it took, and
+// prints a summary when turned off. Costs one boolean check per poll when off.
+var _DEBUG_TIMING_KEY = 'opencurve-debug-timing';
+var _debugTiming = localStorage.getItem(_DEBUG_TIMING_KEY) === 'on';
+var _dbgKind   = '';   // what the last detect did: cache | full | playing | early | error
+var _dbgFullMs = 0;    // time spent inside the full scan itself (UXP only)
+var _dbgStats  = null;
+function _dbgReset() {
+  _dbgStats = { since: Date.now(), polls: 0, dropped: 0, kinds: {}, full: [], cache: [], slowest: 0, slowestKind: '',
+                lastAt: 0, gaps: [], render: [], phChanges: 0, lastPh: null };
+}
+// kind/ms: what detectContext did and how long it took. t0: when this poll
+// started (gives the wall-clock gap to the previous poll, i.e. whether the
+// timer really fires every POLL_MS). renderMs: time spent in setState/renderUI.
+// ph: the playhead seconds this poll saw; a trailing * marks a change.
+function _dbgRecord(kind, ms, result, t0, renderMs, ph) {
+  if (!_dbgStats) _dbgReset();
+  var st = _dbgStats;
+  st.polls++;
+  st.kinds[kind] = (st.kinds[kind] || 0) + 1;
+  if (kind === 'full') st.full.push(ms); else if (kind === 'cache') st.cache.push(ms);
+  if (ms > st.slowest) { st.slowest = ms; st.slowestKind = kind; }
+  var gap = (t0 && st.lastAt) ? t0 - st.lastAt : 0;
+  if (t0) st.lastAt = t0;
+  if (gap) st.gaps.push(gap);
+  if (typeof renderMs === 'number') st.render.push(renderMs);
+  var phMoved = (typeof ph === 'number' && st.lastPh !== null && ph !== st.lastPh);
+  if (phMoved) st.phChanges++;
+  if (typeof ph === 'number') st.lastPh = ph;
+  var budget = POLL_MS;
+  var over = ms > budget ? '  OVER BUDGET (' + budget + 'ms poll interval)' : '';
+  var scan = (kind === 'full' && _dbgFullMs) ? '  scan=' + _dbgFullMs + 'ms' : '';
+  console.log('[OC-TIMING] ' + (kind + '       ').slice(0, 7) + ' ' + ('    ' + ms).slice(-4) + 'ms' + scan +
+    '  gap=' + ('   ' + gap).slice(-3) + 'ms' +
+    '  render=' + ('  ' + (renderMs || 0)).slice(-2) + 'ms' +
+    (typeof ph === 'number' ? '  ph=' + ph.toFixed(3) + (phMoved ? '*' : ' ') : '') +
+    '  status=' + (result && result.status) +
+    '  params=' + ((result && result.availableParams) ? result.availableParams.length : 0) +
+    (result && result.hint ? '  hint="' + result.hint + '"' : '') + over);
+}
+function _dbgSummary() {
+  var st = _dbgStats; if (!st) return 'No polls recorded';
+  function avg(a){ return a.length ? Math.round(a.reduce(function(x,y){ return x+y; }, 0) / a.length) : 0; }
+  function max(a){ return a.length ? Math.max.apply(null, a) : 0; }
+  var secs = Math.round((Date.now() - st.since) / 1000);
+  console.log('[OC-TIMING] summary over ' + secs + 's\n' +
+    '  polls      : ' + st.polls + ' (' + st.dropped + ' dropped because the previous poll was still running)\n' +
+    '  full scans : ' + st.full.length + '  avg ' + avg(st.full) + 'ms  max ' + max(st.full) + 'ms\n' +
+    '  cache hits : ' + st.cache.length + '  avg ' + avg(st.cache) + 'ms  max ' + max(st.cache) + 'ms\n' +
+    '  interval   : avg ' + avg(st.gaps) + 'ms between polls (timer set to ' + POLL_MS + 'ms)  max ' + max(st.gaps) + 'ms\n' +
+    '  render     : avg ' + avg(st.render) + 'ms  max ' + max(st.render) + 'ms\n' +
+    '  playhead   : moved on ' + st.phChanges + ' of ' + st.polls + ' polls\n' +
+    '  by kind    : ' + JSON.stringify(st.kinds) + '\n' +
+    '  slowest    : ' + st.slowest + 'ms (' + st.slowestKind + ')');
+  return 'full avg ' + avg(st.full) + 'ms / max ' + max(st.full) + 'ms, cache avg ' + avg(st.cache) + 'ms, interval avg ' + avg(st.gaps) + 'ms, render avg ' + avg(st.render) + 'ms, ' + st.dropped + ' dropped';
+}
+function _toggleDebugTiming() {
+  _debugTiming = !_debugTiming;
+  localStorage.setItem(_DEBUG_TIMING_KEY, _debugTiming ? 'on' : 'off');
+  if (_debugTiming) { _dbgReset(); _showCopyToast('Poll timing ON: watch the debug console'); }
+  else { _showCopyToast('Poll timing OFF: ' + _dbgSummary()); }
+}
+
 async function poll() {
-  if (_pollRunning) return; // drop the tick if the previous one isn't done yet
+  if (_pollRunning) { if (_debugTiming && _dbgStats) _dbgStats.dropped++; return; } // previous tick still running
   if (_isDragging)  return; // keep event loop free while user is dragging
   var s = getState();
   if (s.isBaking) return;
   if (Date.now() < _skipPollUntil) return;
   _pollRunning = true;
   try {
+    var _t0 = _debugTiming ? Date.now() : 0;
     var result = await detectContext();
+    var _tDet = _debugTiming ? Date.now() - _t0 : 0;
+    // A scan that was already running when Go was pressed describes the
+    // keyframes as they were before the bake. Applying it would restore the
+    // pre-bake selection and, worse, its 2+ frame bracket pair inside the new
+    // record's range would look like an outside undo and drop the record
+    // (the row then showed orange instead of green). Discard it.
+    if (getState().isBaking || Date.now() < _skipPollUntil) return;
+    s = getState();
     var updates = {
       status:          result.status,
+      clipId:          result.clipId || null,
+      clipName:        result.clipName || '',
       availableParams: result.availableParams || [],
       hint:            result.hint || '',
       errorMessage:    result.errorMessage || result.hint || '',
@@ -2452,16 +3701,35 @@ async function poll() {
       updates.selectedParamKeys = currentSel;
       updates.validParamKeys    = validKeys;
       updates.paramContexts     = result.paramContexts || {};
-      updates.bakedParamKeys    = (s.bakedParamKeys || []).filter(function(k){
-        // Drop baked state if param is back in validParamKeys (undo restored original KFs)
-        var inAvail = avail.some(function(p){ return p.key === k; });
-        var inValid = validKeys.indexOf(k) >= 0;
-        return inAvail && !inValid;
+      // Bake records drive the green state. A 2+ frame pair inside a baked
+      // range means the bake was undone outside the panel (Ctrl+Z): forget it.
+      validKeys.forEach(function(k) {
+        var ctx = result.paramContexts && result.paramContexts[k];
+        if (!ctx) return;
+        _bakesFor(result.clipId, k).forEach(function(rec) {
+          if (ctx.kf0.seconds >= rec.kf0Sec - 1e-4 && ctx.kf1.seconds <= rec.kf1Sec + 1e-4) _dropBake(rec);
+        });
+      });
+      updates.bakedParamKeys    = _bakedKeysFor(result.clipId, avail);
+      // A green (baked) row can't stay selected unless the playhead is over an unbaked pair of it
+      updates.selectedParamKeys = updates.selectedParamKeys.filter(function(k){
+        return updates.bakedParamKeys.indexOf(k) < 0 || validKeys.indexOf(k) >= 0;
       });
 
       // Downgrade status if no selected param is actually valid
       var activeCount = currentSel.filter(function(k){ return validKeys.indexOf(k) >= 0; }).length;
       if (activeCount === 0) updates.status = 'no-selection';
+    } else if (result.status === 'outside') {
+      // Same clip, playhead outside every keyframe pair: keep any selection the
+      // user made (shown orange) so it turns blue once the playhead reaches it.
+      var availOut = result.availableParams || [];
+      updates.selectedParamKeys = (s.selectedParamKeys || []).filter(function(k) {
+        return availOut.some(function(p){ return p.key === k; });
+      });
+      updates.validParamKeys    = [];
+      updates.paramContexts     = {};
+      updates.bakedParamKeys    = _bakedKeysFor(result.clipId, availOut);
+      updates.selectedParamKeys = updates.selectedParamKeys.filter(function(k){ return updates.bakedParamKeys.indexOf(k) < 0; });
     } else {
       updates.selectedParamKeys = [];
       updates.validParamKeys    = [];
@@ -2473,7 +3741,9 @@ async function poll() {
       console.log('[FS] status changed:', _lastStatus, '→', result.status, result.hint || '');
       _lastStatus = result.status;
     }
+    var _tR = _debugTiming ? Date.now() : 0;
     setState(updates);
+    if (_debugTiming) _dbgRecord(_dbgKind, _tDet, result, _t0, Date.now() - _tR, _cache.playhead);
   } catch(err) {
     console.error('[FS] poll error:', err);
   } finally {
@@ -2483,7 +3753,7 @@ async function poll() {
 window.__opencurvePoll = poll;
 
 // ─── Settings / flyout ─────────────────────────────────────────────────────
-var CURRENT_VERSION     = '1.2.3';
+var CURRENT_VERSION     = '1.3.0';
 var _CURVE_COLOR_KEY    = 'opencurve-line-color';
 var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#4a9eff';
 var _updateAvailable    = false;
@@ -2500,6 +3770,74 @@ var _GRID_KEY           = 'opencurve-grid-size';
 var _gridSize           = parseInt(localStorage.getItem(_GRID_KEY), 10) || 8;
 var _LAYOUT_KEY         = 'opencurve-preset-layout';
 var _presetLayout       = localStorage.getItem(_LAYOUT_KEY) || 'list';
+var _GRAPH_KEY          = 'opencurve-graph-visible';
+// Defaults to On — only hidden when the user has explicitly disabled the graph.
+var _graphVisible       = localStorage.getItem(_GRAPH_KEY) !== 'off';
+
+// Show or hide the whole graph column. When hidden, the preset list takes the
+// full panel width and the status strip moves above the Go button so clip
+// detection stays visible. Everything is done with inline styles because UXP
+// does not relayout on class changes.
+function _applyGraphVisibility() {
+  var leftCol  = document.querySelector('.left-col');
+  var handle   = document.getElementById('resize-handle');
+  var rightCol = document.getElementById('right-col');
+  var strip    = document.getElementById('status-strip');
+  var goBtn    = document.getElementById('go-btn');
+  if (!leftCol || !rightCol) return;
+  // The Go control is the button itself (UXP) or the go-row wrapper holding Go + Undo (CEP)
+  var goEl = (goBtn && goBtn.parentNode && goBtn.parentNode.classList && goBtn.parentNode.classList.contains('go-row')) ? goBtn.parentNode : goBtn;
+  var row  = document.getElementById('_bottom-row');
+  if (_graphVisible) {
+    leftCol.style.display = '';
+    if (handle) handle.style.display = '';
+    var savedW = parseInt(localStorage.getItem('opencurve-sidebar-width'), 10);
+    rightCol.style.width    = (savedW && savedW >= 120 && savedW <= 320) ? savedW + 'px' : '';
+    rightCol.style.maxWidth = '';
+    rightCol.style.flex     = '';
+    // Put the status strip back under the graph and Go back at the bottom of the right column
+    if (strip) { strip.style.flex = ''; strip.style.minWidth = ''; leftCol.appendChild(strip); }
+    if (goEl)  { rightCol.appendChild(goEl); }
+    if (goBtn) { goBtn.style.width = ''; goBtn.style.flex = ''; goBtn.style.borderLeft = ''; }
+    if (goEl && goEl !== goBtn) { goEl.style.flexShrink = ''; }
+    if (row && row.parentNode) row.parentNode.removeChild(row);
+  } else {
+    leftCol.style.display = 'none';
+    if (handle) handle.style.display = 'none';
+    rightCol.style.width    = '100%';
+    rightCol.style.maxWidth = 'none';
+    rightCol.style.flex     = '1 1 auto';
+    // Status strip and Go share one bottom row: strip takes the width, Go is a narrow button on the right
+    if (!row && strip && goEl) {
+      row = document.createElement('div');
+      row.id = '_bottom-row';
+      row.style.cssText = 'display:flex;flex-direction:row;align-items:stretch;flex-shrink:0;';
+      rightCol.appendChild(row);
+      row.appendChild(strip);
+      row.appendChild(goEl);
+      strip.style.flex     = '1 1 auto';
+      strip.style.minWidth = '0';
+      goBtn.style.width      = '112px';
+      goBtn.style.flex       = '0 0 112px';
+      goBtn.style.borderLeft = '1px solid rgba(255,255,255,0.08)';
+      if (goEl !== goBtn) goEl.style.flexShrink = '0';
+    }
+  }
+  _fitGoForUndo();
+  _applyPresetLayout(true);
+}
+
+// The Undo button floats over the right end of Go. In the hidden-graph layout
+// Go is only 112px wide, so nudge its label left while the button is showing.
+// Inline style because UXP doesn't relayout on class changes.
+function _fitGoForUndo() {
+  var goBtn = document.getElementById('go-btn');
+  var undo  = document.getElementById('undo-btn');
+  if (!goBtn) return;
+  var shown  = !!undo && undo.style.display !== 'none' && !undo.classList.contains('btn-hidden');
+  var narrow = !!document.getElementById('_bottom-row');
+  goBtn.style.paddingRight = (shown && narrow) ? '28px' : '';
+}
 
 function _applyPresetLayout(force) {
   var list = document.getElementById('all-presets-list');
@@ -2659,6 +3997,7 @@ function _applyCurveColor(color) {
   if (ep0) ep0.setAttribute('stroke', color);
   var ep3 = document.getElementById('sg-ep3');
   if (ep3) ep3.setAttribute('stroke', color);
+  for (var pi = 0; pi < _ptEls.length; pi++) _ptEls[pi].inner.setAttribute('stroke', color);
   document.querySelectorAll('.preset-thumb path').forEach(function(p) {
     p.setAttribute('stroke', color);
   });
@@ -2674,20 +4013,27 @@ function _applyCurveColor(color) {
 }
 
 function _showCopyToast(msg, color) {
+  // Full-width flex wrapper centres the toast without transform (unreliable in
+  // UXP) and lets long messages (undo results) wrap instead of truncating.
+  var wrap = document.createElement('div');
+  wrap.style.cssText = [
+    'position:fixed', 'top:10px', 'left:0', 'right:0', 'display:flex',
+    'justify-content:center', 'padding:0 12px', 'box-sizing:border-box',
+    'pointer-events:none', 'z-index:99999', 'opacity:1', 'transition:opacity 0.3s',
+  ].join(';');
   var toast = document.createElement('div');
   toast.textContent = msg;
   toast.style.cssText = [
-    'position:fixed', 'top:10px', 'left:50%', 'transform:translateX(-50%)',
     'background:#252525', 'border:1px solid rgba(255,255,255,0.12)',
-    'color:'+(color||'#e4e4e4'), 'font-size:15px', 'padding:7px 14px',
-    'border-radius:0', 'pointer-events:none', 'z-index:99999',
-    'white-space:nowrap', 'max-width:320px', 'overflow:hidden',
-    'text-overflow:ellipsis', 'opacity:1', 'transition:opacity 0.3s',
+    'color:'+(color||'#e4e4e4'), 'font-size:15px', 'line-height:1.3',
+    'padding:7px 14px', 'border-radius:0', 'max-width:100%',
+    'box-sizing:border-box', 'white-space:normal', 'text-align:center',
   ].join(';');
-  document.body.appendChild(toast);
+  wrap.appendChild(toast);
+  document.body.appendChild(wrap);
   var delay = color ? 2800 : 1800;
-  setTimeout(function() { toast.style.opacity = '0'; }, delay);
-  setTimeout(function() { if (toast.parentNode) toast.parentNode.removeChild(toast); }, delay + 400);
+  setTimeout(function() { wrap.style.opacity = '0'; }, delay);
+  setTimeout(function() { if (wrap.parentNode) wrap.parentNode.removeChild(wrap); }, delay + 400);
 }
 
 function _refreshUpdateNotification() {
@@ -2718,7 +4064,7 @@ function _refreshUpdateNotification() {
 
   var delBtn = document.createElement('div');
   delBtn.className = 'preset-delete';
-  delBtn.innerHTML = '<svg width="10" height="10" viewBox="0 0 10 10" fill="none"><line x1="1" y1="1" x2="9" y2="9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="9" y1="1" x2="1" y2="9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+  delBtn.innerHTML = '<svg width="10" height="10" viewBox="0 0 10 10" fill="none"><line x1="1" y1="1" x2="9" y2="9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="9" y1="1" x2="1" y2="9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
   delBtn.style.cssText = 'opacity:0;width:22px;height:22px;display:flex;align-items:center;justify-content:center;';
   notif.addEventListener('mouseenter', function() { delBtn.style.opacity = '1'; notif.style.background = 'rgba(240,180,0,0.15)'; });
   notif.addEventListener('mouseleave', function() { delBtn.style.opacity = '0'; delBtn.style.background = 'transparent'; notif.style.background = 'rgba(240,180,0,0.08)'; });
@@ -2755,12 +4101,12 @@ function _applyUpdateBtnState(btn, label) {
     var icon = document.createElement('span');
     icon.className = '_update-icon';
     icon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
-    icon.innerHTML = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M7 2L13 12H1L7 2Z" stroke="#e6b800" stroke-width="1.5" stroke-linejoin="round"/><line x1="7" y1="6" x2="7" y2="9" stroke="#e6b800" stroke-width="1.5" stroke-linecap="round"/><circle cx="7" cy="10.5" r="0.75" fill="#e6b800"/></svg>';
+    icon.innerHTML = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M7 2L13 12H1L7 2Z" stroke="#e6b800" stroke-width="1.8" stroke-linejoin="round"/><line x1="7" y1="6" x2="7" y2="9" stroke="#e6b800" stroke-width="1.8" stroke-linecap="round"/><circle cx="7" cy="10.5" r="0.75" fill="#e6b800"/></svg>';
     btn.appendChild(icon);
   } else {
     btn.style.background = 'rgba(230,184,0,0.08)';
     label.textContent = 'Check for Updates';
-    label.style.color = '#b0b0b0';
+    label.style.color = '#d4d4d4';
     leftIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill="none" d="M13.5 8a5.5 5.5 0 11-1.5-3.8" stroke="#e6b800" stroke-width="1.6" stroke-linecap="round"/><polyline fill="none" points="12,2 12,5.5 8.5,5.5" stroke="#e6b800" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   }
   btn.insertBefore(leftIcon, btn.firstChild);
@@ -2776,6 +4122,20 @@ function _openReleasesPage() {
       _showCopyToast('Link copied — paste in browser', '#e6b800');
     });
   });
+}
+
+// True only when `a` is a strictly higher semver than `b` (e.g. 1.3.0 > 1.2.3).
+// Lets a dev build run ahead of the published release without seeing an
+// "update available" prompt; for normal users latest is always >= installed.
+function _isNewerVersion(a, b) {
+  var pa = String(a).split('.').map(function(n) { return parseInt(n, 10) || 0; });
+  var pb = String(b).split('.').map(function(n) { return parseInt(n, 10) || 0; });
+  for (var i = 0; i < 3; i++) {
+    var x = pa[i] || 0, y = pb[i] || 0;
+    if (x > y) return true;
+    if (x < y) return false;
+  }
+  return false;
 }
 
 function _checkForUpdates(silent) {
@@ -2799,7 +4159,7 @@ function _checkForUpdates(silent) {
       var latest = (data.tag_name || '').replace(/^v/, '');
       if (!latest || !/^\d+\.\d+\.\d+/.test(latest)) { if (!silent) _showCopyToast('No valid releases found on GitHub'); return; }
       _latestVersion = latest;
-      if (latest === CURRENT_VERSION) {
+      if (!_isNewerVersion(latest, CURRENT_VERSION)) {
         _updateAvailable = false;
         if (!silent) _showCopyToast('OpenCurve is up to date (v' + CURRENT_VERSION + ')');
       } else {
@@ -2814,7 +4174,9 @@ function _checkForUpdates(silent) {
     .catch(function() { if (!silent) _showCopyToast('Could not reach GitHub'); });
 }
 
-function _confirmReset() {
+// Modal confirmation: title, message, a red action button and Cancel.
+// onOk runs after the dialog has closed. Used by reset-all and preset delete.
+function _confirmDialog(titleText, msgText, okLabel, onOk) {
   var overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.65);z-index:99998;display:flex;align-items:center;justify-content:center;';
 
@@ -2822,15 +4184,15 @@ function _confirmReset() {
   box.style.cssText = 'background:#1c1c1c;border:1px solid rgba(255,255,255,0.18);padding:20px;width:260px;font-family:system-ui,sans-serif;';
 
   var title = document.createElement('div');
-  title.textContent = 'Reset All Settings';
+  title.textContent = titleText;
   title.style.cssText = 'color:#e4e4e4;font-size:14px;font-weight:600;margin-bottom:8px;';
 
   var msg = document.createElement('div');
-  msg.textContent = 'This will clear all saved presets, the graph line colour, and reset the curve. This cannot be undone.';
+  msg.textContent = msgText;
   msg.style.cssText = 'color:#888;font-size:13px;margin-bottom:16px;line-height:1.5;';
 
   var btns = document.createElement('div');
-  btns.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
+  btns.style.cssText = 'display:flex;justify-content:flex-end;'; // no flex gap: UXP ignores it, the OK button carries a margin
 
   var cancelBtn = document.createElement('div');
   cancelBtn.textContent = 'Cancel';
@@ -2839,12 +4201,27 @@ function _confirmReset() {
   cancelBtn.addEventListener('mouseleave', function() { cancelBtn.style.color='#888'; cancelBtn.style.borderColor='rgba(255,255,255,0.12)'; });
   cancelBtn.addEventListener('click', function() { document.body.removeChild(overlay); });
 
-  var resetBtn = document.createElement('div');
-  resetBtn.textContent = 'Reset';
-  resetBtn.style.cssText = 'background:#f06060;border:none;color:#fff;font-size:13px;padding:5px 12px;cursor:pointer;font-weight:600;';
-  resetBtn.addEventListener('mouseenter', function() { resetBtn.style.background='#f27878'; });
-  resetBtn.addEventListener('mouseleave', function() { resetBtn.style.background='#f06060'; });
-  resetBtn.addEventListener('click', function() {
+  var okBtn = document.createElement('div');
+  okBtn.textContent = okLabel;
+  okBtn.style.cssText = 'background:#f06060;border:none;color:#fff;font-size:13px;padding:5px 12px;cursor:pointer;font-weight:600;margin-left:8px;';
+  okBtn.addEventListener('mouseenter', function() { okBtn.style.background='#f27878'; });
+  okBtn.addEventListener('mouseleave', function() { okBtn.style.background='#f06060'; });
+  okBtn.addEventListener('click', function() {
+    document.body.removeChild(overlay);
+    onOk();
+  });
+
+  btns.appendChild(cancelBtn);
+  btns.appendChild(okBtn);
+  box.appendChild(title);
+  box.appendChild(msg);
+  box.appendChild(btns);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+}
+
+function _confirmReset() {
+  _confirmDialog('Reset All Settings', 'This will clear all saved presets, the graph line colour, and reset the curve. This cannot be undone.', 'Reset', function() {
     localStorage.removeItem('opencurve-presets-v10');
     localStorage.removeItem('opencurve-sidebar-width');
     localStorage.removeItem(_CURVE_COLOR_KEY);
@@ -2853,23 +4230,18 @@ function _confirmReset() {
     localStorage.removeItem(_ANIM_KEY);
     localStorage.removeItem(_UPDATE_NOTIF_KEY);
     localStorage.removeItem(_SCAN_PLAYBACK_KEY);
+    localStorage.removeItem(_GRAPH_KEY);
+    localStorage.removeItem(_PEAK_KEY);
     _applyCurveColor('#4a9eff');
     _animationsOn       = true;
     _updateNotifsOn     = true;
     _scanDuringPlayback = true;
+    _graphVisible       = true;
+    _peakMode           = false;
     setState({ curve: { p1x: 0.625, p1y: 0.000, p2x: 0.375, p2y: 1.000 } });
-    document.body.removeChild(overlay);
     _showCopyToast('Reset all settings');
     try { location.reload(); } catch(e) {}
   });
-
-  btns.appendChild(cancelBtn);
-  btns.appendChild(resetBtn);
-  box.appendChild(title);
-  box.appendChild(msg);
-  box.appendChild(btns);
-  overlay.appendChild(box);
-  document.body.appendChild(overlay);
 }
 
 function _showSettingsModal() {
@@ -2888,11 +4260,12 @@ function _showSettingsModal() {
   var logoWrap = document.createElement('div');
   logoWrap.style.cssText = 'flex:1;display:flex;align-items:center;justify-content:center;';
   var logo = document.createElement('img');
-  logo.src = 'img/OpenCurve_Logo14.png';
+  logo.src = 'img/OpenCurve_Logo14_small.png';
   logo.style.cssText = 'height:26px;opacity:0.9;';
   logoWrap.appendChild(logo);
   var closeBtn = document.createElement('div');
   closeBtn.textContent = '✕';
+  _attachTooltip(closeBtn, 'Close settings');
   closeBtn.style.cssText = 'color:#888;font-size:13px;cursor:pointer;padding:4px 6px;flex-shrink:0;';
   closeBtn.addEventListener('mouseenter', function() { closeBtn.style.color='#e4e4e4'; });
   closeBtn.addEventListener('mouseleave', function() { closeBtn.style.color='#888'; });
@@ -2920,16 +4293,16 @@ function _showSettingsModal() {
 
   var colorLabel = document.createElement('div');
   colorLabel.textContent = 'Theme';
-  colorLabel.style.cssText = 'color:#b0b0b0;font-size:14px;margin-bottom:10px;';
+  colorLabel.style.cssText = 'color:#d4d4d4;font-size:14px;margin-bottom:10px;';
   colorSection.appendChild(colorLabel);
 
   // Swatches
   var swatchColors = ['#4a9eff','#3ddc84','#f06060','#f0a030','#c97ff0','#ff6eb4','#ffffff','#aaaaaa'];
   var swatchRow = document.createElement('div');
-  swatchRow.style.cssText = 'display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;';
+  swatchRow.style.cssText = 'display:flex;margin-bottom:4px;flex-wrap:wrap;'; // spacing via swatch margins (UXP ignores flex gap)
   swatchColors.forEach(function(col) {
     var sw = document.createElement('div');
-    sw.style.cssText = 'width:22px;height:22px;background:'+col+';cursor:pointer;border:2px solid '+(col===_curveColor?'#fff':'transparent')+';flex-shrink:0;';
+    sw.style.cssText = 'width:22px;height:22px;background:'+col+';cursor:pointer;border:2px solid '+(col===_curveColor?'#fff':'transparent')+';flex-shrink:0;margin-right:6px;margin-bottom:6px;';
     sw.addEventListener('mouseenter', function() {
       if (sw.style.borderColor !== '#ffffff') sw.style.borderColor = 'rgba(255,255,255,0.45)';
     });
@@ -2950,7 +4323,7 @@ function _showSettingsModal() {
 
   // Hex input
   var hexRow = document.createElement('div');
-  hexRow.style.cssText = 'display:flex;align-items:center;gap:8px;';
+  hexRow.style.cssText = 'display:flex;align-items:center;';
   var hexLabel = document.createElement('span');
   hexLabel.textContent = 'Hex';
   hexLabel.style.cssText = 'color:#888;font-size:13px;';
@@ -2958,9 +4331,9 @@ function _showSettingsModal() {
   hexInput.type = 'text';
   hexInput.value = _curveColor.toUpperCase();
   hexInput.maxLength = 7;
-  hexInput.style.cssText = 'background:#252525;border:1px solid rgba(255,255,255,0.12);color:#e4e4e4;font-size:13px;padding:3px 8px;width:90px;outline:none;font-family:monospace;';
+  hexInput.style.cssText = 'background:#252525;border:1px solid rgba(255,255,255,0.12);color:#e4e4e4;font-size:13px;padding:3px 8px;width:90px;outline:none;font-family:monospace;margin-left:8px;';
   var hexPreview = document.createElement('div');
-  hexPreview.style.cssText = 'width:20px;height:20px;background:'+_curveColor+';flex-shrink:0;border:1px solid rgba(255,255,255,0.12);';
+  hexPreview.style.cssText = 'width:20px;height:20px;background:'+_curveColor+';flex-shrink:0;border:1px solid rgba(255,255,255,0.12);margin-left:8px;';
   hexInput.addEventListener('input', function() {
     var val = hexInput.value;
     // Strip anything that isn't # or hex digits
@@ -3010,7 +4383,7 @@ function _showSettingsModal() {
   var notifRow = document.createElement('div');
   notifRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);cursor:pointer;';
   var notifLabel = document.createElement('span');
-  notifLabel.style.cssText = 'font-size:14px;flex:1;color:#b0b0b0;';
+  notifLabel.style.cssText = 'font-size:14px;flex:1;color:#d4d4d4;';
   notifLabel.textContent = 'Update Notifications';
   var notifCheck = document.createElement('span');
   notifCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
@@ -3023,7 +4396,7 @@ function _showSettingsModal() {
   }
   var notifIcon = document.createElement('span');
   notifIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
-  notifIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill="none" d="M8 2a4.5 4.5 0 014.5 4.5v3l1 1.5H2.5l1-1.5V6.5A4.5 4.5 0 018 2z" stroke="#b0b0b0" stroke-width="1.5" stroke-linejoin="round"/><path fill="none" d="M6 12.5a2 2 0 004 0" stroke="#b0b0b0" stroke-width="1.5" stroke-linecap="round"/></svg>';
+  notifIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill="none" d="M8 2a4.5 4.5 0 014.5 4.5v3l1 1.5H2.5l1-1.5V6.5A4.5 4.5 0 018 2z" stroke="#b0b0b0" stroke-width="1.8" stroke-linejoin="round"/><path fill="none" d="M6 12.5a2 2 0 004 0" stroke="#b0b0b0" stroke-width="1.8" stroke-linecap="round"/></svg>';
   _updateNotifCheck();
   notifRow.appendChild(notifIcon);
   notifRow.appendChild(notifLabel);
@@ -3041,7 +4414,7 @@ function _showSettingsModal() {
   var animRow = document.createElement('div');
   animRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);cursor:pointer;';
   var animLabel = document.createElement('span');
-  animLabel.style.cssText = 'font-size:14px;flex:1;color:#b0b0b0;';
+  animLabel.style.cssText = 'font-size:14px;flex:1;color:#d4d4d4;';
   animLabel.textContent = 'Animations';
   var animCheck = document.createElement('span');
   animCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
@@ -3052,7 +4425,7 @@ function _showSettingsModal() {
   }
   var animIcon = document.createElement('span');
   animIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
-  animIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill="none" d="M8 2l1.2 3L13 6l-2.5 2.5.6 3.5L8 10.5 4.9 12l.6-3.5L3 6l3.8-1z" stroke="#b0b0b0" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+  animIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill="none" d="M8 2l1.2 3L13 6l-2.5 2.5.6 3.5L8 10.5 4.9 12l.6-3.5L3 6l3.8-1z" stroke="#b0b0b0" stroke-width="1.7" stroke-linejoin="round"/></svg>';
   _updateAnimCheck();
   animRow.appendChild(animIcon);
   animRow.appendChild(animLabel);
@@ -3070,7 +4443,7 @@ function _showSettingsModal() {
   var scanRow = document.createElement('div');
   scanRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);cursor:pointer;';
   var scanLabel = document.createElement('span');
-  scanLabel.style.cssText = 'font-size:14px;flex:1;color:#b0b0b0;';
+  scanLabel.style.cssText = 'font-size:14px;flex:1;color:#d4d4d4;';
   scanLabel.textContent = 'Scan During Playback';
   var scanCheck = document.createElement('span');
   scanCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
@@ -3081,7 +4454,7 @@ function _showSettingsModal() {
   }
   var scanIcon = document.createElement('span');
   scanIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
-  scanIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><polygon points="4,2 4,14 13,8" fill="none" stroke="#b0b0b0" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+  scanIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><polygon points="4,2 4,14 13,8" fill="none" stroke="#b0b0b0" stroke-width="1.7" stroke-linejoin="round"/></svg>';
   _updateScanCheck();
   scanRow.appendChild(scanIcon);
   scanRow.appendChild(scanLabel);
@@ -3095,14 +4468,44 @@ function _showSettingsModal() {
   });
   rowsCol.appendChild(scanRow);
 
+  // Graph visibility toggle row
+  var graphRow = document.createElement('div');
+  graphRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);cursor:pointer;';
+  var graphLabel = document.createElement('span');
+  graphLabel.style.cssText = 'font-size:14px;flex:1;color:#d4d4d4;';
+  graphLabel.textContent = 'Graph';
+  var graphCheck = document.createElement('span');
+  graphCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
+  function _updateGraphCheck() {
+    graphCheck.innerHTML = _graphVisible ? _svgCheck : _svgCross;
+    graphLabel.textContent = 'Graph ' + (_graphVisible ? 'On' : 'Off');
+    graphRow.style.background = _graphVisible ? 'rgba(61,220,132,0.08)' : 'rgba(240,96,96,0.08)';
+  }
+  var graphIcon = document.createElement('span');
+  graphIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
+  graphIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2.5 13.5C6 13.5 10 2.5 13.5 2.5" fill="none" stroke="#b0b0b0" stroke-width="1.7" stroke-linecap="round"/><circle cx="2.5" cy="13.5" r="1.4" fill="#b0b0b0"/><circle cx="13.5" cy="2.5" r="1.4" fill="#b0b0b0"/></svg>';
+  _updateGraphCheck();
+  graphRow.appendChild(graphIcon);
+  graphRow.appendChild(graphLabel);
+  graphRow.appendChild(graphCheck);
+  graphRow.addEventListener('mouseenter', function() { graphRow.style.background = _graphVisible ? 'rgba(61,220,132,0.15)' : 'rgba(240,96,96,0.15)'; });
+  graphRow.addEventListener('mouseleave', function() { graphRow.style.background = _graphVisible ? 'rgba(61,220,132,0.08)' : 'rgba(240,96,96,0.08)'; });
+  graphRow.addEventListener('click', function() {
+    _graphVisible = !_graphVisible;
+    localStorage.setItem(_GRAPH_KEY, _graphVisible ? 'on' : 'off');
+    _updateGraphCheck();
+    _applyGraphVisibility();
+  });
+  rowsCol.appendChild(graphRow);
+
   // Grid size row
   var gridRow = document.createElement('div');
   gridRow.style.cssText = 'display:flex;align-items:center;padding:0 0 0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);';
   var gridIcon = document.createElement('span');
   gridIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
-  gridIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" stroke="#b0b0b0" stroke-width="1.4" rx="1"/><line x1="6" y1="2" x2="6" y2="14" stroke="#b0b0b0" stroke-width="1"/><line x1="10" y1="2" x2="10" y2="14" stroke="#b0b0b0" stroke-width="1"/><line x1="2" y1="6" x2="14" y2="6" stroke="#b0b0b0" stroke-width="1"/><line x1="2" y1="10" x2="14" y2="10" stroke="#b0b0b0" stroke-width="1"/></svg>';
+  gridIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" stroke="#b0b0b0" stroke-width="1.7" rx="1"/><line x1="6" y1="2" x2="6" y2="14" stroke="#b0b0b0" stroke-width="1"/><line x1="10" y1="2" x2="10" y2="14" stroke="#b0b0b0" stroke-width="1"/><line x1="2" y1="6" x2="14" y2="6" stroke="#b0b0b0" stroke-width="1"/><line x1="2" y1="10" x2="14" y2="10" stroke="#b0b0b0" stroke-width="1"/></svg>';
   var gridLabel = document.createElement('span');
-  gridLabel.style.cssText = 'font-size:14px;flex:1;color:#b0b0b0;';
+  gridLabel.style.cssText = 'font-size:14px;flex:1;color:#d4d4d4;';
   gridLabel.textContent = 'Grid';
   var gridBtns = document.createElement('div');
   gridBtns.style.cssText = 'display:flex;gap:0;flex-shrink:0;align-self:stretch;';
@@ -3140,9 +4543,9 @@ function _showSettingsModal() {
   layoutRow.style.cssText = 'display:flex;align-items:center;padding:0 0 0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);';
   var layoutIcon = document.createElement('span');
   layoutIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
-  layoutIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><line x1="2" y1="4" x2="14" y2="4" stroke="#b0b0b0" stroke-width="1.4" stroke-linecap="round"/><line x1="2" y1="8" x2="14" y2="8" stroke="#b0b0b0" stroke-width="1.4" stroke-linecap="round"/><line x1="2" y1="12" x2="14" y2="12" stroke="#b0b0b0" stroke-width="1.4" stroke-linecap="round"/></svg>';
+  layoutIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><line x1="2" y1="4" x2="14" y2="4" stroke="#b0b0b0" stroke-width="1.7" stroke-linecap="round"/><line x1="2" y1="8" x2="14" y2="8" stroke="#b0b0b0" stroke-width="1.7" stroke-linecap="round"/><line x1="2" y1="12" x2="14" y2="12" stroke="#b0b0b0" stroke-width="1.7" stroke-linecap="round"/></svg>';
   var layoutLabel = document.createElement('span');
-  layoutLabel.style.cssText = 'font-size:14px;flex:1;color:#b0b0b0;';
+  layoutLabel.style.cssText = 'font-size:14px;flex:1;color:#d4d4d4;';
   layoutLabel.textContent = 'Presets';
   var layoutBtns = document.createElement('div');
   layoutBtns.style.cssText = 'display:flex;gap:0;flex-shrink:0;align-self:stretch;';
@@ -3186,7 +4589,7 @@ function _showSettingsModal() {
 
   var footerLeft = document.createElement('div');
   var madeBy = document.createElement('div');
-  madeBy.textContent = 'made by faye  ·  v' + CURRENT_VERSION;
+  madeBy.textContent = 'made by faye  ·  v' + CURRENT_VERSION + '  ·  CCX';
   madeBy.style.cssText = 'color:#888;font-size:12px;margin-bottom:4px;';
   var ghLink = document.createElement('div');
   ghLink.textContent = 'github.com/fayewave/OpenCurve';
@@ -3200,12 +4603,14 @@ function _showSettingsModal() {
   footerLeft.appendChild(ghLink);
 
   var resetRow = document.createElement('div');
-  resetRow.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 10px;cursor:pointer;color:#f06060;font-size:13px;background:rgba(240,96,96,0.08);flex-shrink:0;';
+  resetRow.style.cssText = 'display:flex;align-items:center;padding:5px 10px;cursor:pointer;color:#f06060;font-size:13px;background:rgba(240,96,96,0.08);flex-shrink:0;';
   var resetIcon = document.createElement('span');
   resetIcon.style.cssText = 'display:flex;align-items:center;';
-  resetIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill="none" d="M3 5h10M6 5V4h4v1M6.5 7.5v4M9.5 7.5v4M4.5 5l.5 8h6l.5-8" stroke="#f06060" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  resetIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill="none" d="M3 5h10M6 5V4h4v1M6.5 7.5v4M9.5 7.5v4M4.5 5l.5 8h6l.5-8" stroke="#f06060" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   var resetLabel = document.createElement('span');
   resetLabel.textContent = 'Reset All Settings';
+  resetLabel.style.marginLeft = '6px';
+  _attachTooltip(resetRow, 'Restore defaults and remove all presets');
   resetRow.appendChild(resetIcon);
   resetRow.appendChild(resetLabel);
   resetRow.addEventListener('mouseenter', function() { resetRow.style.background='rgba(240,96,96,0.15)'; });

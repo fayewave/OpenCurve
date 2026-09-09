@@ -11,6 +11,16 @@
 
       <!-- Left column: graph + status -->
       <div class="left-col">
+        <!-- Graph toolbar: sits above the graph in its own row (zoom now, more tools later) -->
+        <div id="graph-toolbar" class="graph-toolbar">
+          <div id="peak-mode" class="tool-btn"><svg width="14" height="14" viewBox="0 0 12 12" fill="none"><path d="M1 10.5 C4 10.5 4.6 1.5 6 1.5 C7.4 1.5 8 10.5 11 10.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></div>
+          <div id="add-point" class="tool-btn"><svg width="14" height="14" viewBox="0 0 12 12" fill="none"><path d="M1 11 C6.5 11 5.5 1 11 1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><line x1="2.9" y1="0.8" x2="2.9" y2="5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="0.8" y1="2.9" x2="5" y2="2.9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+          <div class="graph-tools-right">
+            <div id="zoom-out" class="tool-btn"><svg width="14" height="14" viewBox="0 0 12 12" fill="none"><line x1="1" y1="6" x2="11" y2="6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+            <div id="zoom-in" class="tool-btn"><svg width="14" height="14" viewBox="0 0 12 12" fill="none"><line x1="6" y1="1" x2="6" y2="11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="1" y1="6" x2="11" y2="6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+            <div id="graph-settings" class="tool-btn"><svg width="14" height="14" viewBox="0 0 12 12" fill="none"><path d="M10.18 5 L11.53 5.12 L11.53 6.88 L10.18 7 A4.3 4.3 0 0 1 9.67 8.25 L9.67 8.25 L10.53 9.29 L9.29 10.53 L8.25 9.67 A4.3 4.3 0 0 1 7 10.18 L7 10.18 L6.88 11.53 L5.12 11.53 L5 10.18 A4.3 4.3 0 0 1 3.75 9.67 L3.75 9.67 L2.71 10.53 L1.47 9.29 L2.33 8.25 A4.3 4.3 0 0 1 1.82 7 L1.82 7 L0.47 6.88 L0.47 5.12 L1.82 5 A4.3 4.3 0 0 1 2.33 3.75 L2.33 3.75 L1.47 2.71 L2.71 1.47 L3.75 2.33 A4.3 4.3 0 0 1 5 1.82 L5 1.82 L5.12 0.47 L6.88 0.47 L7 1.82 A4.3 4.3 0 0 1 8.25 2.33 L8.25 2.33 L9.29 1.47 L10.53 2.71 L9.67 3.75 A4.3 4.3 0 0 1 10.18 5 Z M8.3 6 A2.3 2.3 0 0 0 3.7 6 A2.3 2.3 0 0 0 8.3 6 Z" fill="currentColor" fill-rule="evenodd"/></svg></div>
+          </div>
+        </div>
         <div class="graph-section">
           <div class="graph-canvas-wrap">
             <svg id="bezier-svg" xmlns="http://www.w3.org/2000/svg">
@@ -20,8 +30,11 @@
                 <rect id="sg-range-outline" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
                 <g id="sg-grid" stroke-width="1"></g>
                 <line id="sg-diag" stroke="rgba(255,255,255,0.07)" stroke-width="1" stroke-dasharray="3,4"/>
+                <!-- Peak mode: the bezier itself, greyed and faded behind the velocity bell -->
+                <path id="sg-ghost" fill="none" stroke="#9a9a9a" stroke-opacity="0.18" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity="0" visibility="hidden"/>
                 <line id="sg-tan1" stroke="rgba(255,255,255,0.18)" stroke-width="4"/>
                 <line id="sg-tan2" stroke="rgba(255,255,255,0.18)" stroke-width="4"/>
+                <g id="sg-pts-lines"></g><!-- tangent lines of added points (plugin.js _updatePtsSVG) -->
                 <path id="sg-curve" fill="none" stroke="#4a9eff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
                 <circle id="sg-ep0" r="4" fill="#1e1e1e" stroke="#4a9eff" stroke-width="2"/>
                 <circle id="sg-ep3" r="4" fill="#1e1e1e" stroke="#4a9eff" stroke-width="2"/>
@@ -33,17 +46,19 @@
                   <circle r="7" fill="rgba(74,158,255,0.12)"/>
                   <circle r="5" fill="#fff" stroke="#fff" stroke-width="1.5"/>
                 </g>
+                <g id="sg-pts"></g><!-- handles and anchors of added points -->
+                <g id="sg-peak" opacity="0" visibility="hidden">
+                  <circle r="7" fill="rgba(74,158,255,0.12)"/>
+                  <circle r="5" fill="#fff" stroke="#fff" stroke-width="1.5"/>
+                </g>
               </g>
             </svg>
             <div id="graph-coords" class="graph-coords"></div>
-            <div class="zoom-btns">
-              <div id="zoom-in" class="zoom-btn"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><line x1="6" y1="1" x2="6" y2="11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="1" y1="6" x2="11" y2="6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div>
-              <div id="zoom-out" class="zoom-btn"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><line x1="1" y1="6" x2="11" y2="6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div>
-            </div>
           </div>
         </div>
         <div id="status-strip" class="status-strip status-idle">
-          <div class="status-dot"></div>
+          <span class="status-dot"><svg width="8" height="8" viewBox="0 0 8 8" fill="none"><polygon points="4,0 8,4 4,8 0,4" fill="currentColor"/></svg></span>
+          <span id="status-clip" class="status-clip" style="display:none"></span>
           <span id="status-text" class="status-text">Select a clip</span>
         </div>
       </div>
@@ -59,12 +74,22 @@
             <div id="prop-btns" class="prop-btns"></div>
           </div>
         </div>
-        <div id="go-btn" class="btn btn-primary btn-disabled">
-          <svg id="go-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <path d="M13 2L4.5 13.5H12L11 22L19.5 10.5H12L13 2Z" fill="currentColor" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span id="go-label" style="margin-left:5px;font-size:13px;font-weight:600;">Go</span>
-          <span id="go-spinner" class="spinner" style="display:none"></span>
+        <div class="go-row">
+          <div id="go-btn" class="btn btn-primary btn-disabled">
+            <svg id="go-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M13 2L4.5 13.5H12L11 22L19.5 10.5H12L13 2Z" fill="currentColor" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span id="go-label" style="margin-left:5px;font-size:13px;font-weight:600;">Go</span>
+            <span id="go-spinner" class="spinner" style="display:none"></span>
+          </div>
+          <!-- Undo the last Go press (same control as the CEP edition). Shown by plugin.js once there is a bake to undo. -->
+          <div id="undo-btn" class="btn btn-undo btn-hidden" style="display:none">
+            <!-- Same icon as the row undo buttons (.prop-undo) -->
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M3.8 5.5H8.6a2.9 2.9 0 010 5.8H6.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M5.8 3.3L3.5 5.5l2.3 2.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
         </div>
       </div>
 
