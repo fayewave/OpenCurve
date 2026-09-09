@@ -2825,6 +2825,19 @@ function _tlShowReadout(t, lane) {
   renderUI(getState());
 }
 
+// Right after a bake: give each baked row's lane its green bar now instead of
+// waiting for the next poll (polling pauses while "Done" shows, so the bar
+// otherwise trailed the green row by a second or more). The bracket that was
+// baked is the span; the scan replaces these with the real records afterwards.
+function _tlSpansAfterBake(s, keys) {
+  return (s.availableParams || []).map(function(p) {
+    if (keys.indexOf(p.key) < 0 || typeof p.tlKf0 !== 'number' || typeof p.tlKf1 !== 'number') return p;
+    var q = Object.assign({}, p);
+    q.tlSpans = (p.tlSpans || []).concat([[p.tlKf0, p.tlKf1]]);
+    return q;
+  });
+}
+
 function _tlSetZoom(keys) {
   _tlZoomKeys = !!keys;
   localStorage.setItem(_TL_ZOOM_KEY, _tlZoomKeys ? 'keys' : 'clip');
@@ -4154,6 +4167,7 @@ function initPanel() {
         setState({
           isBaking: false, status: 'done',
           bakedParamKeys:    newBaked,
+          availableParams:   _tlSpansAfterBake(s, bakedKeys), // green bar on the timeline right away
           validParamKeys:    (s.validParamKeys || []).filter(function(k){ return bakedKeys.indexOf(k) < 0; }),
           paramContexts:     ctxLeft,
           selectedParamKeys: (s.selectedParamKeys || []).filter(function(k){ return bakedKeys.indexOf(k) < 0; }),
