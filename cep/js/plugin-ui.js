@@ -1191,7 +1191,7 @@ function renderUI(s) {
         // Diamond marker (matches the status strip) + truncating label
         var propDiamond = document.createElement('span');
         propDiamond.className = 'prop-diamond';
-        propDiamond.innerHTML = '<svg width="8" height="8" viewBox="0 0 8 8" fill="none"><polygon class="mk-diamond" points="4,0.9 7.1,4 4,7.1 0.9,4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path class="mk-tick" d="M0.7 4.4 L3.1 6.8 L7.4 1.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" opacity="0" visibility="hidden"/></svg>';
+        propDiamond.innerHTML = '<svg width="10" height="10" viewBox="-1 -1 10 10" fill="none"><polygon class="mk-diamond" points="4,0.9 7.1,4 4,7.1 0.9,4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path class="mk-tick" d="M0.7 4.4 L3.1 6.8 L7.4 1.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" opacity="0" visibility="hidden"/></svg>';
         var propLabel = document.createElement('span');
         propLabel.className = 'prop-label';
         propLabel.textContent = p.displayName;

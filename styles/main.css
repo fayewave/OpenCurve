@@ -428,10 +428,13 @@ html, body {
 .prop-diamond {
   display: flex;
   align-items: center;
-  width: 8px;
-  height: 8px;
+  /* 10px box for an 8px marker: 1px of slack each side so a stroke that
+     reaches the edge (the tick) isn't clipped, which UXP does at the viewBox */
+  width: 10px;
+  height: 10px;
   flex-shrink: 0;
-  margin-right: 7px;
+  margin-left: -1px;
+  margin-right: 6px;
 }
 
 .prop-label {
@@ -646,11 +649,12 @@ html, body {
 .status-dot {
   display: flex;
   align-items: center;
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   flex-shrink: 0;
   color: var(--text-faint);
-  margin-right: 7px;
+  margin-left: -1px;
+  margin-right: 6px;
   transition: color 0.2s;
 }
 
