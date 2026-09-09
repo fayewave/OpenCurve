@@ -177,6 +177,8 @@ function _ocParamsFromCache(cache, clips, ph, fps) {
       totalKf: kfTimes.length,
       seqOffset: info.clipStart - info.clipInPoint,
       clipStart: info.clipStart,
+      clipEnd: info.clipEnd,
+      clipInPoint: info.clipInPoint,
       clipName: info.clipName || '',
       nodeId: info.nodeId || '',
       kfSecs: kfTimes,
@@ -227,7 +229,7 @@ function _ocClipsAt(ph) {
       try { isSel = it.clip.isSelected(); } catch(e) { return null; }
       found.push({
         trackIdx: _ocTracks[ti].trackIdx, clipIdx: it.clipIdx, clip: it.clip,
-        clipStart: it.start, clipInPoint: it.inPoint, clipName: it.name, nodeId: it.nodeId || '', isSel: isSel,
+        clipStart: it.start, clipEnd: it.end, clipInPoint: it.inPoint, clipName: it.name, nodeId: it.nodeId || '', isSel: isSel,
       });
     }
   }
@@ -426,6 +428,8 @@ function detectContext() {
             totalKf: kfTimes.length,
             seqOffset: clipInfo.clipStart - clipInfo.clipInPoint,
             clipStart: clipInfo.clipStart,
+            clipEnd: clipInfo.clipEnd,
+            clipInPoint: clipInfo.clipInPoint,
             clipName: clipInfo.clipName || '',
             nodeId: clipInfo.nodeId || '',
             kfSecs: kfSecs,
@@ -467,6 +471,7 @@ function detectContext() {
       // bake was undone outside the panel (Ctrl+Z), so the record is dropped.
       var bakeIds = [];
       var bakeCurve = null;
+      var tlSpans = []; // every live record on this property, for the mini timeline
       for (var _bi = 0; _bi < _undoStack.length; _bi++) {
         var _bb = _undoStack[_bi];
         for (var _bj = _bb.length - 1; _bj >= 0; _bj--) {
@@ -491,6 +496,7 @@ function detectContext() {
             _bb.splice(_bj, 1);
             continue;
           }
+          tlSpans.push([_r4(_inf.kf0Time + p.seqOffset), _r4(_inf.kf1Time + p.seqOffset)]);
           // The record stays, but it only colours the row (and feeds its undo button)
           // while the playhead's bracket sits inside the span it baked; elsewhere on
           // the clip the row is a normal row and another area can be baked.
@@ -501,6 +507,13 @@ function detectContext() {
       }
       var _jp = (p.kfSecs && p.kfSecs.length) ? _ocJumpPair(p.kfSecs, ph - p.seqOffset, p.fps) : null;
       var _entry = { key: p.key, displayName: p.displayName, jumpSec: (_jp ? _jp.start : p.kf0Time) + p.seqOffset, bakeIds: bakeIds };
+      // Mini timeline lane: keyframes and the bracket in sequence seconds (rounded to keep the JSON small)
+      _entry.tlKf = [];
+      for (var _tk = 0; _tk < (p.kfSecs || []).length; _tk++) _entry.tlKf.push(_r4(p.kfSecs[_tk] + p.seqOffset));
+      _entry.tlKf0 = _r4(p.kf0Time + p.seqOffset);
+      _entry.tlKf1 = _r4(p.kf1Time + p.seqOffset);
+      _entry.tlOut = !!p.isOutside;
+      _entry.tlSpans = tlSpans;
       if (bakeCurve) _entry.bakeCurve = bakeCurve;
       // Nearest 2+ frame pair, for the status strip's click-to-jump
       var _near = (p.kfSecs && p.kfSecs.length) ? _ocNearestPair(p.kfSecs, ph - p.seqOffset, p.fps) : null;
@@ -530,6 +543,9 @@ function detectContext() {
       }
     }
 
+    // Mini timeline: the clip's extent and the playhead, in sequence seconds
+    var _tl = { clipStart: bestParams[0].clipStart, clipEnd: bestParams[0].clipEnd, clipIn: bestParams[0].clipInPoint, fps: fps, ph: ph };
+
     if (validParamKeys.length === 0) {
       // Two cases: the playhead is outside every pair (say where they are, using
       // a property with a real 2+ frame range so a baked property's one-frame
@@ -549,6 +565,7 @@ function detectContext() {
         availableParams: paramList,
         validParamKeys: [],
         clipName: bestParams[0].clipName || '',
+        tl: _tl,
         hint: outHint,
         ph: ph,
       }));
@@ -562,6 +579,7 @@ function detectContext() {
       availableParams: paramList,
       validParamKeys: validParamKeys,
       clipName: bestParams[0].clipName || '',
+      tl: _tl,
       paramContexts: paramContexts,
       hint: hintFrames,
       ph: ph,
@@ -862,6 +880,8 @@ function _ocNearestPair(kfSecs, phLocal, fps) {
   }
   return best;
 }
+
+function _r4(v) { return Math.round(v * 10000) / 10000; }
 
 function _ocHasTime(kfSecs, t) {
   for (var i = 0; i < kfSecs.length; i++) if (Math.abs(kfSecs[i] - t) < 0.0001) return true;

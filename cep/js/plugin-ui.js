@@ -1083,6 +1083,326 @@ function _jumpToParam(p) {
   if (_bridge && _bridge.onJump) _bridge.onJump(p.jumpSec);
 }
 
+// ─── Mini timeline ────────────────────────────────────────────────────────
+// Read-only strip across the top of the panel: one lane per property row,
+// showing that property's keyframes on the clip the rows belong to, its bakes
+// (green bars), the pair the playhead is in and the playhead itself. Pressing
+// a lane moves the playhead there (a keyframe within a few pixels snaps to it).
+// Everything comes from the scan: `s.tl` carries the clip's extent in sequence
+// seconds (clipStart/clipEnd), its in-point, fps and the playhead, and each
+// availableParams entry carries tlKf (keyframe times, sequence seconds),
+// tlKf0/tlKf1/tlOut (the playhead's bracket) and tlSpans (live bake records).
+// Drawn with createElementNS like the graph; dynamic styling is inline or an
+// attribute because UXP doesn't relayout on class changes. Same code in both
+// editions (src/plugin.js and cep/js/plugin-ui.js).
+var _TL_KEY       = 'opencurve-timeline';
+var _tlVisible    = localStorage.getItem(_TL_KEY) !== 'off';
+var _TL_ZOOM_KEY  = 'opencurve-timeline-zoom';
+var _tlZoomKeys   = localStorage.getItem(_TL_ZOOM_KEY) === 'keys'; // zoom to the keyframes instead of the whole clip
+var _TL_NS        = 'http://www.w3.org/2000/svg';
+var _TL_PAD_X     = 6;
+var _TL_MIN_H     = 24;   // one lane still leaves room for the zoom button
+var _TL_LANE_MAX  = 10;   // lane height in px with a few properties...
+var _TL_LANE_MIN  = 4;    // ...thinning down to this with many (lanes never merge)
+var _TL_LANES_H   = 40;   // the lanes share this much height before they reach the minimum
+var _TL_SNAP_PX   = 5;    // a press this close to a keyframe lands exactly on it
+var _tlEls   = null;  // { root, wrap, svg, readout, empty, zoom }
+var _tlW     = 0;     // canvas width from the ResizeObserver
+var _tlSig   = '';    // what the lanes were last built from
+var _tlGeo   = null;  // { W, H, laneH, y0, n, a, b } of the last build
+var _tlLanes = [];    // per lane: { key, name, bg, kf: [{ x, t }] }
+var _tlPh    = null;  // playhead { line, tri }
+var _tlHoverKey = null; // row lit up because its lane is hovered
+
+function _tlMk(tag, attrs) {
+  var e = document.createElementNS(_TL_NS, tag);
+  for (var k in attrs) if (attrs.hasOwnProperty(k)) e.setAttribute(k, attrs[k]);
+  return e;
+}
+function _tlClear(el) { while (el && el.firstChild) el.removeChild(el.firstChild); }
+
+// Visible time range in sequence seconds: the clip, or the keyframes with a margin
+function _tlRange(s) {
+  var tl = s.tl;
+  if (!tl || typeof tl.clipStart !== 'number' || typeof tl.clipEnd !== 'number') return null;
+  var a = tl.clipStart, b = tl.clipEnd;
+  if (_tlZoomKeys) {
+    var mn = Infinity, mx = -Infinity;
+    (s.availableParams || []).forEach(function(p) {
+      (p.tlKf || []).forEach(function(t) { if (t < mn) mn = t; if (t > mx) mx = t; });
+    });
+    if (isFinite(mn) && mx > mn) {
+      var pad = Math.max((mx - mn) * 0.05, 1 / (tl.fps || 25));
+      a = mn - pad; b = mx + pad;
+    }
+  }
+  return b > a ? { a: a, b: b } : null;
+}
+function _tlX(t, g)   { return _TL_PAD_X + (t - g.a) / (g.b - g.a) * (g.W - 2 * _TL_PAD_X); }
+function _tlSec(x, g) { return g.a + (x - _TL_PAD_X) / (g.W - 2 * _TL_PAD_X) * (g.b - g.a); }
+
+// Lane height for n lanes: 10px that thin out (never merge) as properties pile up
+function _tlLaneH(n) {
+  if (n <= 0) return _TL_LANE_MAX;
+  return Math.max(_TL_LANE_MIN, Math.min(_TL_LANE_MAX, Math.floor(_TL_LANES_H / n)));
+}
+
+function _tlEmptyText(s) {
+  var st = s.status;
+  if (st === 'idle' || st === 'no-project' || st === 'no-sequence' || st === 'baking' || st === 'done') return '';
+  return 'No keyframes at playhead';
+}
+
+// Runs of 3+ keyframes a frame or less apart that no bake record explains
+// (a bake from before records existed, a copied clip): drawn as one grey bar
+function _tlRuns(kf, fps, spans) {
+  var out = [], start = -1;
+  function covered(t) { return spans.some(function(sp){ return t >= sp.a - 1e-4 && t <= sp.b + 1e-4; }); }
+  function flush(endIdx) {
+    if (start >= 0 && endIdx - start >= 2) out.push({ a: kf[start], b: kf[endIdx], kind: 'run' });
+    start = -1;
+  }
+  for (var i = 0; i < kf.length; i++) {
+    var tight = i > 0 && (kf[i] - kf[i - 1]) * fps <= 1.5 && !covered(kf[i]) && !covered(kf[i - 1]);
+    if (tight) { if (start < 0) start = i - 1; }
+    else flush(i - 1);
+  }
+  flush(kf.length - 1);
+  return out;
+}
+
+// Called from renderUI on every state change. Lanes are rebuilt only when
+// something they show changes; the playhead is moved on every call.
+function _tlRender(s, force) {
+  if (!_tlEls || !_tlVisible) return;
+  s = s || getState();
+  var params = s.availableParams || [];
+  var range  = _tlRange(s);
+  var n      = range ? params.length : 0;
+  var laneH  = _tlLaneH(n);
+  var H      = Math.max(_TL_MIN_H, n * laneH + 6);
+  var W      = _tlW;
+  var sel    = s.selectedParamKeys || [], valid = s.validParamKeys || [];
+  var sig = [W, H, n, _tlZoomKeys ? 'k' : 'c', range ? range.a.toFixed(4) + '-' + range.b.toFixed(4) : '', _curveColor, n === 0 ? s.status : ''].join('|');
+  if (range) params.forEach(function(p) {
+    sig += '|' + p.key + ':' + p.displayName + ':' + (p.tlKf || []).map(function(t){ return Math.round(t * 1000); }).join(',')
+         + ':' + (p.tlOut ? 'o' : Math.round(p.tlKf0 * 1000) + '/' + Math.round(p.tlKf1 * 1000))
+         + ':' + (p.tlSpans || []).map(function(sp){ return Math.round(sp[0] * 1000) + '~' + Math.round(sp[1] * 1000); }).join(',')
+         + ':' + (sel.indexOf(p.key) >= 0 ? 's' : '') + (valid.indexOf(p.key) >= 0 ? 'v' : '');
+  });
+  if (force || sig !== _tlSig) {
+    _tlSig = sig;
+    _tlBuild(s, params, range, n, laneH, H, W);
+  }
+  _tlPlacePlayhead(s);
+}
+
+function _tlBuild(s, params, range, n, laneH, H, W) {
+  var els = _tlEls;
+  els.root.style.height = H + 'px';
+  els.svg.setAttribute('width', W);
+  els.svg.setAttribute('height', H);
+  _tlClear(els.svg);
+  _tlLanes = [];
+  _tlPh = null;
+  var g = { W: W, H: H, laneH: laneH, n: n, a: range ? range.a : 0, b: range ? range.b : 1, y0: Math.floor((H - n * laneH) / 2) };
+  _tlGeo = g;
+  var hasLanes = n > 0 && W > 2 * _TL_PAD_X + 10;
+  els.empty.textContent   = hasLanes ? '' : _tlEmptyText(s);
+  els.empty.style.display = hasLanes ? 'none' : 'flex';
+  els.svg.style.cursor    = hasLanes ? 'pointer' : 'default';
+  if (!hasLanes) { _tlHighlightLane(null); _tlRowHover(null); _tlShowReadout(null); return; }
+  var tl = s.tl, fps = tl.fps || 25;
+  // The clip's extent: the whole width in clip view, possibly narrower when zoomed to the keyframes
+  var cx0 = Math.max(_TL_PAD_X, Math.min(W - _TL_PAD_X, _tlX(tl.clipStart, g)));
+  var cx1 = Math.max(_TL_PAD_X, Math.min(W - _TL_PAD_X, _tlX(tl.clipEnd, g)));
+  if (cx1 > cx0) els.svg.appendChild(_tlMk('rect', { x: cx0, y: 0, width: cx1 - cx0, height: H, fill: 'rgba(255,255,255,0.035)' }));
+  var d    = Math.max(3, Math.min(7, laneH - 3)); // diamond size
+  var barH = Math.max(2, laneH - 4);
+  var sel  = s.selectedParamKeys || [], valid = s.validParamKeys || [];
+  params.forEach(function(p, i) {
+    var top = g.y0 + i * laneH, cy = top + laneH / 2;
+    var bg = _tlMk('rect', { x: 0, y: top, width: W, height: laneH, fill: 'rgba(255,255,255,0)' });
+    els.svg.appendChild(bg);
+    if (i < n - 1) els.svg.appendChild(_tlMk('line', { x1: 0, y1: top + laneH, x2: W, y2: top + laneH, stroke: 'rgba(255,255,255,0.05)', 'stroke-width': 1 }));
+    var kf = (p.tlKf || []).slice().sort(function(x, y){ return x - y; });
+    var isSel = sel.indexOf(p.key) >= 0, isValid = valid.indexOf(p.key) >= 0;
+    // Bars: bakes (green), other per-frame runs (grey), then the pair the playhead is in
+    var spans = (p.tlSpans || []).map(function(sp){ return { a: sp[0], b: sp[1], kind: 'bake' }; });
+    _tlRuns(kf, fps, spans).forEach(function(r){ spans.push(r); });
+    var pair = null;
+    if (!p.tlOut && typeof p.tlKf0 === 'number' && typeof p.tlKf1 === 'number') pair = { a: p.tlKf0, b: p.tlKf1 };
+    if (pair && spans.some(function(sp){ return pair.a >= sp.a - 1e-4 && pair.b <= sp.b + 1e-4; })) pair = null; // the bar already shows it
+    spans.forEach(function(sp) {
+      var x0 = _tlX(sp.a, g), x1 = _tlX(sp.b, g);
+      if (x1 < 0 || x0 > W) return;
+      els.svg.appendChild(_tlMk('rect', { x: x0, y: cy - barH / 2, width: Math.max(1, x1 - x0), height: barH, rx: 1,
+        fill: sp.kind === 'bake' ? 'rgba(76,232,144,0.30)' : 'rgba(255,255,255,0.14)' }));
+    });
+    if (pair && isValid) {
+      var px0 = _tlX(pair.a, g), px1 = _tlX(pair.b, g);
+      els.svg.appendChild(_tlMk('rect', { x: px0, y: cy - barH / 2, width: Math.max(1, px1 - px0), height: barH, rx: 1,
+        fill: _hexToRgba(_curveColor, isSel ? 0.42 : 0.18) }));
+    }
+    // Diamonds: every keyframe except the ones inside a bar (its two ends are kept)
+    var lane = { key: p.key, name: p.displayName, bg: bg, kf: [] };
+    var lastX = -Infinity;
+    kf.forEach(function(t) {
+      var x = _tlX(t, g);
+      lane.kf.push({ x: x, t: t });
+      if (x < -d || x > W + d) return;
+      var inside = null, edge = null;
+      spans.forEach(function(sp) {
+        if (Math.abs(t - sp.a) < 1e-4 || Math.abs(t - sp.b) < 1e-4) edge = edge || sp;
+        else if (t > sp.a && t < sp.b) inside = sp;
+      });
+      if (inside && !edge) return;
+      if (!edge && x - lastX < 1.5) return; // too dense to tell apart at this zoom
+      lastX = x;
+      var col = '#8c8c8c';
+      if (edge && edge.kind === 'bake') col = '#4ce890';
+      else if (pair && isValid && (Math.abs(t - pair.a) < 1e-4 || Math.abs(t - pair.b) < 1e-4)) col = _curveColor;
+      var h = d / 2;
+      els.svg.appendChild(_tlMk('polygon', { points: x + ',' + (cy - h) + ' ' + (x + h) + ',' + cy + ' ' + x + ',' + (cy + h) + ' ' + (x - h) + ',' + cy, fill: col }));
+    });
+    _tlLanes.push(lane);
+  });
+  // Playhead: a line with a small cap at the top, placed by _tlPlacePlayhead
+  _tlPh = {
+    line: _tlMk('line', { x1: 0, y1: 0, x2: 0, y2: H, stroke: 'rgba(240,240,240,0.9)', 'stroke-width': 1 }),
+    tri:  _tlMk('polygon', { points: '0,0', fill: 'rgba(240,240,240,0.9)' }),
+  };
+  els.svg.appendChild(_tlPh.line);
+  els.svg.appendChild(_tlPh.tri);
+  if (_tlHoverKey) _tlHighlightLane(_tlHoverKey);
+}
+
+function _tlPlacePlayhead(s) {
+  if (!_tlPh || !_tlGeo || !s.tl || typeof s.tl.ph !== 'number') return;
+  var g = _tlGeo, x = _tlX(s.tl.ph, g);
+  var on = x >= 0 && x <= g.W;
+  _tlPh.line.setAttribute('visibility', on ? 'visible' : 'hidden');
+  _tlPh.tri.setAttribute('visibility',  on ? 'visible' : 'hidden');
+  if (!on) return;
+  x = Math.round(x) + 0.5;
+  _tlPh.line.setAttribute('x1', x);
+  _tlPh.line.setAttribute('x2', x);
+  _tlPh.tri.setAttribute('points', (x - 3.5) + ',0 ' + (x + 3.5) + ',0 ' + x + ',4');
+}
+
+// Lane highlight: a hovered row lights its lane, a hovered lane lights its row
+function _tlHighlightLane(key) {
+  _tlLanes.forEach(function(l) { l.bg.setAttribute('fill', l.key === key ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0)'); });
+}
+function _tlRowHover(key) {
+  if (_tlHoverKey === key) return;
+  if (_tlHoverKey) { var old = document.querySelector('.prop-btn[data-key="' + _tlHoverKey + '"]'); if (old) old.classList.remove('tl-hover'); }
+  _tlHoverKey = key || null;
+  if (key) { var row = document.querySelector('.prop-btn[data-key="' + key + '"]'); if (row) row.classList.add('tl-hover'); }
+}
+
+// Property name and clip-relative time under the pointer
+function _tlShowReadout(t, lane, x) {
+  var el = _tlEls && _tlEls.readout;
+  if (!el) return;
+  if (!t || !lane) { el.style.display = 'none'; return; }
+  var s = getState(), fps = (s.tl && s.tl.fps) || 25;
+  var rel = t.sec - (s.tl ? s.tl.clipStart : 0);
+  el.textContent = lane.name + (t.kf ? ' · keyframe' : '') + ' · ' + rel.toFixed(2) + 's · frame ' + Math.round(rel * fps);
+  el.style.display = 'block';
+  var g = _tlGeo, w = el.offsetWidth || 120, h = el.offsetHeight || 14;
+  el.style.left = Math.max(0, Math.min(g.W - w, x + 12)) + 'px';
+  el.style.top  = Math.max(0, Math.floor((g.H - h) / 2)) + 'px';
+}
+
+function _tlSetZoom(keys) {
+  _tlZoomKeys = !!keys;
+  localStorage.setItem(_TL_ZOOM_KEY, _tlZoomKeys ? 'keys' : 'clip');
+  _tlStyleZoomBtn();
+  _tlRender(getState(), true);
+}
+function _tlStyleZoomBtn() {
+  var btn = _tlEls && _tlEls.zoom;
+  if (!btn) return;
+  btn.style.background = _tlZoomKeys ? 'rgba(61,220,132,0.18)' : '';
+  btn.style.color      = _tlZoomKeys ? '#3ddc84' : '';
+}
+// Settings > Timeline. Inline display: UXP doesn't relayout on class changes
+function _applyTimelineVisibility() {
+  var root = document.getElementById('oc-timeline');
+  if (!root) return;
+  root.style.display = _tlVisible ? 'flex' : 'none';
+  if (_tlVisible) { _tlSig = ''; _tlRender(getState(), true); }
+}
+
+function _tlInit() {
+  var root = document.getElementById('oc-timeline');
+  if (!root) return;
+  _tlEls = { root: root, wrap: root.querySelector('.tl-canvas-wrap'), svg: document.getElementById('tl-svg'),
+             readout: document.getElementById('tl-readout'), empty: document.getElementById('tl-empty'),
+             zoom: document.getElementById('tl-zoom') };
+  var svg = _tlEls.svg;
+  function measure() {
+    var rect = _tlEls.wrap.getBoundingClientRect();
+    var w = Math.floor(rect.width);
+    if (w < 20 || w === _tlW) return;
+    _tlW = w;
+    _tlRender(getState(), true);
+  }
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(measure).observe(_tlEls.wrap);
+  function pos(e) { var r = svg.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+  function laneAt(y) {
+    var g = _tlGeo;
+    if (!g || !g.n) return -1;
+    var i = Math.floor((y - g.y0) / g.laneH);
+    return (i < 0 || i >= g.n) ? -1 : i;
+  }
+  // Where a press at x lands: a keyframe within a few px snaps, else the nearest frame inside the clip
+  function target(x, laneIdx) {
+    var s = getState(), g = _tlGeo;
+    if (!g || !g.n || !s.tl) return null;
+    var lane = laneIdx >= 0 ? _tlLanes[laneIdx] : null, snap = null;
+    if (lane) lane.kf.forEach(function(k) {
+      if (Math.abs(k.x - x) <= _TL_SNAP_PX && (!snap || Math.abs(k.x - x) < Math.abs(snap.x - x))) snap = k;
+    });
+    var fps = s.tl.fps || 25;
+    var sec = snap ? snap.t : Math.round(_tlSec(x, g) * fps) / fps;
+    sec = Math.max(s.tl.clipStart, Math.min(s.tl.clipEnd - 1 / fps, sec));
+    return { sec: sec, kf: !!snap };
+  }
+  // Press and release without moving = jump (no scrubbing, one jump per press)
+  var down = null;
+  svg.addEventListener('pointerdown', function(e) { if (e.button === 0) down = pos(e); });
+  svg.addEventListener('pointerup', function(e) {
+    if (!down) return;
+    var p = pos(e), moved = Math.abs(p.x - down.x) > 4 || Math.abs(p.y - down.y) > 4;
+    down = null;
+    if (moved) return;
+    var t = target(p.x, laneAt(p.y));
+    if (t) _jumpToParam({ jumpSec: t.sec });
+  });
+  svg.addEventListener('pointermove', function(e) {
+    var p = pos(e), li = laneAt(p.y), t = target(p.x, li);
+    var lane = li >= 0 ? _tlLanes[li] : null;
+    _tlHighlightLane(lane ? lane.key : null);
+    _tlRowHover(lane ? lane.key : null);
+    _tlShowReadout(t, lane, p.x);
+  });
+  function leave() { down = null; _tlHighlightLane(null); _tlRowHover(null); _tlShowReadout(null); }
+  svg.addEventListener('pointerleave', leave);
+  svg.addEventListener('mouseleave',   leave);
+  // Zoom toggle: whole clip <-> just the keyframes
+  if (_tlEls.zoom) {
+    _attachTooltip(_tlEls.zoom, function() {
+      return _tlZoomKeys ? 'Zoomed to the keyframes. Click to show the whole clip' : 'Showing the whole clip. Click to zoom to the keyframes';
+    });
+    _tlEls.zoom.addEventListener('click', function() { _tlSetZoom(!_tlZoomKeys); });
+  }
+  _tlStyleZoomBtn();
+  _applyTimelineVisibility();
+  measure();
+}
+
 // ─── Tooltips ─────────────────────────────────────────────────────────────
 // Custom tooltips (native `title` is unreliable in UXP and can spill outside
 // the panel). Shows after a short hover delay, clamped inside the panel, below
@@ -1238,6 +1558,9 @@ function renderUI(s) {
         btn.appendChild(propUndo);
         btn.appendChild(propPin);
         btn.dataset.key = p.key;
+        // Hovering a row lights its lane in the mini timeline (a hovered lane lights the row)
+        btn.addEventListener('mouseenter', function() { _tlHighlightLane(p.key); });
+        btn.addEventListener('mouseleave', function() { _tlHighlightLane(null); });
         btn.addEventListener('click', function() {
           var s2   = getState();
           // A baked (green) row stays green: clicking does nothing unless the
@@ -1353,6 +1676,8 @@ function renderUI(s) {
     if (goLabel)   goLabel.style.display   = s.isBaking ? 'none' : 'inline';
     if (goSpinner) goSpinner.style.display = s.isBaking ? 'inline-block' : 'none';
   }
+
+  _tlRender(s);
 }
 
 // ─── Panel init ───────────────────────────────────────────────────────────
@@ -1365,6 +1690,8 @@ function initPanel() {
   }
 
   // A-curve (peak) mode toggle
+  _tlInit(); // mini timeline strip across the top
+
   var peakBtn = document.getElementById('peak-mode');
   if (peakBtn) {
     _attachTooltip(peakBtn, function() {
@@ -2532,6 +2859,7 @@ function _applyCurveColor(color) {
     root.style.setProperty('--oc-active-bg',    bg);
     root.style.setProperty('--oc-active-bg2',   bg2);
   }
+  if (_tlEls) _tlRender(getState(), true); // the timeline's pair highlight uses the theme colour
 }
 
 function _showCopyToast(msg, color) {
@@ -2752,12 +3080,16 @@ function _confirmReset() {
     localStorage.removeItem(_GRAPH_KEY);
     localStorage.removeItem(_PEAK_KEY);
     localStorage.removeItem(_DENSITY_KEY);
+    localStorage.removeItem(_TL_KEY);
+    localStorage.removeItem(_TL_ZOOM_KEY);
     _bakeDensity        = 1;
     _applyCurveColor('#4a9eff');
     _animationsOn       = true;
     _updateNotifsOn     = true;
     _graphVisible       = true;
     _peakMode           = false;
+    _tlVisible          = true;
+    _tlZoomKeys         = false;
     setState({ curve: { p1x: 0.625, p1y: 0.000, p2x: 0.375, p2y: 1.000 } });
     _showCopyToast('Reset all settings');
     try { location.reload(); } catch(e) {}
@@ -2977,6 +3309,35 @@ function _showSettingsModal() {
     _applyGraphVisibility();
   });
   rowsCol.appendChild(graphRow);
+
+  // Timeline visibility toggle row (the keyframe strip across the top of the panel)
+  var tlRow = document.createElement('div');
+  tlRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);cursor:pointer;';
+  var tlLabel = document.createElement('span');
+  tlLabel.style.cssText = 'font-size:14px;flex:1;color:#d4d4d4;';
+  var tlCheck = document.createElement('span');
+  tlCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
+  function _updateTlCheck() {
+    tlCheck.innerHTML = _tlVisible ? _svgCheck : _svgCross;
+    tlLabel.textContent = 'Timeline ' + (_tlVisible ? 'On' : 'Off');
+    tlRow.style.background = _tlVisible ? 'rgba(61,220,132,0.08)' : 'rgba(240,96,96,0.08)';
+  }
+  var tlIcon = document.createElement('span');
+  tlIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
+  tlIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><line x1="1.5" y1="8" x2="14.5" y2="8" stroke="#b0b0b0" stroke-width="1.4"/><polygon points="5,5.2 7.8,8 5,10.8 2.2,8" fill="#b0b0b0"/><polygon points="11,5.2 13.8,8 11,10.8 8.2,8" fill="#b0b0b0"/></svg>';
+  _updateTlCheck();
+  tlRow.appendChild(tlIcon);
+  tlRow.appendChild(tlLabel);
+  tlRow.appendChild(tlCheck);
+  tlRow.addEventListener('mouseenter', function() { tlRow.style.background = _tlVisible ? 'rgba(61,220,132,0.15)' : 'rgba(240,96,96,0.15)'; });
+  tlRow.addEventListener('mouseleave', function() { tlRow.style.background = _tlVisible ? 'rgba(61,220,132,0.08)' : 'rgba(240,96,96,0.08)'; });
+  tlRow.addEventListener('click', function() {
+    _tlVisible = !_tlVisible;
+    localStorage.setItem(_TL_KEY, _tlVisible ? 'on' : 'off');
+    _updateTlCheck();
+    _applyTimelineVisibility();
+  });
+  rowsCol.appendChild(tlRow);
 
   // Grid size row
   var gridRow = document.createElement('div');

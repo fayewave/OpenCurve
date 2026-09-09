@@ -300,6 +300,7 @@
         hint:            result.hint || '',
         clipName:        result.clipName || '',
         errorMessage:    result.hint || '',
+        tl:              result.tl || null, // mini timeline: clip extent + playhead
       };
 
       if (result.status === 'valid') {

@@ -212,6 +212,72 @@ input, textarea {
   line-height: 1.6;
 }
 
+/* ─── Mini timeline ─────────────────────────────────────────── */
+/* Read-only keyframe lanes across the top of the panel (plugin.js _tlRender).
+   Height and lane geometry are set inline from the property count. */
+.oc-timeline {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  flex-shrink: 0;
+  min-width: 0;
+  overflow: hidden;
+  background: #111111;
+  border-bottom: 1px solid var(--border);
+}
+
+.tl-canvas-wrap {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+#tl-svg { display: block; }
+
+.tl-empty {
+  position: absolute;
+  left: 0; right: 0; top: 0; bottom: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font);
+  font-size: 11px;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+/* Property name and time under the pointer; positioned by _tlShowReadout */
+.tl-readout {
+  position: absolute;
+  top: 0; left: 0;
+  display: none;
+  font-family: var(--font);
+  font-size: 10px;
+  line-height: 12px;
+  padding: 1px 5px;
+  color: var(--text);
+  background: rgba(24,24,24,0.92);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 3px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Zoom toggle (whole clip / keyframes) at the right end, smaller than the graph tools */
+.tl-zoom {
+  width: 20px;
+  height: 20px;
+  margin: 0 5px 0 3px;
+  align-self: center;
+}
+
+/* Row lit up because its lane in the timeline is hovered (same look as :hover) */
+.prop-btn.tl-hover                { background: rgba(255,255,255,0.13); color: #ffffff; }
+.prop-btn.active.tl-hover         { background: rgba(74,158,255,0.34);  color: #8fd0ff; }
+.prop-btn.active.pending.tl-hover { background: rgba(240,160,48,0.28);  color: #f7b95a; }
+.prop-btn.baked.tl-hover          { background: rgba(61,220,132,0.32);  color: #6cf0a6; }
+
 /* ─── Graph toolbar ─────────────────────────────────────────── */
 /* Its own row above the graph (never overlaps the canvas). Tools go left;
    .graph-tools-right pushes its children to the right end. Flex `gap` is
