@@ -4848,10 +4848,14 @@ function _applyPresetLayout(force) {
   _presetCols = cols;
   var multi = cols > 1;
   var btnCount = list.querySelectorAll('.preset-btn').length;
-  // Two-column list: whole-pixel column widths so the divider between them
-  // sits on a pixel boundary (at 50% of an odd width it smeared over two).
-  var cw = list.clientWidth || w;
-  var leftW = Math.floor(cw / 2), rightW = cw - leftW;
+  // Two-column list: the left column gets a whole-pixel width so the divider
+  // sits on a pixel boundary (at 50% of an odd width it smeared over two); the
+  // right column starts at the same width and grows to fill the rest. The
+  // width is floored from the bounding rect minus the scrollbar: clientWidth
+  // rounds, and a rounded-up total made every right row wrap to its own line.
+  var rect = list.getBoundingClientRect();
+  var cw = Math.floor((rect.width || w) - (list.offsetWidth - list.clientWidth)) || w;
+  var leftW = Math.floor(cw / 2);
   var cacheKey = (isGrid ? 'g' : 'l') + cols + '_' + btnCount + (multi && !isGrid ? '_' + cw : '');
   if (!force && _applyPresetLayout._lastKey === cacheKey) return;
   _applyPresetLayout._lastKey = cacheKey;
@@ -4877,6 +4881,7 @@ function _applyPresetLayout(force) {
   list.querySelectorAll('.preset-btn').forEach(function(btn, idx) {
     if (isGrid) {
       btn.style.width = itemW;
+      btn.style.flexGrow = '';
       btn.style.flexDirection = 'column';
       btn.style.padding = '8px 4px 2px';
       btn.style.border = 'none';
@@ -4893,7 +4898,8 @@ function _applyPresetLayout(force) {
     } else if (multi) {
       // Two-column list: ordinary rows, half width each, so the whole
       // button set (width, wrap) is inline like the grid (UXP relayout rule).
-      btn.style.width = (idx % 2 === 0 ? leftW : rightW) + 'px';
+      btn.style.width = leftW + 'px';
+      btn.style.flexGrow = (idx % 2 === 0) ? '0' : '1';
       btn.style.flexDirection = '';
       btn.style.padding = '';
       btn.style.border = '';
@@ -4912,6 +4918,7 @@ function _applyPresetLayout(force) {
       btn.style.minHeight = '';
     } else {
       btn.style.width = '';
+      btn.style.flexGrow = '';
       btn.style.flexDirection = '';
       btn.style.padding = '';
       btn.style.borderBottom = '';
