@@ -2818,27 +2818,41 @@ function initPanel() {
   // key is read from it. CEP runs the same code; there the document listener
   // alone would do, but sharing keeps the two editions identical.
   var keySink = document.getElementById('oc-key-sink');
-  document.addEventListener('pointerdown', function(e) {
+  function _isField(t) {
+    var tag = t && t.tagName ? String(t.tagName).toLowerCase() : '';
+    return t !== keySink && (tag === 'input' || tag === 'textarea' || tag === 'select' || !!(t && t.isContentEditable));
+  }
+  function _focusSink(why) {
     if (!keySink) return;
-    var t   = e.target;
-    var tag = t && t.tagName ? String(t.tagName).toLowerCase() : '';
-    if (tag === 'input' || tag === 'textarea' || tag === 'select' || (t && t.isContentEditable)) return;
-    // After the press has been handled, so the sink doesn't steal a click's focus mid-way
-    setTimeout(function() { try { keySink.focus(); } catch(_) {} }, 0);
-  }, true);
+    try { keySink.focus(); } catch(_) {}
+    var ok = document.activeElement === keySink;
+    if (!ok) console.log('[OC] key sink focus (' + why + ') failed; active=' + (document.activeElement && document.activeElement.tagName));
+  }
+  // Focus on the press and again on release/click: UXP moves focus around
+  // between the two, and a field the user is clicking keeps its own focus
+  document.addEventListener('pointerdown', function(e) { if (!_isField(e.target)) setTimeout(function() { _focusSink('pointerdown'); }, 0); }, true);
+  document.addEventListener('click',       function(e) { if (!_isField(e.target)) setTimeout(function() { _focusSink('click'); }, 0); }, true);
+  if (keySink) {
+    // Nothing should ever be typed into it
+    keySink.addEventListener('input', function() { keySink.value = ''; });
+  }
   function _enterGo(e) {
-    if ((e.key !== 'Enter' && e.keyCode !== 13) || e.repeat || e._ocEnter) return;
+    var isEnter = e.key === 'Enter' || e.keyCode === 13 || e.which === 13 || e.code === 'Enter' || e.code === 'NumpadEnter';
+    if (e.target === keySink) console.log('[OC] key sink ' + e.type + ' key=' + e.key + ' code=' + e.code + ' keyCode=' + e.keyCode);
+    if (!isEnter || e.repeat || e._ocEnter) return;
     e._ocEnter = true; // the sink's own listener and the document one both see it
-    var t   = e.target;
-    var tag = t && t.tagName ? String(t.tagName).toLowerCase() : '';
-    if (t !== keySink && (tag === 'input' || tag === 'textarea' || tag === 'select' || (t && t.isContentEditable))) return;
+    if (_isField(e.target)) return;
     if (document.getElementById('settings-modal') || document.getElementById('oc-confirm')) return;
     var go = document.getElementById('go-btn');
-    if (!go || go.classList.contains('btn-disabled')) return;
+    if (!go || go.classList.contains('btn-disabled')) { console.log('[OC] Enter: Go is disabled'); return; }
     e.preventDefault();
+    console.log('[OC] Enter: pressing Go');
     go.click();
   }
-  if (keySink) keySink.addEventListener('keydown', _enterGo);
+  if (keySink) {
+    keySink.addEventListener('keydown', _enterGo);
+    keySink.addEventListener('keyup', function(e) { if (!e._ocEnterUp) { e._ocEnterUp = true; console.log('[OC] key sink keyup key=' + e.key + ' keyCode=' + e.keyCode); } });
+  }
   document.addEventListener('keydown', _enterGo, true);
 
   // Settings: same modal as the flyout menu and the context menus
