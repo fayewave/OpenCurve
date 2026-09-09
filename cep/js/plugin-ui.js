@@ -1110,7 +1110,7 @@ var _TL_PROPS_KEY = 'opencurve-props-width';
 var _TL_PROPS_MIN = 100, _TL_PROPS_MAX = 320, _TL_PROPS_DEF = 180; // property column width (px), dragged at #tl-prop-handle
 var _TL_SNAP_PX   = 5;    // a press this close to a keyframe lands exactly on it
 var _TL_DBL_MS    = 400;  // two presses on a lane this close together toggle the property
-var _tlEls   = null;  // { root, scroll, inner, wrap, svg, empty, zoom, fade, fadeTop }
+var _tlEls   = null;  // { root, scroll, inner, wrap, svg, empty, fade, fadeTop }
 var _tlW     = 0;     // canvas width from the ResizeObserver
 var _tlSig   = '';    // what the lanes were last built from
 var _tlGeo   = null;  // { W, H, laneH, y0, n, a, b } of the last build
@@ -1401,24 +1401,18 @@ function _tlSpansAfterBake(s, keys) {
   });
 }
 
+// Whole clip <-> just the keyframes. Toggled from the timeline's right-click menu.
 function _tlSetZoom(keys) {
   _tlZoomKeys = !!keys;
   localStorage.setItem(_TL_ZOOM_KEY, _tlZoomKeys ? 'keys' : 'clip');
-  _tlStyleZoomBtn();
   _tlRender(getState(), true);
-}
-function _tlStyleZoomBtn() {
-  var btn = _tlEls && _tlEls.zoom;
-  if (!btn) return;
-  btn.style.background = _tlZoomKeys ? 'rgba(61,220,132,0.18)' : '';
-  btn.style.color      = _tlZoomKeys ? '#3ddc84' : '';
 }
 // Settings > Timeline. With the strip off only the property rows remain in the
 // row and take its full width. Inline display: UXP doesn't relayout on class changes
 function _applyTimelineVisibility() {
   var root = document.getElementById('oc-timeline');
   if (!root) return;
-  ['.tl-tools', '.tl-canvas-wrap', '#tl-prop-handle'].forEach(function(sel) {
+  ['.tl-canvas-wrap', '#tl-prop-handle'].forEach(function(sel) {
     var el = root.querySelector(sel);
     if (el) el.style.display = _tlVisible ? '' : 'none';
   });
@@ -1500,7 +1494,7 @@ function _tlInit() {
   if (!root) return;
   _tlEls = { root: root, scroll: document.getElementById('tl-scroll'), inner: root.querySelector('.tl-scroll-inner'),
              wrap: root.querySelector('.tl-canvas-wrap'), svg: document.getElementById('tl-svg'),
-             empty: document.getElementById('tl-empty'), zoom: document.getElementById('tl-zoom'),
+             empty: document.getElementById('tl-empty'),
              fade: document.getElementById('tl-fade'), fadeTop: document.getElementById('tl-fade-top') };
   if (_tlEls.scroll) _tlEls.scroll.addEventListener('scroll', _tlUpdateFade);
   var svg = _tlEls.svg;
@@ -1587,13 +1581,6 @@ function _tlInit() {
   function leave() { _tlHighlightLane(null); _tlRowHover(null); _tlShowReadout(null); } // a press in flight is kept: a rebuild can fire this mid-press
   svg.addEventListener('pointerleave', leave);
   svg.addEventListener('mouseleave',   leave);
-  // Zoom toggle: whole clip <-> just the keyframes
-  if (_tlEls.zoom) {
-    _attachTooltip(_tlEls.zoom, function() {
-      return _tlZoomKeys ? 'Zoomed to the keyframes. Click to show the whole clip' : 'Showing the whole clip. Click to zoom to the keyframes';
-    });
-    _tlEls.zoom.addEventListener('click', function() { _tlSetZoom(!_tlZoomKeys); });
-  }
   // Handle between the lanes and the property rows drags the rows' width (same
   // pattern as the sidebar handle; the lanes re-measure through the ResizeObserver)
   var handle = document.getElementById('tl-prop-handle');
@@ -1662,7 +1649,6 @@ function _tlInit() {
     vhandle.addEventListener('pointerup',     _vEnd);
     vhandle.addEventListener('pointercancel', _vEnd);
   }
-  _tlStyleZoomBtn();
   _tlApplyHeight();
   _applyTimelineVisibility();
   measure();
@@ -2539,7 +2525,7 @@ function initPanel() {
   }
 
   // Mini context menu
-  function _showMiniCtxMenu(e, showPaste, showLayout, showGrid, pointIdx) {
+  function _showMiniCtxMenu(e, showPaste, showLayout, showGrid, pointIdx, showTlZoom) {
     console.log('[OC] _showMiniCtxMenu called');
     e.preventDefault();
     e.stopPropagation();
@@ -2555,6 +2541,8 @@ function initPanel() {
     var _icSettings = '<svg width="16" height="16" viewBox="0 0 12 12" fill="none"><path d="M10.18 5 L11.53 5.12 L11.53 6.88 L10.18 7 A4.3 4.3 0 0 1 9.67 8.25 L9.67 8.25 L10.53 9.29 L9.29 10.53 L8.25 9.67 A4.3 4.3 0 0 1 7 10.18 L7 10.18 L6.88 11.53 L5.12 11.53 L5 10.18 A4.3 4.3 0 0 1 3.75 9.67 L3.75 9.67 L2.71 10.53 L1.47 9.29 L2.33 8.25 A4.3 4.3 0 0 1 1.82 7 L1.82 7 L0.47 6.88 L0.47 5.12 L1.82 5 A4.3 4.3 0 0 1 2.33 3.75 L2.33 3.75 L1.47 2.71 L2.71 1.47 L3.75 2.33 A4.3 4.3 0 0 1 5 1.82 L5 1.82 L5.12 0.47 L6.88 0.47 L7 1.82 A4.3 4.3 0 0 1 8.25 2.33 L8.25 2.33 L9.29 1.47 L10.53 2.71 L9.67 3.75 A4.3 4.3 0 0 1 10.18 5 Z M8.3 6 A2.3 2.3 0 0 0 3.7 6 A2.3 2.3 0 0 0 8.3 6 Z" fill="currentColor" fill-rule="evenodd"/></svg>';
     var _icGrid = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="1.5" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="8" y="1.5" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="1.5" y="8" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="8" y="8" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>';
     var _icList = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><line x1="1.5" y1="3.5" x2="12.5" y2="3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="1.5" y1="7" x2="12.5" y2="7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="1.5" y1="10.5" x2="12.5" y2="10.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+    var _icTlKeys = '<svg width="16" height="16" viewBox="0 0 12 12" fill="none"><path d="M3.2 1.5H1.5v9h1.7M8.8 1.5h1.7v9H8.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><polygon points="6,3.4 8.6,6 6,8.6 3.4,6" fill="currentColor"/></svg>';
+    var _icTlClip = '<svg width="16" height="16" viewBox="0 0 12 12" fill="none"><rect x="0.9" y="2.6" width="10.2" height="6.8" rx="1" fill="none" stroke="currentColor" stroke-width="1.6"/><polygon points="6,4.2 7.6,6 6,7.8 4.4,6" fill="currentColor"/></svg>';
     var _icPaste = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><rect x="3" y="2" width="8" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path fill="none" d="M5.5 2V1.5a1 1 0 011-1h1a1 1 0 011 1V2" stroke="currentColor" stroke-width="1.3"/><line x1="5.5" y1="6" x2="8.5" y2="6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="5.5" y1="8.5" x2="8.5" y2="8.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 
     function _miniItem(label, icon, onClick) {
@@ -2588,6 +2576,12 @@ function initPanel() {
       _miniItem(isSmooth ? 'Break Handles' : 'Smooth Handles', isSmooth ? _icPtBreak : _icPtSmooth, function() { _setPointSmooth(pointIdx, !isSmooth); });
       _miniItem('Delete Point', _icPtDelete, function() { _removePoint(pointIdx); });
     } else {
+    // Timeline menu: what the lanes span, then the shared Open Settings
+    if (showTlZoom) {
+      _miniItem(_tlZoomKeys ? 'Show Whole Clip' : 'Zoom to Keyframes',
+                _tlZoomKeys ? _icTlClip : _icTlKeys,
+                function() { _tlSetZoom(!_tlZoomKeys); });
+    }
     _miniItem('Open Settings', _icSettings, function() { _showSettingsModal(); });
 
     if (showLayout !== false) {
@@ -2674,6 +2668,17 @@ function initPanel() {
       // Real presets have their own menu; the New Preset tile gets the list menu
       if (onPreset && onPreset.id !== 'new-preset-btn') return;
       _showMiniCtxMenu(e, true);
+    });
+  })();
+
+  // Right-click on the mini timeline's lanes: zoom toggle + Open Settings.
+  // Bound to the SVG and its wrapper both; _showMiniCtxMenu stops propagation,
+  // so the wrapper only ever handles the strip of area outside the SVG.
+  (function() {
+    var targets = [document.getElementById('tl-svg'), document.querySelector('.tl-canvas-wrap')];
+    targets.forEach(function(el) {
+      if (!el) return;
+      el.addEventListener('contextmenu', function(e) { _showMiniCtxMenu(e, false, false, false, null, true); });
     });
   })();
 

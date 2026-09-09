@@ -213,9 +213,8 @@ input, textarea {
 }
 
 /* ─── Mini timeline ─────────────────────────────────────────── */
-/* The timeline row: tools column, then #tl-scroll holding the keyframe lanes
-   (plugin.js _tlRender), a column-resize handle and the property rows at the
-   right. Each lane is one row tall (32px) so the lanes line up with the rows
+/* The timeline row: #tl-scroll holding the keyframe lanes (plugin.js
+   _tlRender), a column-resize handle and the property rows at the right. Each lane is one row tall (32px) so the lanes line up with the rows
    beside them. Height: the rows' own (never below one row) until #tl-resize
    has been dragged, then the saved height (inline) and the lanes + rows
    scroll together inside #tl-scroll. */
@@ -300,16 +299,6 @@ input, textarea {
   min-width: 0;
 }
 
-/* Narrow column at the left end holding the zoom toggle */
-.tl-tools {
-  width: 30px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding-top: 5px;
-}
-
 .tl-canvas-wrap {
   flex: 1;
   min-width: 0;
@@ -329,13 +318,6 @@ input, textarea {
   font-size: 11px;
   color: var(--text-faint);
   pointer-events: none;
-}
-
-/* Zoom toggle (whole clip / keyframes), a little smaller than the graph tools */
-.tl-zoom {
-  width: 22px;
-  height: 22px;
-  margin: 0;
 }
 
 /* Row lit up because its lane in the timeline is hovered (same look as :hover) */
