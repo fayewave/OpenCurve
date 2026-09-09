@@ -7,10 +7,14 @@
 </head>
 <body>
   <div id="app">
-    <!-- Key sink: UXP only fires keydown on inputs, so this concealed read-only field takes focus
-         on any press in the panel and gives the Enter-to-Go shortcut something to listen on (plugin.js initPanel) -->
-    <input id="oc-key-sink" type="text" aria-hidden="true" autocomplete="off" spellcheck="false"
-           style="position:absolute;left:0;top:0;width:1px;height:1px;padding:0;margin:0;border:0;outline:none;background:transparent;color:transparent;caret-color:transparent;font-size:1px;z-index:0;">
+    <!-- Key sink: UXP only fires keydown on inputs, so this field takes focus on any press in the
+         panel and gives the Enter-to-Go shortcut something to listen on (plugin.js initPanel). It must stay a
+         real, focusable input (not hidden, read-only or tabindex -1, UXP refuses focus to those), so the
+         zero-size wrapper clips it away instead: UXP draws its own focus ring otherwise. -->
+    <div style="position:absolute;left:0;top:0;width:0;height:0;overflow:hidden;">
+      <input id="oc-key-sink" type="text" aria-hidden="true" autocomplete="off" spellcheck="false"
+             style="position:absolute;left:0;top:0;width:1px;height:1px;padding:0;margin:0;border:0;outline:none;background:transparent;color:transparent;caret-color:transparent;font-size:1px;">
+    </div>
     <div class="main-row">
 
       <!-- Left column: graph + status -->

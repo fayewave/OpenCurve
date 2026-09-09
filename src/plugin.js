@@ -2838,7 +2838,6 @@ function initPanel() {
   }
   function _enterGo(e) {
     var isEnter = e.key === 'Enter' || e.keyCode === 13 || e.which === 13 || e.code === 'Enter' || e.code === 'NumpadEnter';
-    if (e.target === keySink) console.log('[OC] key sink ' + e.type + ' key=' + e.key + ' code=' + e.code + ' keyCode=' + e.keyCode);
     if (!isEnter || e.repeat || e._ocEnter) return;
     e._ocEnter = true; // the sink's own listener and the document one both see it
     if (_isField(e.target)) return;
@@ -2851,7 +2850,6 @@ function initPanel() {
   }
   if (keySink) {
     keySink.addEventListener('keydown', _enterGo);
-    keySink.addEventListener('keyup', function(e) { if (!e._ocEnterUp) { e._ocEnterUp = true; console.log('[OC] key sink keyup key=' + e.key + ' keyCode=' + e.keyCode); } });
   }
   document.addEventListener('keydown', _enterGo, true);
 
