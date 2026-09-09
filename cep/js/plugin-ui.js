@@ -1160,7 +1160,7 @@ function renderUI(s) {
         // Diamond marker (matches the status strip) + truncating label
         var propDiamond = document.createElement('span');
         propDiamond.className = 'prop-diamond';
-        propDiamond.innerHTML = '<svg width="8" height="8" viewBox="0 0 8 8" fill="none"><polygon points="4,0 8,4 4,8 0,4" fill="currentColor"/></svg>';
+        propDiamond.innerHTML = '<svg width="8" height="8" viewBox="0 0 8 8" fill="none"><polygon points="4,0.9 7.1,4 4,7.1 0.9,4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
         var propLabel = document.createElement('span');
         propLabel.className = 'prop-label';
         propLabel.textContent = p.displayName;
@@ -1239,6 +1239,9 @@ function renderUI(s) {
       var k = btn.dataset.key;
       var isSel = selKeys.indexOf(k) >= 0;
       btn.classList.toggle('active', isSel);
+      // Diamond: filled while selected, hollow otherwise (attribute, not class: UXP SVG)
+      var poly = btn.querySelector('.prop-diamond polygon');
+      if (poly) poly.setAttribute('fill', isSel ? 'currentColor' : 'none');
       // Selected but the playhead isn't between its keyframes yet: orange until it is
       btn.classList.toggle('pending', isSel && validKeys.indexOf(k) < 0);
       // Playhead is already between this property's keyframes: pin shows blue even when unselected
@@ -1916,12 +1919,10 @@ function initPanel() {
     mini.id = '_mini-ctx';
     mini.style.display = 'block';
 
-    var _icSettings = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="8" r="1.8" fill="none" stroke="currentColor" stroke-width="1.3"/><line x1="13" y1="8" x2="15" y2="8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="3" y1="8" x2="1" y2="8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="8" y1="13" x2="8" y2="15" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="8" y1="3" x2="8" y2="1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="11.54" y1="11.54" x2="12.95" y2="12.95" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="4.46" y1="11.54" x2="3.05" y2="12.95" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="4.46" y1="4.46" x2="3.05" y2="3.05" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="11.54" y1="4.46" x2="12.95" y2="3.05" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+    var _icSettings = '<svg width="16" height="16" viewBox="0 0 12 12" fill="none"><path d="M10.18 5 L11.53 5.12 L11.53 6.88 L10.18 7 A4.3 4.3 0 0 1 9.67 8.25 L9.67 8.25 L10.53 9.29 L9.29 10.53 L8.25 9.67 A4.3 4.3 0 0 1 7 10.18 L7 10.18 L6.88 11.53 L5.12 11.53 L5 10.18 A4.3 4.3 0 0 1 3.75 9.67 L3.75 9.67 L2.71 10.53 L1.47 9.29 L2.33 8.25 A4.3 4.3 0 0 1 1.82 7 L1.82 7 L0.47 6.88 L0.47 5.12 L1.82 5 A4.3 4.3 0 0 1 2.33 3.75 L2.33 3.75 L1.47 2.71 L2.71 1.47 L3.75 2.33 A4.3 4.3 0 0 1 5 1.82 L5 1.82 L5.12 0.47 L6.88 0.47 L7 1.82 A4.3 4.3 0 0 1 8.25 2.33 L8.25 2.33 L9.29 1.47 L10.53 2.71 L9.67 3.75 A4.3 4.3 0 0 1 10.18 5 Z M8.3 6 A2.3 2.3 0 0 0 3.7 6 A2.3 2.3 0 0 0 8.3 6 Z" fill="currentColor" fill-rule="evenodd"/></svg>';
     var _icGrid = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="1.5" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="8" y="1.5" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="1.5" y="8" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="8" y="8" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>';
     var _icList = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><line x1="1.5" y1="3.5" x2="12.5" y2="3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="1.5" y1="7" x2="12.5" y2="7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="1.5" y1="10.5" x2="12.5" y2="10.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
     var _icPaste = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><rect x="3" y="2" width="8" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path fill="none" d="M5.5 2V1.5a1 1 0 011-1h1a1 1 0 011 1V2" stroke="currentColor" stroke-width="1.3"/><line x1="5.5" y1="6" x2="8.5" y2="6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="5.5" y1="8.5" x2="8.5" y2="8.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
-    var _icGraphOn = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M1.5 12.5C5 12.5 9 1.5 12.5 1.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="1.5" cy="12.5" r="1.3" fill="currentColor"/><circle cx="12.5" cy="1.5" r="1.3" fill="currentColor"/></svg>';
-    var _icGraphOff = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M1.5 12.5C5 12.5 9 1.5 12.5 1.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity="0.45"/><line x1="2" y1="2" x2="12" y2="12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
 
     function _miniItem(label, icon, onClick) {
       var item = document.createElement('div');
@@ -1967,16 +1968,6 @@ function initPanel() {
         }
       );
     }
-
-    _miniItem(
-      _graphVisible ? 'Disable Graph' : 'Enable Graph',
-      _graphVisible ? _icGraphOff : _icGraphOn,
-      function() {
-        _graphVisible = !_graphVisible;
-        localStorage.setItem(_GRAPH_KEY, _graphVisible ? 'on' : 'off');
-        _applyGraphVisibility();
-      }
-    );
 
     if (showPaste) {
       _miniItem('Paste Preset', _icPaste, function() { _pasteCoordinates(); });
@@ -2091,7 +2082,7 @@ function initPanel() {
 
       var nameSpan = document.createElement('span');
       nameSpan.className = 'preset-name';
-      nameSpan.textContent = 'New Preset';
+      nameSpan.textContent = 'New';
       newBtn.appendChild(nameSpan);
 
       newBtn.addEventListener('click', function() {
@@ -3104,14 +3095,9 @@ function _showSettingsModal() {
 
   var resetRow = document.createElement('div');
   resetRow.style.cssText = 'display:flex;align-items:center;padding:5px 10px;cursor:pointer;color:#f06060;font-size:13px;background:rgba(240,96,96,0.08);flex-shrink:0;';
-  var resetIcon = document.createElement('span');
-  resetIcon.style.cssText = 'display:flex;align-items:center;';
-  resetIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill="none" d="M3 5h10M6 5V4h4v1M6.5 7.5v4M9.5 7.5v4M4.5 5l.5 8h6l.5-8" stroke="#f06060" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   var resetLabel = document.createElement('span');
   resetLabel.textContent = 'Reset All Settings';
-  resetLabel.style.marginLeft = '6px';
   _attachTooltip(resetRow, 'Restore defaults and remove all presets');
-  resetRow.appendChild(resetIcon);
   resetRow.appendChild(resetLabel);
   resetRow.addEventListener('mouseenter', function() { resetRow.style.background='rgba(240,96,96,0.15)'; });
   resetRow.addEventListener('mouseleave', function() { resetRow.style.background='rgba(240,96,96,0.08)'; });

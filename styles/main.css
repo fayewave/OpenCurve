@@ -119,6 +119,7 @@ html, body {
   overflow-y: auto;
   overflow-x: hidden;
   contain: layout style;
+  background: #171717; /* a step darker than --bg so the list area reads as a well */
 }
 
 
@@ -469,15 +470,17 @@ html, body {
   height: 22px;
   margin-left: 6px;
   border-radius: 3px;
-  background: rgba(255,255,255,0.08);
-  color: #d4d4d4;
+  /* Amber at rest: the playhead isn't over this property's keyframes yet, so the
+     pin is the thing to press. .ready (blue) and .baked (green) override it. */
+  background: rgba(240,160,48,0.22);
+  color: #f7b95a;
   /* no resting opacity: UXP ignores it, so the CEP build looked dimmer than the CCX */
   cursor: pointer;
   transition: background 0.12s, color 0.12s, opacity 0.12s;
 }
 
 .prop-pin:hover {
-  background: rgba(255,255,255,0.2);
+  background: rgba(240,160,48,0.45);
   color: #ffffff;
   opacity: 1;
 }
@@ -485,7 +488,7 @@ html, body {
 /* Pressed (held): a step brighter than hover. UXP's :active is unreliable, so
    plugin.js also toggles .pressed on pointer down/up (_addPressState). */
 .prop-pin:active, .prop-pin.pressed {
-  background: rgba(255,255,255,0.34);
+  background: rgba(240,160,48,0.65);
   color: #ffffff;
   opacity: 1;
 }
@@ -697,7 +700,7 @@ html, body {
 /* Hover feedback whenever clicking the strip would select more properties */
 .status-strip.status-clickable { cursor: pointer; }
 .status-valid.status-clickable:hover    { background: rgba(74,158,255,0.28); }
-.status-detected.status-clickable:hover { background: rgba(230,184,0,0.26); }
+.status-detected.status-clickable:hover { background: rgba(255,255,255,0.12); }
 
 /* State variants */
 .status-idle .status-dot     { color: var(--text-faint); }
@@ -712,10 +715,11 @@ html, body {
 .status-warn .status-text    { color: var(--text-dim); }
 .status-warn:hover           { background: rgba(255,255,255,0.04); }
 
-.status-detected { background: var(--amber-dim); }
-.status-detected .status-dot  { color: var(--amber); }
+/* Properties detected but none selected: quiet grey (the rows carry the colour) */
+.status-detected { background: rgba(255,255,255,0.06); }
+.status-detected .status-dot  { color: var(--text-dim); }
 .status-detected .status-text,
-.status-detected .status-clip { color: var(--amber); }
+.status-detected .status-clip { color: var(--text-dim); }
 
 .status-error { background: var(--red-dim); }
 .status-error .status-dot    { color: var(--red); }
