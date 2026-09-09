@@ -476,7 +476,7 @@
     if (localStorage.getItem('opencurve-post-update') === '1') {
       localStorage.removeItem('opencurve-post-update');
       setTimeout(function() {
-        OpenCurve.showCopyToast('Updated to v' + '1.3.0', '#3ddc84');
+        OpenCurve.showCopyToast('Updated to v' + '2.0.0', '#3ddc84');
       }, 500);
     }
 

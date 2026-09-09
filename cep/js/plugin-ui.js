@@ -2213,7 +2213,7 @@ function initPanel() {
 }
 
 // ─── Settings / shared variables ─────────────────────────────────────────
-var CURRENT_VERSION     = '1.3.0';
+var CURRENT_VERSION     = '2.0.0';
 var _CURVE_COLOR_KEY    = 'opencurve-line-color';
 var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#4a9eff';
 var _updateAvailable    = false;
