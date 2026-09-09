@@ -849,9 +849,10 @@ input, textarea {
 .status-error .status-dot    { color: var(--red); }
 .status-error .status-text   { color: var(--red); }
 
-.status-done  { background: var(--green-dim); }
-.status-done .status-dot     { color: var(--green); }
-.status-done .status-text    { color: var(--green); }
+/* Done: quiet grey like the other states; the green rows carry the result */
+.status-done  { background: transparent; }
+.status-done .status-dot     { color: var(--text-faint); }
+.status-done .status-text    { color: var(--text-dim); }
 
 /* ─── Action row ────────────────────────────────────────────── */
 .action-row {

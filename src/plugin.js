@@ -3401,7 +3401,7 @@ function renderUI(s) {
       'status-detected': { dot: '#555',    text: '#888'    },
       'status-valid':    { dot: '#555',    text: '#888'    }, // grey like detected; the rows carry the blue
       'status-error':    { dot: '#f06060', text: '#f06060' },
-      'status-done':     { dot: '#4ce890', text: '#4ce890' },
+      'status-done':     { dot: '#555',    text: '#888'    }, // grey; the green rows carry the result
     }[cfg.cls] || { dot: '#555', text: '#888' };
     var dotEl = strip.querySelector('.status-dot');
     if (dotEl)  dotEl.style.color  = _sc.dot;
