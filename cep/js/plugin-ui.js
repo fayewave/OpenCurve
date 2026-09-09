@@ -1232,11 +1232,11 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
     var c = _TL_COLORS[isBaked ? 'baked' : isSel ? (isValid ? 'active' : 'pending') : isValid ? 'ready' : 'none'];
     var bg = _tlMk('rect', { x: 0, y: top, width: W, height: laneH, fill: c.bg });
     els.svg.appendChild(bg);
-    // Same divider as the row: its 7% border over its 5% background on the strip's
-    // #111 is 12% white. Drawn like the graph grid (white + stroke-opacity): a
-    // runtime-created line in UXP ignores its stroke colour, rgba or hex, and
-    // draws white, so only the opacity can shade it
-    els.svg.appendChild(_tlMk('line', { x1: 0, y1: top + laneH - 0.5, x2: W, y2: top + laneH - 0.5, stroke: '#ffffff', 'stroke-opacity': '0.12', 'stroke-width': 1 }));
+    // Divider like the property rows': theirs reads as a dark 1px line under each
+    // row's tint, so this is a dark strip too (a filled rect, not a stroked line,
+    // so it can't depend on how the host handles strokes). A light line here
+    // looked like a white rule between the lanes.
+    els.svg.appendChild(_tlMk('rect', { x: 0, y: top + laneH - 1, width: W, height: 1, fill: 'rgba(0,0,0,0.55)' }));
     var kf = (p.tlKf || []).slice().sort(function(x, y){ return x - y; });
     // Bars: bakes (green), other per-frame runs (grey), then the pair the playhead is in
     var spans = (p.tlSpans || []).map(function(sp){ return { a: sp[0], b: sp[1], kind: 'bake' }; });
