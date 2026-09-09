@@ -1287,10 +1287,22 @@ function renderUI(s) {
     if (clipEl) {
       clipEl.textContent   = showClip ? s.clipName : '';
       clipEl.style.display = showClip ? 'block' : 'none'; // inline: UXP ignores class-driven display
-      // Colour inline too: UXP doesn't restyle the span when only the strip's
-      // class changes, so ".status-detected .status-clip" left it white
-      clipEl.style.color   = s.status === 'valid' ? '#6cb8ff' : '#888';
     }
+    // Colours inline: UXP doesn't restyle the dot/text/clip spans when only
+    // the strip's class changes, so the ".status-valid .status-text" rules
+    // left them stale. Same values as the CSS state variants.
+    var _sc = {
+      'status-idle':     { dot: '#555',    text: '#888'    },
+      'status-warn':     { dot: '#555',    text: '#888'    },
+      'status-detected': { dot: '#888',    text: '#888'    },
+      'status-valid':    { dot: '#6cb8ff', text: '#6cb8ff' },
+      'status-error':    { dot: '#f06060', text: '#f06060' },
+      'status-done':     { dot: '#4ce890', text: '#4ce890' },
+    }[cfg.cls] || { dot: '#555', text: '#888' };
+    var dotEl = strip.querySelector('.status-dot');
+    if (dotEl)  dotEl.style.color  = _sc.dot;
+    txt.style.color = _sc.text;
+    if (clipEl) clipEl.style.color = _sc.text;
     if (showClip) msg = '\u00b7 ' + msg;
     // Clickable whenever there are valid params: click selects all, click again clears
     var _vk = s.validParamKeys || [];
