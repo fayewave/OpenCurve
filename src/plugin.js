@@ -3917,7 +3917,7 @@ function initPanel() {
         dropLine = document.createElement('div');
         dropLine.className = 'preset-drop-line';
         dragEl.classList.add('preset-dragging');
-        if (_presetLayout === 'grid') {
+        if (_presetCols > 1) {
           // Create floating ghost
           var rect = dragEl.getBoundingClientRect();
           _dragGhost = dragEl.cloneNode(true);
@@ -3935,7 +3935,7 @@ function initPanel() {
         _dragGhost.style.left = (e.clientX - gw / 2) + 'px';
         _dragGhost.style.top = (e.clientY - gh / 2) + 'px';
       }
-      var isGrid = _presetLayout === 'grid';
+      var isGrid = _presetCols > 1; // grid, or the two-column list
       var items = Array.from(container.children).filter(function(c) {
         return c !== dragEl && c !== dropLine && c.id !== 'new-preset-btn';
       });
@@ -3991,7 +3991,7 @@ function initPanel() {
       dragEl.style.display = '';
       dragEl.classList.remove('preset-dragging');
       dragEl = null; dropLine = null; moved = false;
-      if (_presetLayout === 'grid') _applyPresetLayout(true);
+      if (_presetCols > 1) _applyPresetLayout(true);
     }
 
     container.addEventListener('pointerup',     endDragSort);
@@ -4842,16 +4842,20 @@ function _applyPresetLayout(force) {
   if (!list) return;
   var isGrid = _presetLayout === 'grid';
   var w = list.offsetWidth || 180;
-  var cols = isGrid ? (w >= 220 ? 3 : 2) : 1;
+  // Grid: 3 columns from 220px, else 2. List: two columns side by side once
+  // the column is wide enough for two readable rows (_LIST_2COL_W).
+  var cols = isGrid ? (w >= 220 ? 3 : 2) : (w >= _LIST_2COL_W ? 2 : 1);
+  _presetCols = cols;
+  var multi = cols > 1;
   var btnCount = list.querySelectorAll('.preset-btn').length;
   var cacheKey = (isGrid ? 'g' : 'l') + cols + '_' + btnCount;
   if (!force && _applyPresetLayout._lastKey === cacheKey) return;
   _applyPresetLayout._lastKey = cacheKey;
-  var itemW = isGrid ? (100/cols).toFixed(3) + '%' : '100%';
+  var itemW = multi ? (100/cols).toFixed(3) + '%' : '100%';
   var thumbSz = isGrid ? (cols >= 3 ? 30 : 32) : 28;
 
   // List container
-  if (isGrid) {
+  if (multi) {
     list.style.display = 'flex';
     list.style.flexWrap = 'wrap';
     list.style.alignContent = 'flex-start';
@@ -4882,6 +4886,23 @@ function _applyPresetLayout(force) {
       btn.style.overflow = 'visible';
       btn.style.whiteSpace = 'normal';
       btn.style.minHeight = (cols >= 3 ? '58px' : '66px');
+    } else if (multi) {
+      // Two-column list: ordinary rows, half width each, so the whole
+      // button set (width, wrap) is inline like the grid (UXP relayout rule).
+      btn.style.width = itemW;
+      btn.style.flexDirection = '';
+      btn.style.padding = '';
+      btn.style.border = '';
+      btn.style.borderBottom = '';
+      btn.style.marginRight = '0';
+      btn.style.marginBottom = '0';
+      btn.style.textAlign = '';
+      btn.style.gap = '';
+      btn.style.alignItems = '';
+      btn.style.alignSelf = 'flex-start';
+      btn.style.overflow = '';
+      btn.style.whiteSpace = '';
+      btn.style.minHeight = '';
     } else {
       btn.style.width = '';
       btn.style.flexDirection = '';
@@ -4961,7 +4982,7 @@ function _applyPresetLayout(force) {
 
   // UXP may ignore inline styles on first render — force reflow,
   // then re-assert align-self on each tile after a delay (no full re-call)
-  if (isGrid) {
+  if (multi) {
     void list.offsetHeight;
     if (!_applyPresetLayout._pending) {
       _applyPresetLayout._pending = true;
@@ -4976,8 +4997,9 @@ function _applyPresetLayout(force) {
   }
 }
 var _gridColsTimer = null;
+var _LIST_2COL_W = 340; // list view splits into two columns from this width
+var _presetCols = 1;    // columns the last _applyPresetLayout laid out
 function _updateGridCols() {
-  if (_presetLayout !== 'grid') return;
   if (_gridColsTimer) clearTimeout(_gridColsTimer);
   _gridColsTimer = setTimeout(_applyPresetLayout, 60);
 }
