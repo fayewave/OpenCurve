@@ -5683,8 +5683,26 @@ function _showSettingsModal() {
     _confirmReset();
   });
 
+  // Report an Issue: opens the GitHub issues page in the browser
+  var issueRow = document.createElement('div');
+  issueRow.style.cssText = 'display:flex;align-items:center;padding:5px 10px;margin-right:8px;cursor:pointer;color:#4a9eff;font-size:13px;background:rgba(74,158,255,0.08);flex-shrink:0;';
+  var issueLabel = document.createElement('span');
+  issueLabel.textContent = 'Report an Issue';
+  _attachTooltip(issueRow, 'Open the OpenCurve issues page on GitHub');
+  issueRow.appendChild(issueLabel);
+  issueRow.addEventListener('mouseenter', function() { issueRow.style.background='rgba(74,158,255,0.15)'; });
+  issueRow.addEventListener('mouseleave', function() { issueRow.style.background='rgba(74,158,255,0.08)'; });
+  issueRow.addEventListener('click', function() {
+    var url = 'https://github.com/fayewave/OpenCurve/issues';
+    try { require('uxp').shell.openExternal(url); } catch(e) { console.error('[OC] openExternal failed:', e); }
+  });
+
+  var footerRight = document.createElement('div');
+  footerRight.style.cssText = 'display:flex;align-items:center;flex-shrink:0;';
+  footerRight.appendChild(issueRow);
+  footerRight.appendChild(resetRow);
   footerRow.appendChild(footerLeft);
-  footerRow.appendChild(resetRow);
+  footerRow.appendChild(footerRight);
   footer.appendChild(footerRow);
 
   modal.appendChild(header);
