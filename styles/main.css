@@ -198,10 +198,12 @@ html, body {
 }
 
 /* ─── Mini timeline ─────────────────────────────────────────── */
-/* The timeline row: tools column, keyframe lanes (plugin.js _tlRender), a
-   column-resize handle and the property rows at the right. Each lane is one
-   row tall (32px) so the lanes line up with the rows beside them; the row's
-   height comes from the rows / the SVG, never below one row. */
+/* The timeline row: tools column, then #tl-scroll holding the keyframe lanes
+   (plugin.js _tlRender), a column-resize handle and the property rows at the
+   right. Each lane is one row tall (32px) so the lanes line up with the rows
+   beside them. Height: the rows' own (never below one row) until #tl-resize
+   has been dragged, then the saved height (inline) and the lanes + rows
+   scroll together inside #tl-scroll. */
 .oc-timeline {
   display: flex;
   flex-direction: row;
@@ -211,7 +213,49 @@ html, body {
   min-height: 32px;
   overflow: hidden;
   background: #111111;
-  border-top: 1px solid var(--border);
+}
+
+/* Drag handle above the timeline row: sets the area's height (up = taller),
+   same dark strip as the column handles */
+.tl-resize-handle {
+  height: 4px;
+  flex-shrink: 0;
+  cursor: row-resize;
+  background: #080808;
+  transition: background 0.15s;
+  position: relative;
+}
+
+.tl-resize-handle::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -6px;
+  bottom: -6px;
+  cursor: row-resize;
+}
+
+.tl-resize-handle:hover {
+  background: var(--border2);
+}
+
+/* Scroll container for lanes + rows. The inner flex row sizes to its content
+   (min-height set inline to the box when a height is fixed), so the column
+   handle spans the whole scrolled height, not just the visible part. */
+.tl-scroll {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.tl-scroll-inner {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  min-width: 0;
 }
 
 /* Narrow column at the left end holding the zoom toggle */

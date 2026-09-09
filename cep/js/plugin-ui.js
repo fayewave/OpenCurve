@@ -1099,6 +1099,9 @@ var _TL_KEY       = 'opencurve-timeline';
 var _tlVisible    = localStorage.getItem(_TL_KEY) !== 'off';
 var _TL_ZOOM_KEY  = 'opencurve-timeline-zoom';
 var _tlZoomKeys   = localStorage.getItem(_TL_ZOOM_KEY) === 'keys'; // zoom to the keyframes instead of the whole clip
+var _TL_H_KEY     = 'opencurve-timeline-height';
+var _tlUserH      = parseInt(localStorage.getItem(_TL_H_KEY), 10) || null; // dragged height of the lanes + rows area (px); null = fit the rows
+var _TL_MAIN_MIN  = 100;  // the graph / preset area keeps at least this much height while dragging
 var _TL_NS        = 'http://www.w3.org/2000/svg';
 var _TL_PAD_X     = 6;
 var _TL_ROW_H     = 32;   // lane height = .prop-btn height, so lane i sits beside row i
@@ -1107,7 +1110,7 @@ var _TL_PROPS_KEY = 'opencurve-props-width';
 var _TL_PROPS_MIN = 100, _TL_PROPS_MAX = 320, _TL_PROPS_DEF = 180; // property column width (px), dragged at #tl-prop-handle
 var _TL_SNAP_PX   = 5;    // a press this close to a keyframe lands exactly on it
 var _TL_DBL_MS    = 400;  // two presses on a lane this close together toggle the property
-var _tlEls   = null;  // { root, wrap, svg, readout, empty, zoom }
+var _tlEls   = null;  // { root, scroll, inner, wrap, svg, empty, zoom }
 var _tlW     = 0;     // canvas width from the ResizeObserver
 var _tlSig   = '';    // what the lanes were last built from
 var _tlGeo   = null;  // { W, H, laneH, y0, n, a, b } of the last build
@@ -1189,7 +1192,10 @@ function _tlRender(s, force) {
   var range  = _tlRange(s);
   var n      = range ? params.length : 0;
   var laneH  = _tlLaneH(n);
-  var H      = Math.max(_TL_MIN_H, params.length * laneH); // one lane per row, whatever is drawn in it
+  // One lane per row; with a dragged height the SVG also fills the box, so the
+  // playhead line runs the whole visible height when there are few rows
+  var boxH   = (_tlUserH && _tlEls.scroll) ? _tlEls.scroll.clientHeight : 0;
+  var H      = Math.max(_TL_MIN_H, params.length * laneH, boxH);
   var W      = _tlW;
   var sel    = s.selectedParamKeys || [], valid = s.validParamKeys || [], baked = s.bakedParamKeys || [];
   var sig = [W, H, n, _tlZoomKeys ? 'k' : 'c', range ? range.a.toFixed(4) + '-' + range.b.toFixed(4) : '', n === 0 ? s.status : ''].join('|');
@@ -1388,6 +1394,17 @@ function _applyTimelineVisibility() {
   _tlApplyPropsWidth();
   if (_tlVisible) { _tlSig = ''; _tlRender(getState(), true); }
 }
+// Height of the lanes + rows area: the saved drag height, else whatever the rows
+// need. With a fixed height the inner flex row is kept at least the box tall so
+// the column handle spans it, and the lanes + rows scroll together beyond it.
+function _tlApplyHeight() {
+  var els = _tlEls;
+  if (!els) return;
+  els.root.style.height = _tlUserH ? _tlUserH + 'px' : '';
+  if (els.inner) els.inner.style.minHeight = (_tlUserH && els.scroll) ? els.scroll.clientHeight + 'px' : '';
+  if (_tlUserH) localStorage.setItem(_TL_H_KEY, _tlUserH); else localStorage.removeItem(_TL_H_KEY);
+  _tlRender(getState(), true);
+}
 // Property column width: the saved value beside the strip, the whole row without it.
 // Saved on its own key so it is independent of the preset column's width.
 function _tlApplyPropsWidth() {
@@ -1409,7 +1426,8 @@ function _tlApplyPropsWidth() {
 function _tlInit() {
   var root = document.getElementById('oc-timeline');
   if (!root) return;
-  _tlEls = { root: root, wrap: root.querySelector('.tl-canvas-wrap'), svg: document.getElementById('tl-svg'),
+  _tlEls = { root: root, scroll: document.getElementById('tl-scroll'), inner: root.querySelector('.tl-scroll-inner'),
+             wrap: root.querySelector('.tl-canvas-wrap'), svg: document.getElementById('tl-svg'),
              empty: document.getElementById('tl-empty'), zoom: document.getElementById('tl-zoom') };
   var svg = _tlEls.svg;
   function measure() {
@@ -1521,7 +1539,38 @@ function _tlInit() {
     handle.addEventListener('pointerup',     _endResize);
     handle.addEventListener('pointercancel', _endResize);
   }
+  // Handle above the area drags its height (up = taller; the graph / preset
+  // area keeps _TL_MAIN_MIN). A double press goes back to fitting the rows.
+  var vhandle = document.getElementById('tl-resize');
+  if (vhandle) {
+    var _vy = 0, _vh = 0, _vresizing = false, _vLastUp = 0;
+    vhandle.addEventListener('pointerdown', function(e) {
+      _vresizing = true;
+      _vy = e.clientY;
+      _vh = root.offsetHeight;
+      vhandle.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+    vhandle.addEventListener('pointermove', function(e) {
+      if (!_vresizing) return;
+      var app = document.getElementById('app'), bottom = document.getElementById('oc-bottom-row');
+      var maxH = Math.max(_TL_MIN_H, (app ? app.clientHeight : 600) - _TL_MAIN_MIN - (bottom ? bottom.offsetHeight : 0) - vhandle.offsetHeight);
+      _tlUserH = Math.max(_TL_MIN_H, Math.min(maxH, _vh + (_vy - e.clientY)));
+      _tlApplyHeight();
+    });
+    function _vEnd(e) {
+      if (!_vresizing) return;
+      _vresizing = false;
+      var now = Date.now();
+      if (now - _vLastUp < _TL_DBL_MS) { _vLastUp = 0; _tlUserH = null; _tlApplyHeight(); return; } // double press: fit the rows again
+      _vLastUp = now;
+      _tlApplyHeight();
+    }
+    vhandle.addEventListener('pointerup',     _vEnd);
+    vhandle.addEventListener('pointercancel', _vEnd);
+  }
   _tlStyleZoomBtn();
+  _tlApplyHeight();
   _applyTimelineVisibility();
   measure();
 }
@@ -3159,6 +3208,7 @@ function _confirmReset() {
     localStorage.removeItem(_TL_KEY);
     localStorage.removeItem(_TL_ZOOM_KEY);
     localStorage.removeItem(_TL_PROPS_KEY);
+    localStorage.removeItem(_TL_H_KEY);
     _bakeDensity        = 1;
     _applyCurveColor('#4a9eff');
     _animationsOn       = true;
@@ -3167,6 +3217,7 @@ function _confirmReset() {
     _peakMode           = false;
     _tlVisible          = true;
     _tlZoomKeys         = false;
+    _tlUserH            = null;
     setState({ curve: { p1x: 0.625, p1y: 0.000, p2x: 0.375, p2y: 1.000 } });
     _showCopyToast('Reset all settings');
     try { location.reload(); } catch(e) {}
