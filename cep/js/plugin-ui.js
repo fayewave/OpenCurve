@@ -1276,6 +1276,10 @@ function renderUI(s) {
     var cfg  = STATUS_CONFIG[s.status] || STATUS_CONFIG['idle'];
     var msg  = typeof cfg.text === 'function' ? cfg.text(s) : cfg.text;
     strip.className = 'status-strip ' + cfg.cls;
+    // Diamond: hollow while properties are detected but none selected (grey
+    // "N properties ready"), solid otherwise; attribute swap, like the rows
+    var dotPoly = strip.querySelector('.status-dot polygon');
+    if (dotPoly) dotPoly.setAttribute('fill', s.status === 'no-selection' ? 'none' : 'currentColor');
     // Clip name lives in its own span so a long name truncates on its own
     // instead of pushing the count off the end of the strip
     var clipEl   = document.getElementById('status-clip');
