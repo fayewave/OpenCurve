@@ -498,7 +498,7 @@ input, textarea {
   align-items: center;
   width: 100%;
   height: 32px;
-  padding: 0 10px 0 8px;
+  padding: 0 4px 0 8px; /* 4px right: the pin sits close to the edge */
   box-sizing: border-box;
   background: rgba(255,255,255,0.05);
   border: none;

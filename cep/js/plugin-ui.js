@@ -1681,10 +1681,11 @@ function renderUI(s) {
     var cfg  = STATUS_CONFIG[s.status] || STATUS_CONFIG['idle'];
     var msg  = typeof cfg.text === 'function' ? cfg.text(s) : cfg.text;
     strip.className = 'status-strip ' + cfg.cls;
-    // Marker: hollow diamond while properties are detected but none selected
-    // (grey "N properties ready"), a tick once some are (blue), solid otherwise
+    // Marker: hollow diamond while the playhead is outside every pair ("Move
+    // playhead..."), a tick once properties are selected (blue), solid otherwise
+    // (including "N properties ready")
     _setMarker(strip.querySelector('.status-dot'),
-      s.status === 'no-selection' ? 'hollow' : s.status === 'valid' ? 'tick' : 'filled');
+      s.status === 'outside' ? 'hollow' : s.status === 'valid' ? 'tick' : 'filled');
     // Clip name lives in its own span so a long name truncates on its own
     // instead of pushing the count off the end of the strip
     var clipEl   = document.getElementById('status-clip');
@@ -1958,7 +1959,7 @@ function initPanel() {
       if (t.btn && t.btn.parentNode) t.btn.parentNode.removeChild(t.btn);
     });
   }, _icDelete);
-  var _icSettingsCtx = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="8" r="1.8" fill="none" stroke="currentColor" stroke-width="1.3"/><line x1="13" y1="8" x2="15" y2="8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="3" y1="8" x2="1" y2="8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="8" y1="13" x2="8" y2="15" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="8" y1="3" x2="8" y2="1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="11.54" y1="11.54" x2="12.95" y2="12.95" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="4.46" y1="11.54" x2="3.05" y2="12.95" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="4.46" y1="4.46" x2="3.05" y2="3.05" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="11.54" y1="4.46" x2="12.95" y2="3.05" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+  var _icSettingsCtx = '<svg width="16" height="16" viewBox="0 0 12 12" fill="none"><path d="M10.18 5 L11.53 5.12 L11.53 6.88 L10.18 7 A4.3 4.3 0 0 1 9.67 8.25 L9.67 8.25 L10.53 9.29 L9.29 10.53 L8.25 9.67 A4.3 4.3 0 0 1 7 10.18 L7 10.18 L6.88 11.53 L5.12 11.53 L5 10.18 A4.3 4.3 0 0 1 3.75 9.67 L3.75 9.67 L2.71 10.53 L1.47 9.29 L2.33 8.25 A4.3 4.3 0 0 1 1.82 7 L1.82 7 L0.47 6.88 L0.47 5.12 L1.82 5 A4.3 4.3 0 0 1 2.33 3.75 L2.33 3.75 L1.47 2.71 L2.71 1.47 L3.75 2.33 A4.3 4.3 0 0 1 5 1.82 L5 1.82 L5.12 0.47 L6.88 0.47 L7 1.82 A4.3 4.3 0 0 1 8.25 2.33 L8.25 2.33 L9.29 1.47 L10.53 2.71 L9.67 3.75 A4.3 4.3 0 0 1 10.18 5 Z M8.3 6 A2.3 2.3 0 0 0 3.7 6 A2.3 2.3 0 0 0 8.3 6 Z" fill="currentColor" fill-rule="evenodd"/></svg>'; // same gear as the graph toolbar
   _ctxItem('Open Settings', false, function() {
     _showSettingsModal();
   }, _icSettingsCtx);
