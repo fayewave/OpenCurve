@@ -5068,7 +5068,7 @@ function _showSettingsModal() {
   modal.id = 'settings-modal';
   var vw = document.documentElement.clientWidth  || document.body.clientWidth;
   var vh = document.documentElement.clientHeight || document.body.clientHeight;
-  modal.style.cssText = 'position:fixed;top:0;left:0;width:'+vw+'px;height:'+vh+'px;background:#1c1c1c;z-index:9998;display:flex;flex-direction:column;font-family:system-ui,sans-serif;';
+  modal.style.cssText = 'position:fixed;top:0;left:0;width:'+vw+'px;height:'+vh+'px;background:#111111;z-index:9998;display:flex;flex-direction:column;font-family:system-ui,sans-serif;';
 
   // Logo + close row
   var header = document.createElement('div');
