@@ -13,7 +13,7 @@ A free bezier curve editor plugin to add custom easing to your keyframes in Adob
 
 ---
 
-![OpenCurve screenshot](img/opencurve_gif2.gif)
+![OpenCurve screenshot](img/v2-dev-1.png)
 
 ---
 
