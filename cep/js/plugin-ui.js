@@ -2673,19 +2673,14 @@ var _isDragging         = false;
 var _bridge = null;
 
 // Show or hide the whole graph column. When hidden, the preset list takes the
-// full panel width and the status strip moves above the Go button so clip
-// detection stays visible. Everything is done with inline styles because UXP
-// does not relayout on class changes.
+// full panel width. The status strip and the mini timeline sit at the bottom of
+// the panel in both layouts, so they need no moving. Everything is done with
+// inline styles because UXP does not relayout on class changes.
 function _applyGraphVisibility() {
   var leftCol  = document.querySelector('.left-col');
   var handle   = document.getElementById('resize-handle');
   var rightCol = document.getElementById('right-col');
-  var strip    = document.getElementById('status-strip');
-  var goBtn    = document.getElementById('go-btn');
   if (!leftCol || !rightCol) return;
-  // The Go control is the button itself (UXP) or the go-row wrapper holding Go + Undo (CEP)
-  var goEl = (goBtn && goBtn.parentNode && goBtn.parentNode.classList && goBtn.parentNode.classList.contains('go-row')) ? goBtn.parentNode : goBtn;
-  var row  = document.getElementById('_bottom-row');
   if (_graphVisible) {
     leftCol.style.display = '';
     if (handle) handle.style.display = '';
@@ -2693,48 +2688,23 @@ function _applyGraphVisibility() {
     rightCol.style.width    = (savedW && savedW >= 120 && savedW <= 320) ? savedW + 'px' : '';
     rightCol.style.maxWidth = '';
     rightCol.style.flex     = '';
-    // Put the status strip back under the graph and Go back at the bottom of the right column
-    if (strip) { strip.style.flex = ''; strip.style.minWidth = ''; leftCol.appendChild(strip); }
-    if (goEl)  { rightCol.appendChild(goEl); }
-    if (goBtn) { goBtn.style.width = ''; goBtn.style.flex = ''; goBtn.style.borderLeft = ''; }
-    if (goEl && goEl !== goBtn) { goEl.style.flexShrink = ''; }
-    if (row && row.parentNode) row.parentNode.removeChild(row);
   } else {
     leftCol.style.display = 'none';
     if (handle) handle.style.display = 'none';
     rightCol.style.width    = '100%';
     rightCol.style.maxWidth = 'none';
     rightCol.style.flex     = '1 1 auto';
-    // Status strip and Go share one bottom row: strip takes the width, Go is a narrow button on the right
-    if (!row && strip && goEl) {
-      row = document.createElement('div');
-      row.id = '_bottom-row';
-      row.style.cssText = 'display:flex;flex-direction:row;align-items:stretch;flex-shrink:0;';
-      rightCol.appendChild(row);
-      row.appendChild(strip);
-      row.appendChild(goEl);
-      strip.style.flex     = '1 1 auto';
-      strip.style.minWidth = '0';
-      goBtn.style.width      = '112px';
-      goBtn.style.flex       = '0 0 112px';
-      goBtn.style.borderLeft = '1px solid rgba(255,255,255,0.08)';
-      if (goEl !== goBtn) goEl.style.flexShrink = '0';
-    }
   }
   _fitGoForUndo();
   _applyPresetLayout(true);
 }
 
-// The Undo button floats over the right end of Go. In the hidden-graph layout
-// Go is only 112px wide, so nudge its label left while the button is showing.
-// Inline style because UXP doesn't relayout on class changes.
+// The Undo button floats over the right end of Go. Go is full width in both
+// layouts now (the status strip no longer shares its row), so there is nothing
+// to nudge; this stays as the one place to revisit if Go ever gets narrow again.
 function _fitGoForUndo() {
   var goBtn = document.getElementById('go-btn');
-  var undo  = document.getElementById('undo-btn');
-  if (!goBtn) return;
-  var shown  = !!undo && undo.style.display !== 'none' && !undo.classList.contains('btn-hidden');
-  var narrow = !!document.getElementById('_bottom-row');
-  goBtn.style.paddingRight = (shown && narrow) ? '28px' : '';
+  if (goBtn) goBtn.style.paddingRight = '';
 }
 
 function _applyPresetLayout(force) {

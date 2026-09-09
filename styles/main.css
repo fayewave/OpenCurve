@@ -58,7 +58,7 @@ html, body {
   overflow: hidden;
 }
 
-/* ─── Left column (graph + status) ──────────────────────────── */
+/* ─── Left column (graph toolbar + graph) ───────────────────── */
 .left-col {
   display: flex;
   flex-direction: column;

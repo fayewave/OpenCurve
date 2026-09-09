@@ -17,7 +17,7 @@
     </div>
     <div class="main-row">
 
-      <!-- Left column: graph + status -->
+      <!-- Left column: graph toolbar + graph -->
       <div class="left-col">
         <!-- Graph toolbar: sits above the graph in its own row (zoom now, more tools later) -->
         <div id="graph-toolbar" class="graph-toolbar">
@@ -66,11 +66,6 @@
             <div id="graph-coords" class="graph-coords"></div>
           </div>
         </div>
-        <div id="status-strip" class="status-strip status-idle">
-          <span class="status-dot"><svg width="10" height="10" viewBox="-1 -1 10 10" fill="none"><polygon class="mk-diamond" points="4,0.9 7.1,4 4,7.1 0.9,4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path class="mk-tick" d="M0.7 4.4 L3.1 6.8 L7.4 1.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" opacity="0" visibility="hidden"/></svg></span>
-          <span id="status-clip" class="status-clip" style="display:none"></span>
-          <span id="status-text" class="status-text">Select a clip</span>
-        </div>
       </div>
 
       <!-- Resize handle -->
@@ -115,6 +110,13 @@
         <div id="tl-empty" class="tl-empty"></div>
       </div>
       <div id="tl-zoom" class="tool-btn tl-zoom"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3.2 1.5H1.5v9h1.7M8.8 1.5h1.7v9H8.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><polygon points="6,3.4 8.6,6 6,8.6 3.4,6" fill="currentColor"/></svg></div>
+    </div>
+    <!-- Status strip: the very bottom of the panel, under the mini timeline, in both layouts
+         (graph on or off). -->
+    <div id="status-strip" class="status-strip status-idle">
+      <span class="status-dot"><svg width="10" height="10" viewBox="-1 -1 10 10" fill="none"><polygon class="mk-diamond" points="4,0.9 7.1,4 4,7.1 0.9,4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path class="mk-tick" d="M0.7 4.4 L3.1 6.8 L7.4 1.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" opacity="0" visibility="hidden"/></svg></span>
+      <span id="status-clip" class="status-clip" style="display:none"></span>
+      <span id="status-text" class="status-text">Select a clip</span>
     </div>
   </div>
 
