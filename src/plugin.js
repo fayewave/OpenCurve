@@ -2727,9 +2727,10 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
     var bg = _tlMk('rect', { x: 0, y: top, width: W, height: laneH, fill: c.bg });
     els.svg.appendChild(bg);
     // Same divider as the row: its 7% border over its 5% background on the strip's
-    // #111 comes out #2d2d2d. Solid hex on purpose: an rgba stroke set at runtime
-    // renders opaque white in UXP (fills with alpha are fine)
-    els.svg.appendChild(_tlMk('line', { x1: 0, y1: top + laneH - 0.5, x2: W, y2: top + laneH - 0.5, stroke: '#2d2d2d', 'stroke-width': 1 }));
+    // #111 is 12% white. Drawn like the graph grid (white + stroke-opacity): a
+    // runtime-created line in UXP ignores its stroke colour, rgba or hex, and
+    // draws white, so only the opacity can shade it
+    els.svg.appendChild(_tlMk('line', { x1: 0, y1: top + laneH - 0.5, x2: W, y2: top + laneH - 0.5, stroke: '#ffffff', 'stroke-opacity': '0.12', 'stroke-width': 1 }));
     var kf = (p.tlKf || []).slice().sort(function(x, y){ return x - y; });
     // Bars: bakes (green), other per-frame runs (grey), then the pair the playhead is in
     var spans = (p.tlSpans || []).map(function(sp){ return { a: sp[0], b: sp[1], kind: 'bake' }; });
@@ -2773,7 +2774,7 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
   });
   // Playhead: a line with a small cap at the top, placed by _tlPlacePlayhead
   _tlPh = {
-    line: _tlMk('line', { x1: 0, y1: 0, x2: 0, y2: H, stroke: '#e6e6e6', 'stroke-width': 1 }), // hex: see the divider note
+    line: _tlMk('line', { x1: 0, y1: 0, x2: 0, y2: H, stroke: '#ffffff', 'stroke-opacity': '0.9', 'stroke-width': 1 }), // see the divider note
     tri:  _tlMk('polygon', { points: '0,0', fill: '#e6e6e6' }),
   };
   els.svg.appendChild(_tlPh.line);
