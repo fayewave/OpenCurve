@@ -466,11 +466,14 @@ function detectContext() {
       // when we baked). A 2+ frame pair inside a record's range means that
       // bake was undone outside the panel (Ctrl+Z), so the record is dropped.
       var bakeIds = [];
+      var bakeCurve = null;
       for (var _bi = 0; _bi < _undoStack.length; _bi++) {
         var _bb = _undoStack[_bi];
         for (var _bj = _bb.length - 1; _bj >= 0; _bj--) {
           var _inf = _bb[_bj];
           if (_inf.compIdx !== p.compIdx || _inf.propIdx !== p.propIdx) continue;
+          // Restored records carry their sequence id; never match another sequence's clips
+          if (_inf.seqId && seqId && _inf.seqId !== seqId) continue;
           // Same clip? nodeId is stable when the clip is moved; fall back to name + start
           if (_inf.nodeId && p.nodeId) {
             if (_inf.nodeId !== p.nodeId) continue;
@@ -480,9 +483,11 @@ function detectContext() {
           // Same property? Component indices shift when effects are added/removed
           if (_inf.displayName && p.displayName && _inf.displayName !== p.displayName) continue;
           // Record only counts while the bake's fingerprint is still on the
-          // property: both original keyframes and at least half of ours.
+          // property: both original keyframes and at least half of ours. A pair
+          // inside the span wider than the bake's keyframe spacing means the
+          // bake was undone outside the panel (one of ours would be narrower).
           var _alive = (p.kfSecs && p.kfSecs.length) ? _ocBakeAlive(_inf, p.kfSecs) : true;
-          if (!_alive || (!p.isOutside && p.frameCount >= 2 && p.kf0Time >= _inf.kf0Time - 0.0001 && p.kf1Time <= _inf.kf1Time + 0.0001)) {
+          if (!_alive || (!p.isOutside && p.frameCount > (_inf.step || 1) && p.kf0Time >= _inf.kf0Time - 0.0001 && p.kf1Time <= _inf.kf1Time + 0.0001)) {
             _bb.splice(_bj, 1);
             continue;
           }
@@ -491,16 +496,20 @@ function detectContext() {
           // the clip the row is a normal row and another area can be baked.
           if (p.isOutside || p.kf0Time < _inf.kf0Time - 0.0001 || p.kf1Time > _inf.kf1Time + 0.0001) continue;
           bakeIds.push(_inf.id);
+          if (!bakeCurve && _inf.curve) bakeCurve = _inf.curve;
         }
       }
       var _jp = (p.kfSecs && p.kfSecs.length) ? _ocJumpPair(p.kfSecs, ph - p.seqOffset, p.fps) : null;
       var _entry = { key: p.key, displayName: p.displayName, jumpSec: (_jp ? _jp.start : p.kf0Time) + p.seqOffset, bakeIds: bakeIds };
+      if (bakeCurve) _entry.bakeCurve = bakeCurve;
       // Nearest 2+ frame pair, for the status strip's click-to-jump
       var _near = (p.kfSecs && p.kfSecs.length) ? _ocNearestPair(p.kfSecs, ph - p.seqOffset, p.fps) : null;
       if (_near) { _entry.nearSec = _near.start + p.seqOffset; _entry.nearDist = _near.dist; }
       paramList.push(_entry);
 
-      if (!p.isOutside && p.frameCount >= 2) {
+      // A pair inside a live bake record is that bake's own keyframes (they can be
+      // 2+ frames apart with a wider spacing), so it isn't bakeable again
+      if (!p.isOutside && p.frameCount >= 2 && bakeIds.length === 0) {
         validParamKeys.push(p.key);
         paramContexts[p.key] = {
           trackIdx: p.trackIdx,
@@ -575,6 +584,9 @@ function bakeKeyframes(argsJSON) {
     var args = _jsonParse(argsJSON);
     var paramRefs = args.params;
     var curve = args.curve;
+    // Keyframe spacing from the panel's Settings (1, 2 or 4 frames)
+    var stepReq = Math.max(1, parseInt(args.step, 10) || 1);
+    var bSeqId = '';
 
     var project = app.project;
     var sequence = project.activeSequence;
@@ -604,6 +616,7 @@ function bakeKeyframes(argsJSON) {
       }
     }
 
+    try { bSeqId = String(sequence.sequenceID || sequence.name || ''); } catch(e) {}
     var _hasUndoGroup = (typeof app.beginUndoGroup === 'function' && typeof app.endUndoGroup === 'function');
     if (_hasUndoGroup) app.beginUndoGroup('OpenCurve bake');
     try {
@@ -624,9 +637,11 @@ function bakeKeyframes(argsJSON) {
 
         if (totalFrames < 2) continue;
 
+        // Short pairs are always written densely enough to get at least two keyframes
+        var step = Math.max(1, Math.min(stepReq, Math.floor((totalFrames - 1) / 2)));
         var addedTimes = [];
 
-        for (var f = 1; f < totalFrames; f++) {
+        for (var f = step; f < totalFrames; f += step) {
           var t = f / totalFrames;
           var easedT = _sampleBezier(t, curve);
           // Compound (Position / Anchor Point) values are passed as [x, y]
@@ -647,7 +662,7 @@ function bakeKeyframes(argsJSON) {
           // redraw per param (so the keyframes actually appear without
           // re-selecting the clip) instead of a redraw on every frame, which
           // would defeat the batching speed-up.
-          var doUpdate = (f === totalFrames - 1);
+          var doUpdate = (f + step >= totalFrames);
 
           try {
             prop.addKey(timeSec);
@@ -679,6 +694,9 @@ function bakeKeyframes(argsJSON) {
           nodeId: bNodeId,
           displayName: label,
           times: addedTimes,
+          step: step,                // keyframe spacing used, so a wider pair inside the span means an outside undo
+          curve: curve,              // for the row's "load baked curve" button
+          seqId: bSeqId,             // records are restored across sessions; never match another sequence's clips
         });
       }
     } finally {
@@ -704,6 +722,45 @@ function bakeKeyframes(argsJSON) {
 
 var _undoStack = [];   // batches (one per Go press) of bake records; see bakeKeyframes' undoInfo
 var _ocBakeSeq = 0;    // record id counter
+var _ocSessionFloor = 0; // batches below this index were restored from a previous session:
+                         // they colour rows and feed the row undo, but not the panel-wide Undo button
+var _OC_RECORDS_MAX = 300;
+
+// Records as JSON for the panel to keep in localStorage (see cep-bridge.js).
+// Newest batches are kept; the live ExtendScript objects are plain data already.
+function exportBakeRecords() {
+  try {
+    _ocPruneBatches();
+    var out = [], n = 0;
+    for (var bi = _undoStack.length - 1; bi >= 0 && n < _OC_RECORDS_MAX; bi--) {
+      out.unshift(_undoStack[bi]); n += _undoStack[bi].length;
+    }
+    return _jsonStringify(out);
+  } catch(e) { return '[]'; }
+}
+// Restore records saved by exportBakeRecords (called once when the panel opens)
+function importBakeRecords(json) {
+  try {
+    var arr = _jsonParse(json);
+    if (!(arr instanceof Array)) return '0';
+    var batches = [], count = 0;
+    for (var i = 0; i < arr.length; i++) {
+      var b = arr[i];
+      if (!(b instanceof Array)) continue;
+      var clean = [];
+      for (var j = 0; j < b.length; j++) {
+        var r = b[j];
+        if (!r || typeof r.id !== 'number' || !(r.times instanceof Array)) continue;
+        clean.push(r); count++;
+        if (r.id > _ocBakeSeq) _ocBakeSeq = r.id;
+      }
+      if (clean.length) batches.push(clean);
+    }
+    _undoStack = batches.concat(_undoStack);
+    _ocSessionFloor = batches.length;
+    return String(count);
+  } catch(e) { return '0'; }
+}
 
 // Remove the keyframes one bake record added, after checking the indices still
 // point at the clip/component we baked into (the timeline may have changed).
@@ -831,8 +888,15 @@ function _ocFindBake(id) {
 
 function _ocPruneBatches() {
   for (var bi = _undoStack.length - 1; bi >= 0; bi--) {
-    if (_undoStack[bi].length === 0) _undoStack.splice(bi, 1);
+    if (_undoStack[bi].length === 0) {
+      _undoStack.splice(bi, 1);
+      if (bi < _ocSessionFloor) _ocSessionFloor--;
+    }
   }
+}
+// Batches made this session (what the panel-wide Undo button can revert)
+function _ocSessionBatches() {
+  return Math.max(0, _undoStack.length - _ocSessionFloor);
 }
 
 // Per-row undo: remove the keyframes added by the given bake records
@@ -864,15 +928,15 @@ function undoBakeParam(idsStr) {
     _ocCacheKey = null; _ocParamCache = null;
 
     if (found === 0) {
-      return _jsonStringify({ success: false, error: 'Nothing to undo on this property', remaining: _undoStack.length });
+      return _jsonStringify({ success: false, error: 'Nothing to undo on this property', remaining: _ocSessionBatches() });
     }
     if (removed === 0) {
       var why = skipped > 0
         ? 'Could not undo \u2014 the clip may have moved or changed. Select it and try again.'
         : 'Nothing to undo: those keyframes are already gone';
-      return _jsonStringify({ success: false, error: why, remaining: _undoStack.length });
+      return _jsonStringify({ success: false, error: why, remaining: _ocSessionBatches() });
     }
-    return _jsonStringify({ success: true, removed: removed, skipped: skipped, remaining: _undoStack.length });
+    return _jsonStringify({ success: true, removed: removed, skipped: skipped, remaining: _ocSessionBatches() });
   } catch(err) {
     return _jsonStringify({ success: false, error: err.message || String(err) });
   }
@@ -896,8 +960,9 @@ function jumpPlayhead(sec) {
 function undoBake() {
   try {
     _ocPruneBatches(); // batches emptied by per-row undos
-    if (_undoStack.length === 0) {
-      return _jsonStringify({ success: false, error: 'Nothing to undo' });
+    if (_ocSessionBatches() === 0) {
+      // Records restored from a previous session are undone from their row buttons
+      return _jsonStringify({ success: false, error: 'Nothing to undo from this session' });
     }
 
     var batch = _undoStack.pop();
@@ -923,10 +988,10 @@ function undoBake() {
       // Removed nothing — most likely the clip moved/changed since baking.
       // Put the batch back so the user can retry after reselecting the clip.
       _undoStack.push(batch);
-      return _jsonStringify({ success: false, error: 'Could not undo — the original clip may have moved or changed. Select it and try again.', remaining: _undoStack.length });
+      return _jsonStringify({ success: false, error: 'Could not undo — the original clip may have moved or changed. Select it and try again.', remaining: _ocSessionBatches() });
     }
 
-    return _jsonStringify({ success: true, removed: removed, skipped: skipped, remaining: _undoStack.length });
+    return _jsonStringify({ success: true, removed: removed, skipped: skipped, remaining: _ocSessionBatches() });
   } catch(err) {
     return _jsonStringify({ success: false, error: err.message || String(err) });
   }

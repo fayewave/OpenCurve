@@ -43,6 +43,7 @@
       var args = JSON.stringify({
         params: contexts,
         curve: state.curve,
+        step: OpenCurve.bakeDensity || 1, // keyframe spacing from Settings
       });
 
       // Escape single quotes for evalScript
@@ -74,6 +75,7 @@
             });
             // Show undo button
             _showUndoBtn(true);
+            _saveBakeRecords();
             setTimeout(function() {
               _lastStatus = '';
               OpenCurve.setState({ status: 'idle' });
@@ -107,6 +109,7 @@
           _skipPollUntil = 0;
           if (res.success) {
             if (!res.remaining) _showUndoBtn(false);
+            _saveBakeRecords();
             OpenCurve.showCopyToast('Undone: ' + res.removed + ' keyframes removed from ' + (name || 'property'), '#f0a030');
           } else {
             OpenCurve.showCopyToast(res.error || 'Undo failed', '#f06060');
@@ -126,6 +129,27 @@
 
   OpenCurve.setBridge(bridge);
 
+  // ─── Bake record persistence ─────────────────────────────────────────
+  // The host keeps the bake records (its _undoStack). Mirror them into
+  // localStorage after every change and hand them back on init, so a row can
+  // still show green, load its curve and be undone after the panel or
+  // Premiere was closed. Only bakes made this session feed the Undo button.
+  var _BAKE_RECORDS_KEY = 'opencurve-bake-records';
+  function _saveBakeRecords() {
+    cs.evalScript('exportBakeRecords()', function(r) {
+      try { if (r && r.charAt(0) === '[') localStorage.setItem(_BAKE_RECORDS_KEY, r); } catch(e) {}
+    });
+  }
+  function _loadBakeRecords() {
+    var json = '';
+    try { json = localStorage.getItem(_BAKE_RECORDS_KEY) || ''; } catch(e) {}
+    if (!json) return;
+    var escaped = json.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    cs.evalScript("importBakeRecords('" + escaped + "')", function(r) {
+      console.log('[OC-CEP] bake records restored: ' + r);
+    });
+  }
+
   // ─── Undo button ──────────────────────────────────────────────────────
   function _showUndoBtn(show) {
     var btn = document.getElementById('undo-btn');
@@ -142,6 +166,7 @@
         var res = JSON.parse(result);
         if (res.success) {
           if (!res.remaining) _showUndoBtn(false);
+          _saveBakeRecords();
           _lastStatus = '';
           _skipPollUntil = 0;
           OpenCurve.setState({ bakedParamKeys: [], status: 'idle' });
@@ -436,6 +461,7 @@
   function init() {
     console.log('[OC-CEP] Initializing panel');
     OpenCurve.initPanel();
+    _loadBakeRecords();
     var undoBtn = document.getElementById('undo-btn');
     if (undoBtn && OpenCurve.attachTooltip) {
       undoBtn.removeAttribute('title');

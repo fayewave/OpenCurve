@@ -357,6 +357,42 @@ function _curveFromText(text) {
   return _normalizeCurve(c);
 }
 
+// ─── Flip / Invert (toolbar #flip-curve, #invert-curve) ───────────────────
+// Flip rotates the curve 180 degrees about the centre, so an ease-in becomes
+// the matching ease-out (a symmetric ease-in-out is unchanged). Invert
+// reflects it across the diagonal, which is the inverse easing: an in-out
+// becomes an out-in. Both undo themselves when pressed twice.
+function _flipCurve(c) {
+  var o = { p1x: 1 - c.p2x, p1y: 1 - c.p2y, p2x: 1 - c.p1x, p2y: 1 - c.p1y };
+  if (_hasPts(c)) {
+    o.pts = [];
+    for (var i = c.pts.length - 1; i >= 0; i--) {
+      var p = c.pts[i]; // the incoming and outgoing handles swap roles
+      o.pts.push({ x: 1 - p.x, y: 1 - p.y, ix: 1 - p.ox, iy: 1 - p.oy, ox: 1 - p.ix, oy: 1 - p.iy, smooth: p.smooth !== false });
+    }
+  }
+  return _normalizeCurve(o);
+}
+function _invertCurve(c) {
+  // x and y swap. y may sit outside 0..1 (overshoot) but x can't, so clamp it.
+  function cx(v) { return Math.max(0, Math.min(1, v)); }
+  var o = { p1x: cx(c.p1y), p1y: c.p1x, p2x: cx(c.p2y), p2y: c.p2x };
+  if (_hasPts(c)) {
+    o.pts = [];
+    for (var i = 0; i < c.pts.length; i++) {
+      var p = c.pts[i];
+      o.pts.push({ x: cx(p.y), y: p.x, ix: cx(p.iy), iy: p.ix, ox: cx(p.oy), oy: p.ox, smooth: p.smooth !== false });
+    }
+  }
+  return _normalizeCurve(o);
+}
+// Replace the current curve with fn(curve), animated like a preset click
+function _applyCurveOp(fn) {
+  var c = fn(_cloneCurve(getState().curve));
+  clearPresetActive();
+  _animateToCurve(c, function(cur) { if (_svgW > 0 && _svgH > 0) updateDynamicSVG(cur, _svgW, _svgH); });
+}
+
 // SVG for the interior points: a tangent line, a handle and an anchor per side.
 // Elements are created once per point (createElementNS: UXP has no SVG innerHTML)
 // and re-positioned on every redraw; the set is rebuilt only when the count changes.
@@ -1009,6 +1045,16 @@ function _undoBakeForKey(key) {
   if (_bridge && _bridge.onUndoParam) _bridge.onUndoParam(live.bakeIds, live.displayName);
 }
 
+// Row curve button: the host attaches the curve its bake record used to the
+// availableParams entry as `bakeCurve`; put it back on the graph.
+function _loadBakedCurve(key) {
+  var live = (getState().availableParams || []).filter(function(x){ return x.key === key; })[0];
+  if (!live || !live.bakeCurve) { _showCopyToast('No curve was recorded for this bake', '#f0a030'); return; }
+  clearPresetActive();
+  _animateToCurve(_cloneCurve(live.bakeCurve), function(cur) { if (_svgW > 0 && _svgH > 0) updateDynamicSVG(cur, _svgW, _svgH); });
+  _showCopyToast('Loaded the curve baked on ' + (live.displayName || 'this property'));
+}
+
 // Status strip click while the playhead is outside every keyframe pair: the
 // scan tags each property with the start of its nearest 2+ frame pair
 // (nearSec, sequence seconds) and how far the playhead is from it (nearDist).
@@ -1132,6 +1178,18 @@ function renderUI(s) {
           ev.stopPropagation();
           _undoBakeForKey(p.key);
         });
+        // Curve: put the curve that was baked here back on the graph. Shown
+        // next to the undo button whenever the row's bake record has one.
+        var propCurve = document.createElement('span');
+        propCurve.className = 'prop-curve';
+        _addPressState(propCurve);
+        propCurve.style.display = 'none';
+        _attachTooltip(propCurve, 'Load the curve that was baked on this property');
+        propCurve.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2.5 11.5C6 11.5 8 2.5 11.5 2.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="2.5" cy="11.5" r="1.6" fill="currentColor"/><circle cx="11.5" cy="2.5" r="1.6" fill="currentColor"/></svg>';
+        propCurve.addEventListener('click', function(ev) {
+          ev.stopPropagation();
+          _loadBakedCurve(p.key);
+        });
         // Pin: jump the playhead to this property's keyframes (doesn't toggle selection)
         var propPin = document.createElement('span');
         propPin.className = 'prop-pin';
@@ -1145,6 +1203,7 @@ function renderUI(s) {
           var live = (getState().availableParams || []).filter(function(x){ return x.key === p.key; })[0];
           _jumpToParam(live || p);
         });
+        btn.appendChild(propCurve);
         btn.appendChild(propUndo);
         btn.appendChild(propPin);
         btn.dataset.key = p.key;
@@ -1180,6 +1239,11 @@ function renderUI(s) {
       // Undo button only on rows with a bake to undo (inline style: UXP ignores class-driven display changes)
       var undoEl = btn.querySelector('.prop-undo');
       if (undoEl) undoEl.style.display = bakedKeys.indexOf(k) >= 0 ? 'flex' : 'none';
+      var curveEl = btn.querySelector('.prop-curve');
+      if (curveEl) {
+        var brow = (s.availableParams || []).filter(function(x){ return x.key === k; })[0];
+        curveEl.style.display = (bakedKeys.indexOf(k) >= 0 && brow && brow.bakeCurve) ? 'flex' : 'none';
+      }
     });
   }
 
@@ -1252,6 +1316,31 @@ function initPanel() {
     });
     addPtBtn.addEventListener('click', function() { if (!_peakMode) _addPoint(); });
   }
+
+  // Flip / Invert: one-press curve transforms (see _flipCurve / _invertCurve)
+  var flipBtn = document.getElementById('flip-curve');
+  if (flipBtn) {
+    _attachTooltip(flipBtn, 'Flip the curve: an ease-in becomes the matching ease-out');
+    flipBtn.addEventListener('click', function() { _applyCurveOp(_flipCurve); });
+  }
+  var invertBtn = document.getElementById('invert-curve');
+  if (invertBtn) {
+    _attachTooltip(invertBtn, 'Invert the curve: swap time and value, so an in-out ease becomes an out-in');
+    invertBtn.addEventListener('click', function() { _applyCurveOp(_invertCurve); });
+  }
+
+  // Enter presses Go (when the panel has focus and nothing else is taking keys)
+  window.addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter' || e.repeat) return;
+    var t   = e.target;
+    var tag = t && t.tagName ? String(t.tagName).toLowerCase() : '';
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || (t && t.isContentEditable)) return;
+    if (document.getElementById('settings-modal') || document.getElementById('oc-confirm')) return;
+    var go = document.getElementById('go-btn');
+    if (!go || go.classList.contains('btn-disabled')) return;
+    e.preventDefault();
+    go.click();
+  });
 
   // Settings: same modal as the flyout menu and the context menus
   var settingsBtn = document.getElementById('graph-settings');
@@ -2115,6 +2204,13 @@ var _presetLayout       = localStorage.getItem(_LAYOUT_KEY) || 'list';
 var _GRAPH_KEY          = 'opencurve-graph-visible';
 // Defaults to On — only hidden when the user has explicitly disabled the graph.
 var _graphVisible       = localStorage.getItem(_GRAPH_KEY) !== 'off';
+var _DENSITY_KEY        = 'opencurve-bake-density';
+// Keyframe spacing when baking, in frames: 1 (every frame, exact), 2 or 4.
+// Premiere draws straight lines between the baked keyframes, so wider spacing
+// trades a little accuracy for a lighter keyframe track (the host reads it
+// from the bake args, see bakeKeyframes in host.jsx).
+var _bakeDensity        = parseInt(localStorage.getItem(_DENSITY_KEY), 10) || 1;
+if ([1, 2, 4].indexOf(_bakeDensity) < 0) _bakeDensity = 1;
 var _isDragging         = false;
 
 // Bridge object — set by platform-specific code before calling initPanel()
@@ -2512,6 +2608,7 @@ function _checkForUpdates(silent) {
 // onOk runs after the dialog has closed. Used by reset-all and preset delete.
 function _confirmDialog(titleText, msgText, okLabel, onOk) {
   var overlay = document.createElement('div');
+  overlay.id = 'oc-confirm';
   overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.65);z-index:99998;display:flex;align-items:center;justify-content:center;';
 
   var box = document.createElement('div');
@@ -2567,6 +2664,8 @@ function _confirmReset() {
     localStorage.removeItem(_SCAN_PLAYBACK_KEY);
     localStorage.removeItem(_GRAPH_KEY);
     localStorage.removeItem(_PEAK_KEY);
+    localStorage.removeItem(_DENSITY_KEY);
+    _bakeDensity        = 1;
     _applyCurveColor('#4a9eff');
     _animationsOn       = true;
     _updateNotifsOn     = true;
@@ -2862,6 +2961,46 @@ function _showSettingsModal() {
   gridRow.appendChild(gridBtns);
   rowsCol.appendChild(gridRow);
 
+  // Keyframe spacing row (how far apart the baked keyframes are)
+  var densRow = document.createElement('div');
+  densRow.style.cssText = 'display:flex;align-items:center;padding:0 0 0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);';
+  _attachTooltip(densRow, 'How far apart the baked keyframes are. Every frame follows the curve exactly; 2 or 4 frames writes fewer keyframes, with straight lines between them');
+  var densIcon = document.createElement('span');
+  densIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
+  densIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><line x1="1" y1="8" x2="15" y2="8" stroke="#b0b0b0" stroke-width="1.2"/><polygon points="3.5,5.5 6,8 3.5,10.5 1,8" fill="#b0b0b0"/><polygon points="8,5.5 10.5,8 8,10.5 5.5,8" fill="#b0b0b0"/><polygon points="12.5,5.5 15,8 12.5,10.5 10,8" fill="#b0b0b0"/></svg>';
+  var densLabel = document.createElement('span');
+  densLabel.style.cssText = 'font-size:14px;flex:1;color:#d4d4d4;';
+  densLabel.textContent = 'Keyframe Spacing';
+  var densBtns = document.createElement('div');
+  densBtns.style.cssText = 'display:flex;gap:0;flex-shrink:0;align-self:stretch;';
+  var densSteps = [1, 2, 4];
+  var densBtnEls = [];
+  densSteps.forEach(function(step) {
+    var db = document.createElement('div');
+    db.textContent = step + ' fr';
+    var isActive = _bakeDensity === step;
+    db.style.cssText = 'font-size:12px;padding:0 8px;cursor:pointer;display:flex;align-items:center;justify-content:center;min-width:48px;'
+      + 'color:' + (isActive ? '#3ddc84' : '#666') + ';'
+      + 'background:' + (isActive ? 'rgba(61,220,132,0.08)' : 'transparent') + ';';
+    db.addEventListener('mouseenter', function() { db.style.background = _bakeDensity === step ? 'rgba(61,220,132,0.15)' : 'rgba(255,255,255,0.05)'; });
+    db.addEventListener('mouseleave', function() { db.style.background = _bakeDensity === step ? 'rgba(61,220,132,0.08)' : 'transparent'; });
+    db.addEventListener('click', function() {
+      _bakeDensity = step;
+      localStorage.setItem(_DENSITY_KEY, step);
+      densBtnEls.forEach(function(el, idx) {
+        var a = densSteps[idx] === step;
+        el.style.color = a ? '#3ddc84' : '#666';
+        el.style.background = a ? 'rgba(61,220,132,0.08)' : 'transparent';
+      });
+    });
+    densBtnEls.push(db);
+    densBtns.appendChild(db);
+  });
+  densRow.appendChild(densIcon);
+  densRow.appendChild(densLabel);
+  densRow.appendChild(densBtns);
+  rowsCol.appendChild(densRow);
+
   // Preset layout row
   var layoutRow = document.createElement('div');
   layoutRow.style.cssText = 'display:flex;align-items:center;padding:0 0 0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,0.07);';
@@ -3012,6 +3151,9 @@ return {
 
   // Scan-during-playback toggle (read by bridge poll loop)
   get scanDuringPlayback() { return _scanDuringPlayback; },
+
+  // Keyframe spacing for the bake (read by the bridge when Go is pressed)
+  get bakeDensity() { return _bakeDensity; },
 
   // Bridge setter
   setBridge: function(b) { _bridge = b; },
