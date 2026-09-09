@@ -1109,7 +1109,7 @@ var _TL_LANE_MAX  = 10;   // lane height in px with a few properties (24 once th
 var _TL_LANE_MIN  = 4;    // ...thinning down to this with many (lanes never merge)
 var _TL_LANES_H   = 40;   // the lanes share this much height before they reach the minimum
 var _TL_SNAP_PX   = 5;    // a press this close to a keyframe lands exactly on it
-var _TL_DBL_MS    = 400;  // two presses on a lane this close together toggle the property
+var _TL_DBL_MS    = 500;  // two presses on a lane this close together toggle the property
 var _tlEls   = null;  // { root, wrap, svg, readout, empty, zoom }
 var _tlW     = 0;     // canvas width from the ResizeObserver
 var _tlSig   = '';    // what the lanes were last built from
@@ -1429,25 +1429,41 @@ function _tlInit() {
   // Press and release without moving = jump (no scrubbing, one jump per press).
   // A second press on the same lane within _TL_DBL_MS toggles that property for
   // baking, like clicking its row (the first press already moved the playhead
-  // there, so the row is usually blue by the time it is selected). Detected by
-  // hand: dblclick is not relied on in UXP.
-  var down = null, lastUp = null;
-  svg.addEventListener('pointerdown', function(e) { if (e.button === 0) down = pos(e); });
+  // there, so the row is usually blue by the time it is selected). The double
+  // press is recognised on the second press-down, not its release: the first
+  // press moves the playhead, the next poll rebuilds the strip's SVG ~100ms
+  // later, and that rebuild can drop a pointerleave right under the second
+  // press, which used to cancel it. A native dblclick is honoured too where the
+  // host sends one, with a guard so the two paths can't toggle twice.
+  var down = null, lastUp = null, lastToggle = 0;
+  function toggleLane(li) {
+    if (li < 0 || !_tlLanes[li]) return;
+    if (Date.now() - lastToggle < 300) return;
+    lastToggle = Date.now();
+    lastUp = null; down = null;
+    _togglePropKey(_tlLanes[li].key);
+  }
+  svg.addEventListener('pointerdown', function(e) {
+    if (e.button !== 0) return;
+    var p = pos(e), li = laneAt(p.y), now = Date.now();
+    if (lastUp && li >= 0 && lastUp.lane === li && now - lastUp.t < _TL_DBL_MS && Math.abs(p.x - lastUp.x) < 12) {
+      toggleLane(li);
+      return;
+    }
+    down = p;
+    try { svg.setPointerCapture(e.pointerId); } catch(_) {} // the release reaches us even if the SVG is rebuilt under the pointer
+  });
   svg.addEventListener('pointerup', function(e) {
     if (!down) return;
     var p = pos(e), moved = Math.abs(p.x - down.x) > 4 || Math.abs(p.y - down.y) > 4;
     down = null;
     if (moved) { lastUp = null; return; }
-    var li = laneAt(p.y), now = Date.now();
-    if (lastUp && li >= 0 && lastUp.lane === li && now - lastUp.t < _TL_DBL_MS && Math.abs(p.x - lastUp.x) < 6) {
-      lastUp = null;
-      if (_tlLanes[li]) _togglePropKey(_tlLanes[li].key);
-      return;
-    }
-    lastUp = { t: now, x: p.x, lane: li };
+    var li = laneAt(p.y);
+    lastUp = { t: Date.now(), x: p.x, lane: li };
     var t = target(p.x, li);
     if (t) _jumpToParam({ jumpSec: t.sec });
   });
+  svg.addEventListener('dblclick', function(e) { toggleLane(laneAt(pos(e).y)); });
   svg.addEventListener('pointermove', function(e) {
     var p = pos(e), li = laneAt(p.y), t = target(p.x, li);
     var lane = li >= 0 ? _tlLanes[li] : null;
@@ -1455,7 +1471,7 @@ function _tlInit() {
     _tlRowHover(lane ? lane.key : null);
     _tlShowReadout(t, lane);
   });
-  function leave() { down = null; _tlHighlightLane(null); _tlRowHover(null); _tlShowReadout(null); }
+  function leave() { _tlHighlightLane(null); _tlRowHover(null); _tlShowReadout(null); } // a press in flight is kept: a rebuild can fire this mid-press
   svg.addEventListener('pointerleave', leave);
   svg.addEventListener('mouseleave',   leave);
   // Zoom toggle: whole clip <-> just the keyframes
