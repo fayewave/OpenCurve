@@ -4870,7 +4870,7 @@ function _applyPresetLayout(force) {
   }
 
   // Each preset button
-  list.querySelectorAll('.preset-btn').forEach(function(btn, idx) {
+  list.querySelectorAll('.preset-btn').forEach(function(btn) {
     if (isGrid) {
       btn.style.width = itemW;
       btn.style.flexDirection = 'column';
@@ -4894,9 +4894,6 @@ function _applyPresetLayout(force) {
       btn.style.padding = '';
       btn.style.border = '';
       btn.style.borderBottom = '';
-      // Left-column rows carry the divider between the columns, in the same
-      // colour as the row separators
-      btn.style.borderRight = (idx % 2 === 0) ? '1px solid var(--border)' : '';
       btn.style.marginRight = '0';
       btn.style.marginBottom = '0';
       btn.style.textAlign = '';
