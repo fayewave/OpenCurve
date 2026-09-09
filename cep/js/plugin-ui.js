@@ -1130,6 +1130,24 @@ function _addPressState(el) {
   el.addEventListener('pointerenter', function() { el.classList.add('hover'); });
 }
 
+// Row / status-strip marker: a hollow diamond, a filled diamond or a tick.
+// Both shapes live in the SVG and are toggled with opacity + visibility
+// attributes (UXP can't rebuild SVG via innerHTML and ignores class swaps).
+function _setMarker(host, mode) {
+  if (!host) return;
+  var d = host.querySelector('.mk-diamond'), t = host.querySelector('.mk-tick');
+  var tick = mode === 'tick';
+  if (d) {
+    d.setAttribute('fill', mode === 'filled' ? 'currentColor' : 'none');
+    d.setAttribute('opacity',    tick ? '0' : '1');
+    d.setAttribute('visibility', tick ? 'hidden' : 'visible');
+  }
+  if (t) {
+    t.setAttribute('opacity',    tick ? '1' : '0');
+    t.setAttribute('visibility', tick ? 'visible' : 'hidden');
+  }
+}
+
 function _attachTooltip(el, text) {
   if (!el) return;
   var DELAY = 500;
@@ -1161,7 +1179,7 @@ function renderUI(s) {
         // Diamond marker (matches the status strip) + truncating label
         var propDiamond = document.createElement('span');
         propDiamond.className = 'prop-diamond';
-        propDiamond.innerHTML = '<svg width="8" height="8" viewBox="0 0 8 8" fill="none"><polygon points="4,0.9 7.1,4 4,7.1 0.9,4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
+        propDiamond.innerHTML = '<svg width="8" height="8" viewBox="0 0 8 8" fill="none"><polygon class="mk-diamond" points="4,0.9 7.1,4 4,7.1 0.9,4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path class="mk-tick" d="M1.2 4.3 L3.2 6.3 L6.9 2.1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0" visibility="hidden"/></svg>';
         var propLabel = document.createElement('span');
         propLabel.className = 'prop-label';
         propLabel.textContent = p.displayName;
@@ -1240,9 +1258,8 @@ function renderUI(s) {
       var k = btn.dataset.key;
       var isSel = selKeys.indexOf(k) >= 0;
       btn.classList.toggle('active', isSel);
-      // Diamond: filled while selected, hollow otherwise (attribute, not class: UXP SVG)
-      var poly = btn.querySelector('.prop-diamond polygon');
-      if (poly) poly.setAttribute('fill', isSel ? 'currentColor' : 'none');
+      // Marker: a tick while selected, a hollow diamond otherwise
+      _setMarker(btn.querySelector('.prop-diamond'), isSel ? 'tick' : 'hollow');
       // Selected but the playhead isn't between its keyframes yet: orange until it is
       btn.classList.toggle('pending', isSel && validKeys.indexOf(k) < 0);
       // Playhead is already between this property's keyframes: pin shows blue even when unselected
@@ -1275,10 +1292,10 @@ function renderUI(s) {
     var cfg  = STATUS_CONFIG[s.status] || STATUS_CONFIG['idle'];
     var msg  = typeof cfg.text === 'function' ? cfg.text(s) : cfg.text;
     strip.className = 'status-strip ' + cfg.cls;
-    // Diamond: hollow while properties are detected but none selected (grey
-    // "N properties ready"), solid otherwise; attribute swap, like the rows
-    var dotPoly = strip.querySelector('.status-dot polygon');
-    if (dotPoly) dotPoly.setAttribute('fill', s.status === 'no-selection' ? 'none' : 'currentColor');
+    // Marker: hollow diamond while properties are detected but none selected
+    // (grey "N properties ready"), a tick once some are (blue), solid otherwise
+    _setMarker(strip.querySelector('.status-dot'),
+      s.status === 'no-selection' ? 'hollow' : s.status === 'valid' ? 'tick' : 'filled');
     // Clip name lives in its own span so a long name truncates on its own
     // instead of pushing the count off the end of the strip
     var clipEl   = document.getElementById('status-clip');
