@@ -2602,6 +2602,23 @@ var _TL_ROW_H     = 32;   // lane height = .prop-btn height, so lane i sits besi
 var _TL_MIN_H     = 32;   // the empty strip (no rows) keeps one row's height
 var _TL_PROPS_KEY = 'opencurve-props-width';
 var _TL_PROPS_MIN = 100, _TL_PROPS_MAX = 320, _TL_PROPS_DEF = 180; // property column width (px), dragged at #tl-prop-handle
+// Drag limits scale with the panel, like the timeline height: a resizable column
+// may take everything but _OC_OTHER_MIN px of its row, so the other side (the
+// graph column, or the lanes) never vanishes. _TL_PROPS_MAX / 320 are only the
+// fallbacks while the row can't be measured (hidden or not laid out yet).
+var _OC_OTHER_MIN = 100;
+function _ocMaxColW(sel, minW, fallback) {
+  var el = document.querySelector(sel);
+  var w  = el ? el.clientWidth : 0;
+  return w > 0 ? Math.max(minW, w - _OC_OTHER_MIN) : fallback;
+}
+function _tlMaxPropsW()  { return _ocMaxColW('#oc-timeline', _TL_PROPS_MIN, _TL_PROPS_MAX); }
+function _sidebarMaxW()  { return _ocMaxColW('.main-row', 120, 320); }
+// Saved preset-column width, clamped to the panel; 0 = use the CSS default
+function _sidebarSavedW() {
+  var w = parseInt(localStorage.getItem('opencurve-sidebar-width'), 10);
+  return w >= 120 ? Math.min(w, _sidebarMaxW()) : 0;
+}
 var _TL_SNAP_PX   = 5;    // a press this close to a keyframe lands exactly on it
 var _TL_DBL_MS    = 400;  // two presses on a lane this close together toggle the property
 var _tlEls   = null;  // { root, scroll, inner, wrap, svg, empty, fade, fadeTop }
@@ -2942,7 +2959,7 @@ function _tlApplyHeight(live) {
 // the status strip runs under the lanes; the same divider sizes both.
 function _tlSavedPropsWidth() {
   var w = parseInt(localStorage.getItem(_TL_PROPS_KEY), 10);
-  return (w >= _TL_PROPS_MIN && w <= _TL_PROPS_MAX) ? w : _TL_PROPS_DEF;
+  return Math.min(w >= _TL_PROPS_MIN ? w : _TL_PROPS_DEF, _tlMaxPropsW());
 }
 // Go is as wide as the property column plus whatever a vertical scrollbar in
 // #tl-scroll takes: the scrollbar narrows the rows' column, so without this Go's
@@ -3090,7 +3107,7 @@ function _tlInit() {
     });
     handle.addEventListener('pointermove', function(e) {
       if (!_resizing) return;
-      var w = Math.max(_TL_PROPS_MIN, Math.min(_TL_PROPS_MAX, _rw + (_rx - e.clientX)));
+      var w = Math.max(_TL_PROPS_MIN, Math.min(_tlMaxPropsW(), _rw + (_rx - e.clientX)));
       props.style.width = w + 'px';
       props.style.flex  = '0 0 ' + w + 'px';
       _tlPropsW = w;
@@ -4262,8 +4279,8 @@ function initPanel() {
   var rightCol     = document.getElementById('right-col');
   if (resizeHandle && rightCol) {
     var _RESIZE_KEY = 'opencurve-sidebar-width';
-    var _savedW = parseInt(localStorage.getItem(_RESIZE_KEY), 10);
-    if (_savedW && _savedW >= 120 && _savedW <= 320) rightCol.style.width = _savedW + 'px';
+    var _savedW = _sidebarSavedW();
+    if (_savedW) rightCol.style.width = _savedW + 'px';
 
     var _rx = 0, _rw = 0, _resizing = false;
     resizeHandle.addEventListener('pointerdown', function(e) {
@@ -4275,7 +4292,7 @@ function initPanel() {
     });
     resizeHandle.addEventListener('pointermove', function(e) {
       if (!_resizing) return;
-      var newW = Math.max(120, Math.min(320, _rw + (_rx - e.clientX)));
+      var newW = Math.max(120, Math.min(_sidebarMaxW(), _rw + (_rx - e.clientX)));
       rightCol.style.width = newW + 'px';
     });
     function _endResize() {
@@ -4284,6 +4301,24 @@ function initPanel() {
     }
     resizeHandle.addEventListener('pointerup',     _endResize);
     resizeHandle.addEventListener('pointercancel', _endResize);
+    // The limits follow the panel, so re-clamp both columns from their saved
+    // widths whenever the panel is resized (the rows only change size with it,
+    // never during a drag, so this can't fight the handles)
+    if (typeof ResizeObserver !== 'undefined') {
+      var _mainRow = document.querySelector('.main-row');
+      var _tlRow   = document.getElementById('oc-timeline');
+      var _colRO = new ResizeObserver(function() {
+        if (!_resizing && _graphVisible) {
+          var sw = _sidebarSavedW();
+          var want = sw ? sw + 'px' : '';
+          if (rightCol.style.width !== want) rightCol.style.width = want;
+        }
+        _tlApplyPropsWidth();
+        _tlSetGoWidth();
+      });
+      if (_mainRow) _colRO.observe(_mainRow);
+      if (_tlRow)   _colRO.observe(_tlRow);
+    }
   }
 
   // Apply saved graph visibility (hides the whole left column when disabled)
@@ -4627,8 +4662,8 @@ function _applyGraphVisibility() {
   if (_graphVisible) {
     leftCol.style.display = '';
     if (handle) handle.style.display = '';
-    var savedW = parseInt(localStorage.getItem('opencurve-sidebar-width'), 10);
-    rightCol.style.width    = (savedW && savedW >= 120 && savedW <= 320) ? savedW + 'px' : '';
+    var savedW = _sidebarSavedW();
+    rightCol.style.width    = savedW ? savedW + 'px' : '';
     rightCol.style.maxWidth = '';
     rightCol.style.flex     = '';
   } else {
