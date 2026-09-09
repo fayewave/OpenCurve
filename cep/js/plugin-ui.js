@@ -2025,6 +2025,13 @@ function initPanel() {
   }
   document.addEventListener('keydown', _enterGo, true);
 
+  // Full screen: the graph column takes the whole panel until pressed again
+  var fullBtn = document.getElementById('graph-full');
+  if (fullBtn) {
+    _attachTooltip(fullBtn, function() { return _graphFull ? 'Exit full screen' : 'Full-screen graph'; });
+    fullBtn.addEventListener('click', function() { _setGraphFull(!_graphFull); });
+  }
+
   // Settings: same modal as the flyout menu and the context menus
   var settingsBtn = document.getElementById('graph-settings');
   if (settingsBtn) {
@@ -2069,15 +2076,15 @@ function initPanel() {
   addHoldZoom(zoomOut, -0.1);
 
   // Collapsed toolbar: as soon as the bar is too narrow for the left tools and
-  // the zoom/settings group to sit apart, every tool but Settings hides and one
-  // menu button takes the top-left spot; its dropdown lists all of them.
-  // Settings keeps its place at the far right. Widths are the
+  // the zoom/settings group to sit apart, every tool but Full Screen and
+  // Settings hides and one menu button takes the top-left spot; its dropdown
+  // lists all of them. Full Screen and Settings keep their place at the far right. Widths are the
   // CSS ones (26px buttons, 5px margins, 12px before settings, 5px padding each
   // side), plus a little air so they never touch before collapsing.
   var toolbar  = document.getElementById('graph-toolbar');
   var menuBtn  = document.getElementById('graph-tools-menu');
   var _tbTools = [peakBtn, addPtBtn, flipBtn, invertBtn, zoomOut, zoomIn];
-  var _TB_NEED = (4 * 26 + 3 * 5) + (3 * 26 + 2 * 5 + 12) + 10 + 8;
+  var _TB_NEED = (4 * 26 + 3 * 5) + (4 * 26 + 3 * 5 + 12) + 10 + 8;
   var _tbCollapsed = null;
   var _tbDismiss   = null;
   function _hideToolsMenu() {
@@ -3029,6 +3036,9 @@ function _applyGraphVisibility() {
   var handle   = document.getElementById('resize-handle');
   var rightCol = document.getElementById('right-col');
   if (!leftCol || !rightCol) return;
+  // Turning the graph off while it is full screen: leave full screen first,
+  // otherwise every region of the panel would be hidden at once
+  if (_graphFull && !_graphVisible) { _graphFull = false; _applyGraphFull(); return; }
   if (_graphVisible) {
     leftCol.style.display = '';
     if (handle) handle.style.display = '';
@@ -3045,6 +3055,41 @@ function _applyGraphVisibility() {
   }
   _fitGoForUndo();
   _applyPresetLayout(true);
+  if (_graphFull) _applyGraphFull(); // keeps the preset column and handle hidden
+}
+
+// Full-screen graph (toolbar #graph-full): the graph column takes the whole
+// panel. The preset column and its handle, the timeline row and the bottom row
+// are hidden with inline display (UXP ignores class-driven display changes)
+// until the button is pressed again; every toolbar tool still works meanwhile.
+// Session only, never saved. The graph SVG, the toolbar and the lanes all
+// re-measure through their ResizeObservers, so nothing else needs a nudge.
+var _graphFull = false;
+function _applyGraphFull() {
+  ['right-col', 'resize-handle', 'tl-resize', 'oc-timeline', 'oc-bottom-row'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    if (_graphFull) el.style.display = 'none';
+    else if (el.style.display === 'none') el.style.display = '';
+  });
+  if (!_graphFull) {
+    _applyGraphVisibility(); // restores the preset column's width and handle
+    _tlSig = '';
+    _tlRender(getState(), true);
+  }
+  var btn = document.getElementById('graph-full');
+  if (btn) {
+    var ex = btn.querySelector('.ic-expand'), co = btn.querySelector('.ic-collapse');
+    if (ex) ex.style.display = _graphFull ? 'none' : '';
+    if (co) co.style.display = _graphFull ? '' : 'none';
+    btn.style.background = _graphFull ? 'rgba(74,158,255,0.18)' : '';
+    btn.style.color      = _graphFull ? '#6cb8ff' : '';
+  }
+}
+function _setGraphFull(on) {
+  if (on && !_graphVisible) return; // no graph to expand
+  _graphFull = !!on;
+  _applyGraphFull();
 }
 
 // The Undo button floats over the right end of Go, which is a narrow button

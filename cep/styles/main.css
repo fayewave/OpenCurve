@@ -374,8 +374,8 @@ input, textarea {
   margin-left: 0;
 }
 
-/* Settings sits at the far right, a little apart from the zoom pair */
-#graph-settings {
+/* Full screen + Settings sit at the far right, a little apart from the zoom pair */
+#graph-full {
   margin-left: 12px;
 }
 
