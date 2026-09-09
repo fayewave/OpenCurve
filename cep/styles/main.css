@@ -722,16 +722,27 @@ input, textarea {
 
 
 /* ─── Status strip ──────────────────────────────────────────── */
+/* Bottom row of the panel: the status strip takes the width, Go (with its
+   floating Undo) is a fixed-width button at its right end. Rules stay on the
+   elements themselves (no descendant selectors: UXP applies those unreliably). */
+.oc-bottom-row {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  flex-shrink: 0;
+  min-width: 0;
+  border-top: 1px solid var(--border);
+}
+
 .status-strip {
   display: flex;
   align-items: center;
   padding: 0 8px;
   height: 32px;
   transition: background 0.2s;
-  flex-shrink: 0;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
-  border-top: 1px solid var(--border);
 }
 
 /* Diamond marker: an inline SVG polygon filled with currentColor, so each
@@ -861,10 +872,14 @@ input, textarea {
 /* Go row (undo + go) */
 .go-row {
   display: flex;
-  flex-shrink: 0;
-  border-top: 1px solid var(--border);
+  flex: 0 0 112px;
+  width: 112px;
+  border-left: 1px solid var(--border);
   position: relative; /* anchors the floating Undo button */
 }
+
+/* Go sits in the bottom row, so the row's border is the only one it needs */
+#go-btn { border-top: none; }
 
 /* Undo button */
 .btn-undo {

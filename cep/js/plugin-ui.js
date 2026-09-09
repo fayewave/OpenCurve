@@ -2712,12 +2712,15 @@ function _applyGraphVisibility() {
   _applyPresetLayout(true);
 }
 
-// The Undo button floats over the right end of Go. Go is full width in both
-// layouts now (the status strip no longer shares its row), so there is nothing
-// to nudge; this stays as the one place to revisit if Go ever gets narrow again.
+// The Undo button floats over the right end of Go, which is a 112px button at
+// the end of the bottom row, so nudge the label left while Undo is showing.
+// Inline style because UXP doesn't relayout on class changes.
 function _fitGoForUndo() {
   var goBtn = document.getElementById('go-btn');
-  if (goBtn) goBtn.style.paddingRight = '';
+  var undo  = document.getElementById('undo-btn');
+  if (!goBtn) return;
+  var shown = !!undo && undo.style.display !== 'none' && !undo.classList.contains('btn-hidden');
+  goBtn.style.paddingRight = shown ? '28px' : '';
 }
 
 function _applyPresetLayout(force) {
