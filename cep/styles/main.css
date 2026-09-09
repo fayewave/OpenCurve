@@ -356,7 +356,7 @@ input, textarea {
   flex-shrink: 0;
   min-width: 0;
   overflow: hidden;
-  background: #111111; /* same as the graph's outside area (#sg-bg), no separator so it reads as one surface */
+  background: #111111; /* the panel ground; the graph canvas below it (#sg-bg) is a lighter #1c1c1c */
 }
 
 .graph-tools-right {
