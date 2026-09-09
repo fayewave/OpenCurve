@@ -2738,8 +2738,9 @@ function renderUI(s) {
       var k = btn.dataset.key;
       var isSel = selKeys.indexOf(k) >= 0;
       btn.classList.toggle('active', isSel);
-      // Marker: a tick while selected, a hollow diamond otherwise
-      _setMarker(btn.querySelector('.prop-diamond'), isSel ? 'tick' : 'hollow');
+      // Marker: a tick while selected; otherwise a filled diamond when the
+      // playhead is already over this property's pair (the pin is blue), hollow if not
+      _setMarker(btn.querySelector('.prop-diamond'), isSel ? 'tick' : (validKeys.indexOf(k) >= 0 ? 'filled' : 'hollow'));
       // Selected but the playhead isn't between its keyframes yet: orange until it is
       btn.classList.toggle('pending', isSel && validKeys.indexOf(k) < 0);
       // Playhead is already between this property's keyframes: pin shows blue even when unselected
