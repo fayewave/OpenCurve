@@ -88,7 +88,7 @@ input, textarea {
   width: 4px;
   flex-shrink: 0;
   cursor: col-resize;
-  background: transparent;
+  background: #111111; /* the graph / timeline ground, so both handles read as the same dark strip */
   transition: background 0.15s;
   position: relative;
 }
@@ -469,17 +469,6 @@ input, textarea {
 }
 
 /* ─── Property buttons ──────────────────────────────────────── */
-/* The handle between the lanes and the rows shows the panel background, the
-   same strip of colour the sidebar handle shows between the graph and the
-   presets (that one is transparent over the body; this one sits on the strip's
-   darker ground, so it needs the colour set) */
-#tl-prop-handle {
-  background: var(--bg);
-}
-#tl-prop-handle:hover {
-  background: var(--border2);
-}
-
 /* Property rows, at the right end of the timeline row. Width is inline
    (_tlApplyPropsWidth: the saved value, or the full row with the timeline off). */
 .prop-btns {
