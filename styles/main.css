@@ -359,11 +359,6 @@ html, body {
   margin-left: 0;
 }
 
-/* Full screen + Settings sit at the far right, a little apart from the zoom pair */
-#graph-full {
-  margin-left: 12px;
-}
-
 .tool-btn:hover {
   background: rgba(255,255,255,0.16);
   color: #ffffff;

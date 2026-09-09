@@ -3577,12 +3577,12 @@ function initPanel() {
   // the zoom/settings group to sit apart, every tool but Full Screen and
   // Settings hides and one menu button takes the top-left spot; its dropdown
   // lists all of them. Full Screen and Settings keep their place at the far right. Widths are the
-  // CSS ones (26px buttons, 5px margins, 12px before settings, 5px padding each
-  // side), plus a little air so they never touch before collapsing.
+  // CSS ones (26px buttons, 5px margins, 5px padding each side), plus a little
+  // air so they never touch before collapsing.
   var toolbar  = document.getElementById('graph-toolbar');
   var menuBtn  = document.getElementById('graph-tools-menu');
   var _tbTools = [peakBtn, addPtBtn, flipBtn, invertBtn, zoomOut, zoomIn];
-  var _TB_NEED = (4 * 26 + 3 * 5) + (4 * 26 + 3 * 5 + 12) + 10 + 8;
+  var _TB_NEED = (4 * 26 + 3 * 5) + (4 * 26 + 3 * 5) + 10 + 8;
   var _tbCollapsed = null;
   var _tbDismiss   = null;
   function _hideToolsMenu() {
