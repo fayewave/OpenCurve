@@ -908,8 +908,15 @@ input, textarea {
   display: flex;
   flex: 0 0 180px;
   width: 180px;
-  border-left: 1px solid var(--border);
   position: relative; /* anchors the floating Undo button */
+}
+
+/* Same 4px dark strip as the handle above it, so the divider between lanes
+   and rows carries on between the status strip and Go */
+.bottom-divider {
+  width: 4px;
+  flex-shrink: 0;
+  background: #080808;
 }
 
 /* Go sits in the bottom row, so the row's border is the only one it needs */
