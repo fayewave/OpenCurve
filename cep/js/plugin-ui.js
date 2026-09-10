@@ -3599,7 +3599,7 @@ function _showSettingsModal() {
   modal.style.cssText = 'position:fixed;top:0;left:0;width:'+vw+'px;height:'+vh+'px;background:#111111;z-index:9998;display:flex;flex-direction:column;font-family:system-ui,sans-serif;';
 
   var header = document.createElement('div');
-  header.style.cssText = 'display:flex;align-items:center;padding:10px 8px 10px 12px;border-bottom:4px solid #080808;flex-shrink:0;';
+  header.style.cssText = 'display:flex;align-items:center;padding:10px 8px 10px 12px;border-bottom:4px solid #080808;flex-shrink:0;cursor:pointer;transition:background 0.12s;';
   var logoWrap = document.createElement('div');
   logoWrap.style.cssText = 'flex:1;display:flex;align-items:center;justify-content:flex-start;';
   var logo = document.createElement('img');
@@ -3610,13 +3610,20 @@ function _showSettingsModal() {
   logo.style.cssText = 'width:145px;height:22px;opacity:0.9;margin-top:6px;'; // margin centres 3px lower, the artwork sat high
   logoWrap.appendChild(logo);
   var closeBtn = document.createElement('div');
-  closeBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><line x1="2.5" y1="2.5" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="9.5" y1="2.5" x2="2.5" y2="9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+  closeBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 12 12" fill="none"><line x1="2.5" y1="2.5" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="9.5" y1="2.5" x2="2.5" y2="9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
   _attachTooltip(closeBtn, 'Close settings');
   // A 22px square like the row pin/undo buttons, in the panel's red
-  closeBtn.style.cssText = 'display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:3px;flex-shrink:0;cursor:pointer;background:rgba(255,144,144,0.18);color:#ff9090;transition:background 0.12s,color 0.12s;';
-  closeBtn.addEventListener('mouseenter', function() { closeBtn.style.background='rgba(255,144,144,0.45)'; closeBtn.style.color='#ffffff'; });
-  closeBtn.addEventListener('mouseleave', function() { closeBtn.style.background='rgba(255,144,144,0.18)'; closeBtn.style.color='#ff9090'; });
-  closeBtn.addEventListener('click', function() { modal.remove(); });
+  closeBtn.style.cssText = 'display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:3px;flex-shrink:0;cursor:pointer;background:rgba(255,144,144,0.18);color:#ff9090;transition:background 0.12s,color 0.12s;';
+  // The whole banner is the close control: hovering anywhere on it lights the
+  // banner and the cross, and a press anywhere on it closes the modal
+  function _closeHot(on) {
+    closeBtn.style.background = on ? 'rgba(255,144,144,0.45)' : 'rgba(255,144,144,0.18)';
+    closeBtn.style.color      = on ? '#ffffff' : '#ff9090';
+    header.style.background   = on ? 'rgba(255,255,255,0.05)' : '';
+  }
+  header.addEventListener('mouseenter', function() { _closeHot(true); });
+  header.addEventListener('mouseleave', function() { _closeHot(false); });
+  header.addEventListener('click', function() { modal.remove(); });
   header.appendChild(logoWrap);
   header.appendChild(closeBtn);
 
