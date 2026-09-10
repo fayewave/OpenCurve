@@ -2972,6 +2972,13 @@ function _applyTimelineVisibility() {
     var el = root.querySelector(sel);
     if (el) el.style.display = _tlVisible ? '' : 'none';
   });
+  // Without the lanes there is nothing for the strip to run under, so the bottom
+  // row stacks: status strip on top, Go (full width) beneath it. The divider
+  // between them only continues the lanes/rows handle, so it goes too.
+  var bottom = document.getElementById('oc-bottom-row');
+  if (bottom) bottom.style.flexDirection = _tlVisible ? '' : 'column';
+  var div = bottom ? bottom.querySelector('.bottom-divider') : null;
+  if (div) div.style.display = _tlVisible ? '' : 'none';
   _tlApplyPropsWidth();
   if (_tlVisible) { _tlSig = ''; _tlRender(getState(), true); }
 }
@@ -3015,6 +3022,11 @@ function _tlSavedPropsWidth() {
 function _tlSetGoWidth() {
   var go = document.querySelector('.go-row');
   if (!go) return;
+  if (!_tlVisible) {
+    // Timeline off: the strip is stacked above Go, which spans the whole row
+    if (go.style.width !== 'auto') { go.style.width = 'auto'; go.style.flex = '0 0 auto'; }
+    return;
+  }
   var w = _tlPropsW;
   if (_tlVisible) {
     try {
