@@ -2360,11 +2360,17 @@ function _recordBakes(s, keys, contexts, written) {
 }
 
 // Panel-wide Undo button (next to Go, same control as the CEP edition)
+// The button always stays in place; with nothing to undo it is grey and inert.
 function _showUndoBtn(show) {
   var btn = document.getElementById('undo-btn');
   if (!btn) return;
-  btn.classList.toggle('btn-hidden', !show);
-  btn.style.display = show ? 'flex' : 'none'; // inline: UXP doesn't relayout on class changes
+  btn.classList.toggle('btn-dim', !show);
+  btn.style.display = 'flex';
+  // Inline colours: UXP doesn't restyle the icon when only the class changes.
+  // Cleared when live so the CSS hover works again.
+  btn.style.background = show ? '' : 'rgba(255,255,255,0.06)';
+  btn.style.color      = show ? '' : '#666';
+  btn.style.cursor     = show ? '' : 'default';
   _fitGoForUndo();
 }
 
@@ -4529,8 +4535,8 @@ function initPanel() {
   // Undo button (next to Go): reverts the most recent Go press
   var undoBtn = document.getElementById('undo-btn');
   if (undoBtn) {
-    _attachTooltip(undoBtn, 'Undo last bake');
-    undoBtn.addEventListener('click', function() { _undoLastBake(); });
+    _attachTooltip(undoBtn, function() { return undoBtn.classList.contains('btn-dim') ? 'Nothing to undo' : 'Undo last bake'; });
+    undoBtn.addEventListener('click', function() { if (!undoBtn.classList.contains('btn-dim')) _undoLastBake(); });
   }
 
   // State → UI
@@ -4833,7 +4839,7 @@ function _fitGoForUndo() {
   var goBtn = document.getElementById('go-btn');
   var undo  = document.getElementById('undo-btn');
   if (!goBtn) return;
-  var shown = !!undo && undo.style.display !== 'none' && !undo.classList.contains('btn-hidden');
+  var shown = !!undo && undo.style.display !== 'none';
   goBtn.style.paddingRight = shown ? '28px' : '';
 }
 

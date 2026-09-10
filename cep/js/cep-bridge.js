@@ -151,15 +151,21 @@
   }
 
   // ─── Undo button ──────────────────────────────────────────────────────
+  // The button always stays in place; with nothing to undo it is grey and inert
   function _showUndoBtn(show) {
     var btn = document.getElementById('undo-btn');
-    if (btn) btn.classList.toggle('btn-hidden', !show);
+    if (btn) {
+      btn.classList.toggle('btn-dim', !show);
+      btn.style.background = show ? '' : 'rgba(255,255,255,0.06)';
+      btn.style.color      = show ? '' : '#666';
+      btn.style.cursor     = show ? '' : 'default';
+    }
     if (OpenCurve.fitGoForUndo) OpenCurve.fitGoForUndo();
   }
 
   document.addEventListener('click', function(e) {
     var btn = e.target.closest('#undo-btn');
-    if (!btn || btn.classList.contains('btn-hidden')) return;
+    if (!btn || btn.classList.contains('btn-dim')) return;
 
     cs.evalScript('undoBake()', function(result) {
       try {
@@ -442,7 +448,7 @@
     var undoBtn = document.getElementById('undo-btn');
     if (undoBtn && OpenCurve.attachTooltip) {
       undoBtn.removeAttribute('title');
-      OpenCurve.attachTooltip(undoBtn, 'Undo last bake');
+      OpenCurve.attachTooltip(undoBtn, function() { return undoBtn.classList.contains('btn-dim') ? 'Nothing to undo' : 'Undo last bake'; });
     }
     OpenCurve.applyCurveColor(localStorage.getItem('opencurve-line-color') || '#4a9eff');
 

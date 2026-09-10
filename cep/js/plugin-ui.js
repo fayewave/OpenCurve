@@ -3100,7 +3100,7 @@ function _fitGoForUndo() {
   var goBtn = document.getElementById('go-btn');
   var undo  = document.getElementById('undo-btn');
   if (!goBtn) return;
-  var shown = !!undo && undo.style.display !== 'none' && !undo.classList.contains('btn-hidden');
+  var shown = !!undo && undo.style.display !== 'none';
   goBtn.style.paddingRight = shown ? '28px' : '';
 }
 

@@ -930,12 +930,16 @@ html, body {
   cursor: pointer;
   transition: color 0.15s, background 0.15s;
 }
-.btn-undo:hover {
+.btn-undo:not(.btn-dim):hover {
   background: rgba(61,220,132,0.42);
   color: #ffffff;
 }
-.btn-undo.btn-hidden {
-  display: none;
+/* Nothing to undo: stays in place, grey and inert (colours are also set inline
+   by _showUndoBtn so UXP repaints the icon) */
+.btn-undo.btn-dim {
+  background: rgba(255,255,255,0.06);
+  color: #666;
+  cursor: default;
 }
 
 /* Go button specific states */
