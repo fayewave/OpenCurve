@@ -5493,7 +5493,7 @@ function _showSettingsModal() {
   var notifRow = document.createElement('div');
   notifRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid #080808;cursor:pointer;';
   var notifLabel = document.createElement('span');
-  notifLabel.style.cssText = 'font-size:14px;flex:1;color:#d4d4d4;';
+  notifLabel.style.cssText = 'font-size:14px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d4d4d4;';
   notifLabel.textContent = 'Update Notifications';
   var notifCheck = document.createElement('span');
   notifCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
@@ -5524,7 +5524,7 @@ function _showSettingsModal() {
   var animRow = document.createElement('div');
   animRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid #080808;cursor:pointer;';
   var animLabel = document.createElement('span');
-  animLabel.style.cssText = 'font-size:14px;flex:1;color:#d4d4d4;';
+  animLabel.style.cssText = 'font-size:14px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d4d4d4;';
   animLabel.textContent = 'Animations';
   var animCheck = document.createElement('span');
   animCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
@@ -5553,7 +5553,7 @@ function _showSettingsModal() {
   var graphRow = document.createElement('div');
   graphRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid #080808;cursor:pointer;';
   var graphLabel = document.createElement('span');
-  graphLabel.style.cssText = 'font-size:14px;flex:1;color:#d4d4d4;';
+  graphLabel.style.cssText = 'font-size:14px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d4d4d4;';
   graphLabel.textContent = 'Graph';
   var graphCheck = document.createElement('span');
   graphCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
@@ -5583,7 +5583,7 @@ function _showSettingsModal() {
   var tlRow = document.createElement('div');
   tlRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid #080808;cursor:pointer;';
   var tlLabel = document.createElement('span');
-  tlLabel.style.cssText = 'font-size:14px;flex:1;color:#d4d4d4;';
+  tlLabel.style.cssText = 'font-size:14px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d4d4d4;';
   var tlCheck = document.createElement('span');
   tlCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
   function _updateTlCheck() {
@@ -5615,8 +5615,8 @@ function _showSettingsModal() {
   gridIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
   gridIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" stroke="#b0b0b0" stroke-width="1.7" rx="1"/><line x1="6" y1="2" x2="6" y2="14" stroke="#b0b0b0" stroke-width="1"/><line x1="10" y1="2" x2="10" y2="14" stroke="#b0b0b0" stroke-width="1"/><line x1="2" y1="6" x2="14" y2="6" stroke="#b0b0b0" stroke-width="1"/><line x1="2" y1="10" x2="14" y2="10" stroke="#b0b0b0" stroke-width="1"/></svg>';
   var gridLabel = document.createElement('span');
-  gridLabel.style.cssText = 'font-size:14px;flex:1;color:#d4d4d4;';
-  gridLabel.textContent = 'Grid';
+  gridLabel.style.cssText = 'font-size:14px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d4d4d4;';
+  gridLabel.textContent = 'Grid Spacing';
   var gridBtns = document.createElement('div');
   gridBtns.style.cssText = 'display:flex;gap:0;flex-shrink:0;align-self:stretch;';
   var gridSizes = [4, 8, 16];
@@ -5656,7 +5656,7 @@ function _showSettingsModal() {
   densIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
   densIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><line x1="1" y1="8" x2="15" y2="8" stroke="#b0b0b0" stroke-width="1.2"/><polygon points="3.5,5.5 6,8 3.5,10.5 1,8" fill="#b0b0b0"/><polygon points="8,5.5 10.5,8 8,10.5 5.5,8" fill="#b0b0b0"/><polygon points="12.5,5.5 15,8 12.5,10.5 10,8" fill="#b0b0b0"/></svg>';
   var densLabel = document.createElement('span');
-  densLabel.style.cssText = 'font-size:14px;flex:1;color:#d4d4d4;';
+  densLabel.style.cssText = 'font-size:14px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d4d4d4;';
   densLabel.textContent = 'Keyframe Spacing';
   var densBtns = document.createElement('div');
   densBtns.style.cssText = 'display:flex;gap:0;flex-shrink:0;align-self:stretch;';
@@ -5695,8 +5695,8 @@ function _showSettingsModal() {
   layoutIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
   layoutIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><line x1="2" y1="4" x2="14" y2="4" stroke="#b0b0b0" stroke-width="1.7" stroke-linecap="round"/><line x1="2" y1="8" x2="14" y2="8" stroke="#b0b0b0" stroke-width="1.7" stroke-linecap="round"/><line x1="2" y1="12" x2="14" y2="12" stroke="#b0b0b0" stroke-width="1.7" stroke-linecap="round"/></svg>';
   var layoutLabel = document.createElement('span');
-  layoutLabel.style.cssText = 'font-size:14px;flex:1;color:#d4d4d4;';
-  layoutLabel.textContent = 'Presets';
+  layoutLabel.style.cssText = 'font-size:14px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d4d4d4;';
+  layoutLabel.textContent = 'Presets View';
   var layoutBtns = document.createElement('div');
   layoutBtns.style.cssText = 'display:flex;gap:0;flex-shrink:0;align-self:stretch;';
   var layoutOptions = ['list', 'grid'];
@@ -5787,10 +5787,28 @@ function _showSettingsModal() {
   footerRow.appendChild(footerRight);
   footer.appendChild(footerRow);
 
+  // Footer layout: the buttons sit to the right of the credit lines while
+  // both fit side by side, otherwise they drop underneath. Measured once
+  // from the row layout (the elements keep their natural widths).
+  var footNeed = 0, footStacked = false;
+  function _layoutFooter(w) {
+    if (!footNeed && !footStacked) {
+      var lw = footerLeft.getBoundingClientRect().width, rw = footerRight.getBoundingClientRect().width;
+      if (lw && rw) footNeed = Math.ceil(lw + rw) + 24 + 12;
+    }
+    var stack = footNeed ? w < footNeed : false;
+    if (stack === footStacked) return;
+    footStacked = stack;
+    footerRow.style.flexDirection = stack ? 'column' : 'row';
+    footerRow.style.alignItems = stack ? 'flex-start' : 'center';
+    footerRight.style.marginTop = stack ? '8px' : '';
+  }
+
   modal.appendChild(header);
   modal.appendChild(content);
   modal.appendChild(footer);
   document.body.appendChild(modal);
+  _layoutFooter(vw);
 
   // Resize with the panel
   var _settingsRO = new ResizeObserver(function() {
@@ -5798,6 +5816,7 @@ function _showSettingsModal() {
     var nvh = document.documentElement.clientHeight || document.body.clientHeight;
     modal.style.width  = nvw + 'px';
     modal.style.height = nvh + 'px';
+    _layoutFooter(nvw);
     var nowDual = nvw > 520;
     if (nowDual !== dualCol) {
       dualCol = nowDual;
