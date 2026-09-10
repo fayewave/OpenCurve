@@ -5353,7 +5353,7 @@ function _showSettingsModal() {
   var header = document.createElement('div');
   header.style.cssText = 'display:flex;align-items:center;padding:10px 8px 10px 12px;border-bottom:1px solid rgba(255,255,255,0.07);flex-shrink:0;';
   var logoSpacer = document.createElement('div');
-  logoSpacer.style.cssText = 'width:24px;flex-shrink:0;';
+  logoSpacer.style.cssText = 'width:22px;flex-shrink:0;';
   var logoWrap = document.createElement('div');
   logoWrap.style.cssText = 'flex:1;display:flex;align-items:center;justify-content:center;';
   var logo = document.createElement('img');
@@ -5364,11 +5364,12 @@ function _showSettingsModal() {
   logo.style.cssText = 'width:171px;height:26px;opacity:0.9;';
   logoWrap.appendChild(logo);
   var closeBtn = document.createElement('div');
-  closeBtn.textContent = '✕';
+  closeBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><line x1="2.5" y1="2.5" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="9.5" y1="2.5" x2="2.5" y2="9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
   _attachTooltip(closeBtn, 'Close settings');
-  closeBtn.style.cssText = 'color:#888;font-size:13px;cursor:pointer;padding:4px 6px;flex-shrink:0;';
-  closeBtn.addEventListener('mouseenter', function() { closeBtn.style.color='#e4e4e4'; });
-  closeBtn.addEventListener('mouseleave', function() { closeBtn.style.color='#888'; });
+  // A 22px square like the row pin/undo buttons, in the panel's red
+  closeBtn.style.cssText = 'display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:3px;flex-shrink:0;cursor:pointer;background:rgba(255,144,144,0.18);color:#ff9090;transition:background 0.12s,color 0.12s;';
+  closeBtn.addEventListener('mouseenter', function() { closeBtn.style.background='rgba(255,144,144,0.45)'; closeBtn.style.color='#ffffff'; });
+  closeBtn.addEventListener('mouseleave', function() { closeBtn.style.background='rgba(255,144,144,0.18)'; closeBtn.style.color='#ff9090'; });
   closeBtn.addEventListener('click', function() {
     modal.remove();
   });
