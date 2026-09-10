@@ -3607,7 +3607,7 @@ function _showSettingsModal() {
   // fixed 170x26 box: letting the host shrink a larger PNG made the logo blurry
   var _dpr = window.devicePixelRatio || 1;
   logo.src = 'img/OpenCurve2_Wordmark_small' + (_dpr >= 2.5 ? '@3x' : _dpr >= 1.5 ? '@2x' : '') + '.png';
-  logo.style.cssText = 'width:171px;height:26px;opacity:0.9;margin-top:6px;'; // margin centres 3px lower, the artwork sat high
+  logo.style.cssText = 'width:145px;height:22px;opacity:0.9;margin-top:6px;'; // margin centres 3px lower, the artwork sat high
   logoWrap.appendChild(logo);
   var closeBtn = document.createElement('div');
   closeBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><line x1="2.5" y1="2.5" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="9.5" y1="2.5" x2="2.5" y2="9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
