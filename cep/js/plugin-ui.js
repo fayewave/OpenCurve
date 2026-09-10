@@ -470,6 +470,9 @@ function _updatePtsSVG(curve, W, H) {
 // form (a, 0, b, 1), so presets, copy and bake are unchanged.
 var _PEAK_KEY   = 'opencurve-peak-mode';
 var _peakMode   = localStorage.getItem(_PEAK_KEY) === 'on';
+// Drag ghost toggle (graph toolbar); on unless turned off
+var _DRAG_GHOST_KEY = 'opencurve-drag-ghost';
+var _dragGhost      = localStorage.getItem(_DRAG_GHOST_KEY) !== 'off';
 var _PEAK_K_FRAC = 0.98; // top of the box = this fraction of the sharpest ease possible at that x (1 would be a step)
 var _PEAK_EPS   = 1e-4; // keep t off the exact endpoints so 0/0 never happens
 var _peakThumbRefresh = null; // set by initPanel: redraws preset thumbnails when the mode flips
@@ -771,7 +774,7 @@ function updateStaticSVG(W, H) {
 // Draws the bell in A-curve mode and the bezier otherwise, matching what is on screen.
 function _showDragGhost(curve, W, H) {
   var g = document.getElementById('sg-drag-ghost');
-  if (!g) return;
+  if (!g || !_dragGhost) return;
   var d = _peakMode
     ? _peakBellPath(curve, 96,
         function(x) { return normToSVG(x, 0, W, H).cx; },
@@ -782,6 +785,20 @@ function _showDragGhost(curve, W, H) {
   _svgShow('sg-drag-ghost', true);
 }
 function _hideDragGhost() { _svgShow('sg-drag-ghost', false); }
+
+function _styleGhostBtn() {
+  var btn = document.getElementById('drag-ghost');
+  if (!btn) return;
+  btn.style.background = _dragGhost ? 'rgba(61,220,132,0.18)' : '';
+  btn.style.color      = _dragGhost ? '#3ddc84' : '';
+  btn.style.opacity    = _dragGhost ? '1' : '';
+}
+function _setDragGhost(on) {
+  _dragGhost = !!on;
+  localStorage.setItem(_DRAG_GHOST_KEY, _dragGhost ? 'on' : 'off');
+  if (!_dragGhost) _hideDragGhost();
+  _styleGhostBtn();
+}
 
 function updateDynamicSVG(curve, W, H) {
   if (_peakMode) { _updatePeakSVG(curve, W, H); return; }
@@ -2002,6 +2019,18 @@ function initPanel() {
     invertBtn.addEventListener('click', function() { _applyCurveOp(_invertCurve); });
   }
 
+  // Drag ghost: leave the starting shape behind while dragging (see _showDragGhost)
+  var ghostBtn = document.getElementById('drag-ghost');
+  if (ghostBtn) {
+    _attachTooltip(ghostBtn, function() {
+      return _dragGhost
+        ? 'Ghost is on: the curve\'s starting shape stays behind while you drag. Click to turn off'
+        : 'Ghost: show the curve\'s starting shape behind it while you drag';
+    });
+    ghostBtn.addEventListener('click', function() { _setDragGhost(!_dragGhost); });
+  }
+  _styleGhostBtn();
+
   // Enter presses Go. UXP only delivers keydown to inputs and buttons, and
   // Premiere keeps Enter for itself unless a text field in the panel has
   // focus. So #oc-key-sink (a concealed read-only input in index.html) takes
@@ -2102,8 +2131,8 @@ function initPanel() {
   // air so they never touch before collapsing.
   var toolbar  = document.getElementById('graph-toolbar');
   var menuBtn  = document.getElementById('graph-tools-menu');
-  var _tbTools = [peakBtn, addPtBtn, flipBtn, invertBtn, zoomOut, zoomIn];
-  var _TB_NEED = (4 * 26 + 3 * 5) + (4 * 26 + 3 * 5) + 10 + 8;
+  var _tbTools = [peakBtn, addPtBtn, flipBtn, invertBtn, ghostBtn, zoomOut, zoomIn];
+  var _TB_NEED = (5 * 26 + 4 * 5) + (4 * 26 + 3 * 5) + 10 + 8;
   var _tbCollapsed = null;
   var _tbDismiss   = null;
   function _hideToolsMenu() {
@@ -2157,6 +2186,7 @@ function initPanel() {
     item('Add Point', addPtBtn, function() { _addPoint(); }, { disabled: _peakMode });
     item('Flip',      flipBtn,   function() { _applyCurveOp(_flipCurve); });
     item('Invert',    invertBtn, function() { _applyCurveOp(_invertCurve); });
+    item(_dragGhost ? 'Ghost: On' : 'Ghost', ghostBtn, function() { _setDragGhost(!_dragGhost); }, { active: _dragGhost });
     item('Zoom In',   zoomIn,    function() { applyZoom(0.1); },  { keepOpen: true });
     item('Zoom Out',  zoomOut,   function() { applyZoom(-0.1); }, { keepOpen: true });
     menu.style.left = '0px';
@@ -3529,6 +3559,7 @@ function _confirmReset() {
     localStorage.removeItem(_UPDATE_NOTIF_KEY);
     localStorage.removeItem(_GRAPH_KEY);
     localStorage.removeItem(_PEAK_KEY);
+    localStorage.removeItem(_DRAG_GHOST_KEY);
     localStorage.removeItem(_DENSITY_KEY);
     localStorage.removeItem(_TL_KEY);
     localStorage.removeItem(_TL_ZOOM_KEY);
