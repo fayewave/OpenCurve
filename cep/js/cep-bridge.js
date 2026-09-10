@@ -408,7 +408,7 @@
     card.style.cssText = 'background:#1c1c1c;border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:28px 32px 24px;max-width:340px;width:90%;text-align:center;font-family:system-ui,sans-serif;';
 
     var logo = document.createElement('img');
-    logo.src = 'img/OpenCurve_Logo14_small.png';
+    logo.src = 'img/OpenCurve_Logo_v2_small.png';
     logo.style.cssText = 'height:30px;margin-bottom:20px;opacity:0.9;';
     card.appendChild(logo);
 
