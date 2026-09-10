@@ -3605,8 +3605,11 @@ function _showSettingsModal() {
   var logoWrap = document.createElement('div');
   logoWrap.style.cssText = 'flex:1;display:flex;align-items:center;justify-content:center;';
   var logo = document.createElement('img');
-  logo.src = 'img/OpenCurve2_Wordmark_small.png';
-  logo.style.cssText = 'height:26px;opacity:0.9;';
+  // Pre-rendered at the exact display size for 1x/2x/3x screens and shown in a
+  // fixed 170x26 box: letting the host shrink a larger PNG made the logo blurry
+  var _dpr = window.devicePixelRatio || 1;
+  logo.src = 'img/OpenCurve2_Wordmark_small' + (_dpr >= 2.5 ? '@3x' : _dpr >= 1.5 ? '@2x' : '') + '.png';
+  logo.style.cssText = 'width:170px;height:26px;opacity:0.9;';
   logoWrap.appendChild(logo);
   var closeBtn = document.createElement('div');
   closeBtn.textContent = '\u2715';

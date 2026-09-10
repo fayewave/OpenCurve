@@ -408,8 +408,10 @@
     card.style.cssText = 'background:#1c1c1c;border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:28px 32px 24px;max-width:340px;width:90%;text-align:center;font-family:system-ui,sans-serif;';
 
     var logo = document.createElement('img');
-    logo.src = 'img/OpenCurve2_Wordmark_small.png';
-    logo.style.cssText = 'height:30px;margin-bottom:20px;opacity:0.9;';
+    // Same pre-rendered 1x/2x/3x files as the Settings header, shown at their exact size
+    var _dpr = window.devicePixelRatio || 1;
+    logo.src = 'img/OpenCurve2_Wordmark_small' + (_dpr >= 2.5 ? '@3x' : _dpr >= 1.5 ? '@2x' : '') + '.png';
+    logo.style.cssText = 'width:170px;height:26px;margin-bottom:20px;opacity:0.9;';
     card.appendChild(logo);
 
     var text = document.createElement('div');
