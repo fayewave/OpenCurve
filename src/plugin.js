@@ -5357,7 +5357,7 @@ function _showSettingsModal() {
   var logoWrap = document.createElement('div');
   logoWrap.style.cssText = 'flex:1;display:flex;align-items:center;justify-content:center;';
   var logo = document.createElement('img');
-  logo.src = 'img/OpenCurve_Logo_v2_small.png';
+  logo.src = 'img/OpenCurve2_Wordmark_small.png';
   logo.style.cssText = 'height:26px;opacity:0.9;';
   logoWrap.appendChild(logo);
   var closeBtn = document.createElement('div');
