@@ -932,7 +932,6 @@ function initGraphEditor(svg) {
       // added points can't be shaped here; refuse rather than flatten it
       if ((getState().curve.pts || []).length) {
         _hideDragGhost();
-        _showCopyToast('Switch off A-curve mode to edit a curve with added points');
         return;
       }
       // Peak mode: the pointer is the peak, wherever you press
