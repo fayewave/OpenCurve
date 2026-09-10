@@ -370,9 +370,13 @@ input, textarea {
 /* First tool on the left sits flush with the toolbar padding (the collapsed
    menu button and A-curve are never shown together, so both are "first") */
 #graph-tools-menu,
-#peak-mode,
-#preset-layout {
+#peak-mode {
   margin-left: 0;
+}
+
+/* Preset toolbar: its tools sit at the right end, like the graph bar's zoom/settings group */
+#preset-toolbar {
+  justify-content: flex-end;
 }
 
 .tool-btn:hover {
