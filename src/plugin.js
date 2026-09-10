@@ -502,11 +502,11 @@ function _mkPtEls() {
   // Both live in the group and _updatePtsSVG shows one (opacity + visibility
   // attributes, as UXP ignores display/class changes on SVG).
   var a = document.createElementNS(NS, 'g');
-  var inner = _mkCircle(4, '#1e1e1e', _curveColor || '#4a9eff', 2);
+  var inner = _mkCircle(4, '#1e1e1e', _curveColor || '#38fbb2', 2);
   var sq = document.createElementNS(NS, 'rect');
   sq.setAttribute('x', -4); sq.setAttribute('y', -4); sq.setAttribute('width', 8); sq.setAttribute('height', 8);
   sq.setAttribute('rx', 1); sq.setAttribute('fill', '#1e1e1e');
-  sq.setAttribute('stroke', _curveColor || '#4a9eff'); sq.setAttribute('stroke-width', 2);
+  sq.setAttribute('stroke', _curveColor || '#38fbb2'); sq.setAttribute('stroke-width', 2);
   sq.setAttribute('opacity', '0'); sq.setAttribute('visibility', 'hidden');
   a.appendChild(inner); a.appendChild(sq);
   return { li: line(), lo: line(), hi: handle(), ho: handle(), a: a, inner: inner, sq: sq };
@@ -861,7 +861,7 @@ function _showDragGhost(curve, W, H) {
         function(y) { return normToSVG(0, y, W, H).cy; })
     : _curvePathD(curve, W, H);
   g.setAttribute('d', d);
-  g.setAttribute('stroke', _curveColor || '#4a9eff');
+  g.setAttribute('stroke', _curveColor || '#38fbb2');
   _svgShow('sg-drag-ghost', true);
 }
 function _hideDragGhost() { _svgShow('sg-drag-ghost', false); }
@@ -4801,7 +4801,7 @@ window.__opencurvePoll = poll;
 // ─── Settings / flyout ─────────────────────────────────────────────────────
 var CURRENT_VERSION     = '2.0.0';
 var _CURVE_COLOR_KEY    = 'opencurve-line-color';
-var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#4a9eff';
+var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#38fbb2';
 var _updateAvailable    = false;
 var _latestVersion      = null;
 var _updateDismissed    = false;
@@ -5327,7 +5327,7 @@ function _confirmReset() {
     localStorage.removeItem(_TL_PROPS_KEY);
     localStorage.removeItem(_TL_H_KEY);
     _bakeDensity        = 1;
-    _applyCurveColor('#4a9eff');
+    _applyCurveColor('#38fbb2');
     _animationsOn       = true;
     _updateNotifsOn     = true;
     _graphVisible       = true;
@@ -5397,8 +5397,8 @@ function _showSettingsModal() {
   colorSection.appendChild(colorLabel);
 
   // Swatches
-  // Green, red and orange are the property panel's --green / --red / --amber tones
-  var swatchColors = ['#4a9eff','#4ce890','#ff9090','#f0a030','#c97ff0','#ff6eb4','#ffffff','#aaaaaa'];
+  // The default green first; red and orange are the property panel's --red / --amber tones
+  var swatchColors = ['#38fbb2','#4a9eff','#ff9090','#f0a030','#c97ff0','#ff6eb4','#ffffff','#aaaaaa'];
   var swatchRow = document.createElement('div');
   swatchRow.style.cssText = 'display:flex;margin-bottom:4px;flex-wrap:wrap;'; // spacing via swatch margins (UXP ignores flex gap)
   swatchColors.forEach(function(col) {
