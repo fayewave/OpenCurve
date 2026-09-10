@@ -2823,7 +2823,7 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
     // playhead is over the pair and amber until it is, unselected-but-ready gets a blue pair
     var isSel = sel.indexOf(p.key) >= 0, isValid = valid.indexOf(p.key) >= 0, isBaked = baked.indexOf(p.key) >= 0 && !isSel;
     var c = _TL_COLORS[isBaked ? 'baked' : isSel ? (isValid ? 'active' : 'pending') : isValid ? 'ready' : 'none'];
-    var bg = _tlMk('rect', { x: 0, y: top, width: W, height: laneH, fill: c.bg });
+    var bg = _tlMk('rect', { x: 0, y: top, width: W, height: laneH - 1, fill: c.bg }); // leaves the divider row clear
     els.svg.appendChild(bg);
     // Divider like the property rows': a dark 1px line at the bottom of the lane
     // (a light line here looked like a white rule). It is an HTML div over the
@@ -2834,7 +2834,7 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
       var dv = document.createElement('div');
       dv.className = 'tl-lane-div';
       dv.style.cssText = 'position:absolute;left:0;right:0;top:' + (top + laneH - 1) + 'px;height:1px;background:#080808;pointer-events:none;';
-      els.wrap.appendChild(dv);
+      els.wrap.insertBefore(dv, els.svg); // under the SVG, so the playhead line paints over it
     }
     var kf = (p.tlKf || []).slice().sort(function(x, y){ return x - y; });
     // Bars: bakes (green), other per-frame runs (grey), then the pair the playhead is in
