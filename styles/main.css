@@ -305,10 +305,10 @@ html, body {
 }
 
 /* Row lit up because its lane in the timeline is hovered (same look as :hover) */
-.prop-btn.tl-hover                { background: rgba(255,255,255,0.13); color: #ffffff; }
-.prop-btn.active.tl-hover         { background: rgba(74,158,255,0.34);  color: #8fd0ff; }
-.prop-btn.active.pending.tl-hover { background: rgba(240,160,48,0.28);  color: #f7b95a; }
-.prop-btn.baked.tl-hover          { background: rgba(61,220,132,0.32);  color: #6cf0a6; }
+.prop-btn.tl-hover                { background: rgba(255,255,255,0.10); color: #ffffff; }
+.prop-btn.active.tl-hover         { background: rgba(74,158,255,0.26);  color: #8fd0ff; }
+.prop-btn.active.pending.tl-hover { background: rgba(240,160,48,0.22);  color: #f7b95a; }
+.prop-btn.baked.tl-hover          { background: rgba(61,220,132,0.25);  color: #6cf0a6; }
 
 /* ─── Graph toolbar ─────────────────────────────────────────── */
 /* Its own row above the graph (never overlaps the canvas). Tools go left;
@@ -650,7 +650,7 @@ html, body {
 
 
 .prop-btn:hover {
-  background: rgba(255,255,255,0.13);
+  background: rgba(255,255,255,0.10);
   color: #ffffff;
 }
 
@@ -660,7 +660,7 @@ html, body {
 }
 /* Green rows aren't selectable (use the undo button); just a gentle hover */
 .prop-btn.baked:hover {
-  background: rgba(61,220,132,0.32);
+  background: rgba(61,220,132,0.25);
   color: #6cf0a6;
   cursor: default;
 }
@@ -670,7 +670,7 @@ html, body {
   background: var(--accent-dim);
 }
 .prop-btn.active:hover {
-  background: rgba(74,158,255,0.34);
+  background: rgba(74,158,255,0.26);
   color: #8fd0ff;
 }
 
@@ -681,7 +681,7 @@ html, body {
 }
 
 .prop-btn.active.pending:hover {
-  background: rgba(240,160,48,0.28);
+  background: rgba(240,160,48,0.22);
   color: #f7b95a;
 }
 

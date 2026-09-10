@@ -2680,11 +2680,11 @@ var _tlPropsW    = 0;   // current property column width (saved value, or live w
 // background and hover for a plain row; bar: the playhead's pair; dot: keyframes;
 // pairDot: the pair's two keyframes.
 var _TL_COLORS = {
-  none:    { bg: 'rgba(255,255,255,0.05)', hover: 'rgba(255,255,255,0.13)', bar: 'rgba(74,158,255,0.15)', dot: '#8c8c8c', pairDot: '#7dc4ff' },
-  ready:   { bg: 'rgba(255,255,255,0.05)', hover: 'rgba(255,255,255,0.13)', bar: 'rgba(74,158,255,0.15)', dot: '#8c8c8c', pairDot: '#7dc4ff' },
-  active:  { bg: 'rgba(74,158,255,0.12)',  hover: 'rgba(74,158,255,0.24)',  bar: 'rgba(74,158,255,0.34)', dot: '#8c8c8c', pairDot: '#7dc4ff' },
-  pending: { bg: 'rgba(240,160,48,0.10)',  hover: 'rgba(240,160,48,0.22)',  bar: 'rgba(240,160,48,0.28)', dot: '#f7b95a', pairDot: '#f7b95a' },
-  baked:   { bg: 'rgba(61,220,132,0.10)',  hover: 'rgba(61,220,132,0.22)',  bar: 'rgba(61,220,132,0.30)', dot: '#8c8c8c', pairDot: '#4ce890' },
+  none:    { bg: 'rgba(255,255,255,0.05)', hover: 'rgba(255,255,255,0.10)', bar: 'rgba(74,158,255,0.15)', dot: '#8c8c8c', pairDot: '#7dc4ff' },
+  ready:   { bg: 'rgba(255,255,255,0.05)', hover: 'rgba(255,255,255,0.10)', bar: 'rgba(74,158,255,0.15)', dot: '#8c8c8c', pairDot: '#7dc4ff' },
+  active:  { bg: 'rgba(74,158,255,0.12)',  hover: 'rgba(74,158,255,0.19)',  bar: 'rgba(74,158,255,0.34)', dot: '#8c8c8c', pairDot: '#7dc4ff' },
+  pending: { bg: 'rgba(240,160,48,0.10)',  hover: 'rgba(240,160,48,0.17)',  bar: 'rgba(240,160,48,0.28)', dot: '#f7b95a', pairDot: '#f7b95a' },
+  baked:   { bg: 'rgba(61,220,132,0.10)',  hover: 'rgba(61,220,132,0.17)',  bar: 'rgba(61,220,132,0.30)', dot: '#8c8c8c', pairDot: '#4ce890' },
 };
 
 function _tlMk(tag, attrs) {
