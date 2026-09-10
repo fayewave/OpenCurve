@@ -5463,7 +5463,7 @@ function _showSettingsModal() {
   // Check for updates row
   var updatesRow = document.createElement('div');
   updatesRow.id = '_updates-row';
-  updatesRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(0,0,0,0.4);cursor:pointer;background:rgba(230,184,0,0.08);';
+  updatesRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid #080808;cursor:pointer;background:rgba(230,184,0,0.08);';
   var updatesLabel = document.createElement('span');
   updatesLabel.id = '_updates-label';
   updatesLabel.style.cssText = 'font-size:14px;flex:1;';
@@ -5483,7 +5483,7 @@ function _showSettingsModal() {
 
   // Update notifications toggle row
   var notifRow = document.createElement('div');
-  notifRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(0,0,0,0.4);cursor:pointer;';
+  notifRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid #080808;cursor:pointer;';
   var notifLabel = document.createElement('span');
   notifLabel.style.cssText = 'font-size:14px;flex:1;color:#d4d4d4;';
   notifLabel.textContent = 'Update Notifications';
@@ -5514,7 +5514,7 @@ function _showSettingsModal() {
   rowsCol.appendChild(notifRow);
 
   var animRow = document.createElement('div');
-  animRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(0,0,0,0.4);cursor:pointer;';
+  animRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid #080808;cursor:pointer;';
   var animLabel = document.createElement('span');
   animLabel.style.cssText = 'font-size:14px;flex:1;color:#d4d4d4;';
   animLabel.textContent = 'Animations';
@@ -5543,7 +5543,7 @@ function _showSettingsModal() {
 
   // Graph visibility toggle row
   var graphRow = document.createElement('div');
-  graphRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(0,0,0,0.4);cursor:pointer;';
+  graphRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid #080808;cursor:pointer;';
   var graphLabel = document.createElement('span');
   graphLabel.style.cssText = 'font-size:14px;flex:1;color:#d4d4d4;';
   graphLabel.textContent = 'Graph';
@@ -5573,7 +5573,7 @@ function _showSettingsModal() {
 
   // Timeline visibility toggle row (the keyframe strip along the bottom of the panel)
   var tlRow = document.createElement('div');
-  tlRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(0,0,0,0.4);cursor:pointer;';
+  tlRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid #080808;cursor:pointer;';
   var tlLabel = document.createElement('span');
   tlLabel.style.cssText = 'font-size:14px;flex:1;color:#d4d4d4;';
   var tlCheck = document.createElement('span');
@@ -5602,7 +5602,7 @@ function _showSettingsModal() {
 
   // Grid size row
   var gridRow = document.createElement('div');
-  gridRow.style.cssText = 'display:flex;align-items:center;padding:0 0 0 12px;height:36px;border-bottom:1px solid rgba(0,0,0,0.4);';
+  gridRow.style.cssText = 'display:flex;align-items:center;padding:0 0 0 12px;height:36px;border-bottom:1px solid #080808;';
   var gridIcon = document.createElement('span');
   gridIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
   gridIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" stroke="#b0b0b0" stroke-width="1.7" rx="1"/><line x1="6" y1="2" x2="6" y2="14" stroke="#b0b0b0" stroke-width="1"/><line x1="10" y1="2" x2="10" y2="14" stroke="#b0b0b0" stroke-width="1"/><line x1="2" y1="6" x2="14" y2="6" stroke="#b0b0b0" stroke-width="1"/><line x1="2" y1="10" x2="14" y2="10" stroke="#b0b0b0" stroke-width="1"/></svg>';
@@ -5642,7 +5642,7 @@ function _showSettingsModal() {
 
   // Keyframe spacing row (how far apart the baked keyframes are)
   var densRow = document.createElement('div');
-  densRow.style.cssText = 'display:flex;align-items:center;padding:0 0 0 12px;height:36px;border-bottom:1px solid rgba(0,0,0,0.4);';
+  densRow.style.cssText = 'display:flex;align-items:center;padding:0 0 0 12px;height:36px;border-bottom:1px solid #080808;';
   _attachTooltip(densRow, 'How far apart the baked keyframes are. Every frame follows the curve exactly; 2 or 4 frames writes fewer keyframes, with straight lines between them');
   var densIcon = document.createElement('span');
   densIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
@@ -5682,7 +5682,7 @@ function _showSettingsModal() {
 
   // Preset layout row
   var layoutRow = document.createElement('div');
-  layoutRow.style.cssText = 'display:flex;align-items:center;padding:0 0 0 12px;height:36px;border-bottom:1px solid rgba(0,0,0,0.4);';
+  layoutRow.style.cssText = 'display:flex;align-items:center;padding:0 0 0 12px;height:36px;border-bottom:1px solid #080808;';
   var layoutIcon = document.createElement('span');
   layoutIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
   layoutIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><line x1="2" y1="4" x2="14" y2="4" stroke="#b0b0b0" stroke-width="1.7" stroke-linecap="round"/><line x1="2" y1="8" x2="14" y2="8" stroke="#b0b0b0" stroke-width="1.7" stroke-linecap="round"/><line x1="2" y1="12" x2="14" y2="12" stroke="#b0b0b0" stroke-width="1.7" stroke-linecap="round"/></svg>';
