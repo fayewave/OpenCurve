@@ -3600,16 +3600,14 @@ function _showSettingsModal() {
 
   var header = document.createElement('div');
   header.style.cssText = 'display:flex;align-items:center;padding:10px 8px 10px 12px;border-bottom:4px solid #080808;flex-shrink:0;';
-  var logoSpacer = document.createElement('div');
-  logoSpacer.style.cssText = 'width:22px;flex-shrink:0;';
   var logoWrap = document.createElement('div');
-  logoWrap.style.cssText = 'flex:1;display:flex;align-items:center;justify-content:center;';
+  logoWrap.style.cssText = 'flex:1;display:flex;align-items:center;justify-content:flex-start;';
   var logo = document.createElement('img');
   // Pre-rendered at the exact display size for 1x/2x/3x screens and shown in a
   // fixed 170x26 box: letting the host shrink a larger PNG made the logo blurry
   var _dpr = window.devicePixelRatio || 1;
   logo.src = 'img/OpenCurve2_Wordmark_small' + (_dpr >= 2.5 ? '@3x' : _dpr >= 1.5 ? '@2x' : '') + '.png';
-  logo.style.cssText = 'width:171px;height:26px;opacity:0.9;';
+  logo.style.cssText = 'width:171px;height:26px;opacity:0.9;margin-top:6px;'; // margin centres 3px lower, the artwork sat high
   logoWrap.appendChild(logo);
   var closeBtn = document.createElement('div');
   closeBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><line x1="2.5" y1="2.5" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="9.5" y1="2.5" x2="2.5" y2="9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
@@ -3619,7 +3617,6 @@ function _showSettingsModal() {
   closeBtn.addEventListener('mouseenter', function() { closeBtn.style.background='rgba(255,144,144,0.45)'; closeBtn.style.color='#ffffff'; });
   closeBtn.addEventListener('mouseleave', function() { closeBtn.style.background='rgba(255,144,144,0.18)'; closeBtn.style.color='#ff9090'; });
   closeBtn.addEventListener('click', function() { modal.remove(); });
-  header.appendChild(logoSpacer);
   header.appendChild(logoWrap);
   header.appendChild(closeBtn);
 
