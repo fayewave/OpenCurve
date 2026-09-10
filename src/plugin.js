@@ -720,16 +720,6 @@ function _stylePeakBtn() {
     mb.style.background = _peakMode ? 'rgba(61,220,132,0.18)' : '';
     mb.style.color      = _peakMode ? '#3ddc84' : '';
   }
-  // Add Point only makes sense on the bezier view
-  // Dim the icon itself (its strokes use currentColor) and pin the background so
-  // hover can't light it back up; opacity alone was not reliable in UXP
-  var add = document.getElementById('add-point');
-  if (add) {
-    add.style.color      = _peakMode ? 'rgba(212,212,212,0.28)' : '';
-    add.style.background = _peakMode ? 'rgba(255,255,255,0.03)' : '';
-    add.style.opacity    = _peakMode ? '0.5' : '';
-    add.style.cursor     = _peakMode ? 'default' : '';
-  }
 }
 
 function _setPeakMode(on) {
@@ -938,6 +928,13 @@ function initGraphEditor(svg) {
     if (e.button !== 0) return;
     _showDragGhost(getState().curve, _svgW, _svgH); // before any snap moves the curve
     if (_peakMode) {
+      // The peak solver only produces a single-segment cubic, so a curve with
+      // added points can't be shaped here; refuse rather than flatten it
+      if ((getState().curve.pts || []).length) {
+        _hideDragGhost();
+        _showCopyToast('Switch off A-curve mode to edit a curve with added points');
+        return;
+      }
       // Peak mode: the pointer is the peak, wherever you press
       svg.setPointerCapture(e.pointerId);
       dragging    = 'peak';
@@ -3505,10 +3502,11 @@ function initPanel() {
   if (addPtBtn) {
     _attachTooltip(addPtBtn, function() {
       return _peakMode
-        ? 'Add Point is unavailable in A-curve mode'
+        ? 'Add a point to the curve and go back to the bezier handles, where it can be dragged'
         : 'Add a point to the curve. Drag it and its handles, right-click it to delete. Alt-drag a handle to keep both lengths, Ctrl-drag to move it on its own (makes a corner)';
     });
-    addPtBtn.addEventListener('click', function() { if (!_peakMode) _addPoint(); });
+    // In A-curve mode the point would have no handles to grab, so adding one switches back
+    addPtBtn.addEventListener('click', function() { if (_peakMode) _setPeakMode(false); _addPoint(); });
   }
 
   // Flip / Invert: one-press curve transforms (see _flipCurve / _invertCurve)
@@ -3687,7 +3685,7 @@ function initPanel() {
       menu.appendChild(it);
     }
     item(_peakMode ? 'A-curve Mode: On' : 'A-curve Mode', peakBtn, function() { _setPeakMode(!_peakMode); }, { active: _peakMode });
-    item('Add Point', addPtBtn, function() { _addPoint(); }, { disabled: _peakMode });
+    item('Add Point', addPtBtn, function() { if (_peakMode) _setPeakMode(false); _addPoint(); });
     item('Flip',      flipBtn,   function() { _applyCurveOp(_flipCurve); });
     item('Invert',    invertBtn, function() { _applyCurveOp(_invertCurve); });
     item(_dragGhost ? 'Ghost: On' : 'Ghost', ghostBtn, function() { _setDragGhost(!_dragGhost); }, { active: _dragGhost });
