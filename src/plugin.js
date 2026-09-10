@@ -2802,6 +2802,8 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
   els.svg.setAttribute('width', W);
   els.svg.setAttribute('height', H);
   _tlClear(els.svg);
+  // Lane dividers are HTML divs laid over the SVG (see the loop below); drop the old set
+  if (els.wrap) els.wrap.querySelectorAll('.tl-lane-div').forEach(function(el) { el.parentNode.removeChild(el); });
   _tlLanes = [];
   _tlPh = null;
   var g = { W: W, H: H, laneH: laneH, n: n, a: range ? range.a : 0, b: range ? range.b : 1, y0: 0 };
@@ -2823,13 +2825,17 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
     var c = _TL_COLORS[isBaked ? 'baked' : isSel ? (isValid ? 'active' : 'pending') : isValid ? 'ready' : 'none'];
     var bg = _tlMk('rect', { x: 0, y: top, width: W, height: laneH, fill: c.bg });
     els.svg.appendChild(bg);
-    // Divider like the property rows': theirs reads as a dark 1px line under each
-    // row's tint, so this is a dark strip too (a filled rect, not a stroked line,
-    // so it can't depend on how the host handles strokes). A light line here
-    // looked like a white rule between the lanes. 0.41 black is what turns a plain
-    // lane's tint into the same grey as the row's own border, so the line carries
-    // across the divider without a step.
-    els.svg.appendChild(_tlMk('rect', { x: 0, y: top + laneH - 1, width: W, height: 1, fill: '#080808', 'shape-rendering': 'crispEdges' }));
+    // Divider like the property rows': a dark 1px line at the bottom of the lane
+    // (a light line here looked like a white rule). It is an HTML div over the
+    // SVG, not an SVG rect: UXP resamples the SVG as a whole, so a 1px rect came
+    // out soft and thicker than the rows' border, while HTML edges snap to device
+    // pixels like the rows do (crispEdges on the rect made no difference).
+    if (els.wrap) {
+      var dv = document.createElement('div');
+      dv.className = 'tl-lane-div';
+      dv.style.cssText = 'position:absolute;left:0;right:0;top:' + (top + laneH - 1) + 'px;height:1px;background:#080808;pointer-events:none;';
+      els.wrap.appendChild(dv);
+    }
     var kf = (p.tlKf || []).slice().sort(function(x, y){ return x - y; });
     // Bars: bakes (green), other per-frame runs (grey), then the pair the playhead is in
     var spans = (p.tlSpans || []).map(function(sp){ return { a: sp[0], b: sp[1], kind: 'bake' }; });
