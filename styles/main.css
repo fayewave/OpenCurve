@@ -974,11 +974,10 @@ html, body {
   position: fixed;
   z-index: 9999;
   background: var(--bg);
-  border: 1px solid var(--border2);
+  border: none;
   border-radius: 0;
   padding: 4px 0;
   min-width: 160px;
-  border: 1px solid rgba(255,255,255,0.18);
 }
 
 .ctx-menu-item {
