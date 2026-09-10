@@ -290,7 +290,8 @@ html, body {
   overflow: hidden;
 }
 
-#tl-svg { display: block; }
+/* Positioned so it paints above the .tl-lane-div dividers plugin.js lays under it (absolute boxes otherwise always win) */
+#tl-svg { display: block; position: relative; z-index: 1; }
 
 .tl-empty {
   position: absolute;
