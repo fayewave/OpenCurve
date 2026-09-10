@@ -783,6 +783,14 @@ function _styleGhostBtn() {
   btn.style.color      = _dragGhost ? '#3ddc84' : '';
   btn.style.opacity    = _dragGhost ? '1' : '';
 }
+// Preset toolbar List/Grid button: shows the view a press switches to
+function _styleLayoutBtn() {
+  var btn = document.getElementById('preset-layout');
+  if (!btn) return;
+  var g = btn.querySelector('.ic-grid'), l = btn.querySelector('.ic-list');
+  if (g) g.style.display = _presetLayout === 'list' ? '' : 'none';
+  if (l) l.style.display = _presetLayout === 'list' ? 'none' : '';
+}
 function _setDragGhost(on) {
   _dragGhost = !!on;
   localStorage.setItem(_DRAG_GHOST_KEY, _dragGhost ? 'on' : 'off');
@@ -2042,6 +2050,26 @@ function initPanel() {
   }
   _styleGhostBtn();
 
+  // Preset toolbar (top of the preset column): List/Grid toggle and Paste Preset,
+  // the same actions as the preset list's context menu
+  var layoutBtn = document.getElementById('preset-layout');
+  if (layoutBtn) {
+    _attachTooltip(layoutBtn, function() {
+      return _presetLayout === 'list' ? 'Grid View: show presets as tiles' : 'List View: show presets as rows';
+    });
+    layoutBtn.addEventListener('click', function() {
+      _presetLayout = _presetLayout === 'list' ? 'grid' : 'list';
+      localStorage.setItem(_LAYOUT_KEY, _presetLayout);
+      _applyPresetLayout(true);
+    });
+  }
+  _styleLayoutBtn();
+  var pasteBtn = document.getElementById('preset-paste');
+  if (pasteBtn) {
+    _attachTooltip(pasteBtn, 'Paste Preset: add a preset from cubic-bezier() or opencurve() text');
+    pasteBtn.addEventListener('click', function() { _pasteCoordinates(); });
+  }
+
   // Enter presses Go. UXP only delivers keydown to inputs and buttons, and
   // Premiere keeps Enter for itself unless a text field in the panel has
   // focus. So #oc-key-sink (a concealed read-only input in index.html) takes
@@ -3165,6 +3193,7 @@ function _fitGoForUndo() {
 }
 
 function _applyPresetLayout(force) {
+  _styleLayoutBtn();
   var list = document.getElementById('all-presets-list');
   if (!list) return;
   var isGrid = _presetLayout === 'grid';
