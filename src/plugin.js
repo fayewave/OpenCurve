@@ -2829,7 +2829,7 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
     // looked like a white rule between the lanes. 0.41 black is what turns a plain
     // lane's tint into the same grey as the row's own border, so the line carries
     // across the divider without a step.
-    els.svg.appendChild(_tlMk('rect', { x: 0, y: top + laneH - 1, width: W, height: 1, fill: 'rgba(0,0,0,0.41)' }));
+    els.svg.appendChild(_tlMk('rect', { x: 0, y: top + laneH - 1, width: W, height: 1, fill: '#080808' }));
     var kf = (p.tlKf || []).slice().sort(function(x, y){ return x - y; });
     // Bars: bakes (green), other per-frame runs (grey), then the pair the playhead is in
     var spans = (p.tlSpans || []).map(function(sp){ return { a: sp[0], b: sp[1], kind: 'bake' }; });
