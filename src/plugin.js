@@ -5380,7 +5380,8 @@ function _showSettingsModal() {
   colorSection.appendChild(colorLabel);
 
   // Swatches
-  var swatchColors = ['#4a9eff','#3ddc84','#f06060','#f0a030','#c97ff0','#ff6eb4','#ffffff','#aaaaaa'];
+  // Green, red and orange are the property panel's --green / --red / --amber tones
+  var swatchColors = ['#4a9eff','#4ce890','#f06060','#f0a030','#c97ff0','#ff6eb4','#ffffff','#aaaaaa'];
   var swatchRow = document.createElement('div');
   swatchRow.style.cssText = 'display:flex;margin-bottom:4px;flex-wrap:wrap;'; // spacing via swatch margins (UXP ignores flex gap)
   swatchColors.forEach(function(col) {
