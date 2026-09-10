@@ -856,6 +856,23 @@ function updateStaticSVG(W, H) {
 }
 
 // Update only the dynamic elements (curve, tangents, handles) — called on every pointer event
+// Drag ghost: while a handle, anchor or peak drag is in progress, the curve as it
+// was at press time stays behind in a faded theme colour so the change is visible.
+// Draws the bell in A-curve mode and the bezier otherwise, matching what is on screen.
+function _showDragGhost(curve, W, H) {
+  var g = document.getElementById('sg-drag-ghost');
+  if (!g) return;
+  var d = _peakMode
+    ? _peakBellPath(curve, 96,
+        function(x) { return normToSVG(x, 0, W, H).cx; },
+        function(y) { return normToSVG(0, y, W, H).cy; })
+    : _curvePathD(curve, W, H);
+  g.setAttribute('d', d);
+  g.setAttribute('stroke', _curveColor || '#4a9eff');
+  _svgShow('sg-drag-ghost', true);
+}
+function _hideDragGhost() { _svgShow('sg-drag-ghost', false); }
+
 function updateDynamicSVG(curve, W, H) {
   if (_peakMode) { _updatePeakSVG(curve, W, H); return; }
   var p0 = normToSVG(0, 0, W, H);
@@ -902,6 +919,7 @@ function initGraphEditor(svg) {
 
   svg.addEventListener('pointerdown', function(e) {
     if (e.button !== 0) return;
+    _showDragGhost(getState().curve, _svgW, _svgH); // before any snap moves the curve
     if (_peakMode) {
       // Peak mode: the pointer is the peak, wherever you press
       svg.setPointerCapture(e.pointerId);
@@ -1038,6 +1056,7 @@ function initGraphEditor(svg) {
     if (!dragging) return;
     _isDragging = false;
     _setSnapBg(false);
+    _hideDragGhost();
     setState({ curve: liveCurve });
     clearPresetActive();
     dragging  = null;
@@ -5019,6 +5038,8 @@ function _applyCurveColor(color) {
   _curveColor = color;
   var el = document.getElementById('sg-curve');
   if (el) el.setAttribute('stroke', color);
+  var dg = document.getElementById('sg-drag-ghost');
+  if (dg) dg.setAttribute('stroke', color);
   var ep0 = document.getElementById('sg-ep0');
   if (ep0) ep0.setAttribute('stroke', color);
   var ep3 = document.getElementById('sg-ep3');
