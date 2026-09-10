@@ -5389,8 +5389,8 @@ function _showSettingsModal() {
   // Graph line colour section
   var colorSection = document.createElement('div');
   colorSection.style.cssText = dualCol
-    ? 'padding:10px 12px 12px;width:50%;box-sizing:border-box;border-left:1px solid rgba(255,255,255,0.07);'
-    : 'padding:10px 12px 12px;border-top:1px solid rgba(255,255,255,0.07);flex-shrink:0;';
+    ? 'padding:10px 12px 12px;width:50%;box-sizing:border-box;border-left:1px solid #080808;'
+    : 'padding:10px 12px 12px;border-top:1px solid #080808;flex-shrink:0;';
 
   var colorLabel = document.createElement('div');
   colorLabel.textContent = 'Theme';
@@ -5725,7 +5725,7 @@ function _showSettingsModal() {
 
   // Footer
   var footer = document.createElement('div');
-  footer.style.cssText = 'border-top:1px solid rgba(255,255,255,0.07);flex-shrink:0;';
+  footer.style.cssText = 'border-top:1px solid #080808;flex-shrink:0;';
   var footerRow = document.createElement('div');
   footerRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 12px;';
 
@@ -5795,8 +5795,8 @@ function _showSettingsModal() {
       dualCol = nowDual;
       content.style.flexDirection = nowDual ? 'row' : 'column';
       colorSection.style.cssText = nowDual
-        ? 'padding:10px 12px 12px;width:50%;box-sizing:border-box;border-left:1px solid rgba(255,255,255,0.07);'
-        : 'padding:10px 12px 12px;border-top:1px solid rgba(255,255,255,0.07);flex-shrink:0;';
+        ? 'padding:10px 12px 12px;width:50%;box-sizing:border-box;border-left:1px solid #080808;'
+        : 'padding:10px 12px 12px;border-top:1px solid #080808;flex-shrink:0;';
       rowsCol.style.cssText = nowDual
         ? 'flex:1;display:flex;flex-direction:column;'
         : 'flex-shrink:0;display:flex;flex-direction:column;';
