@@ -411,7 +411,7 @@
     // Same pre-rendered 1x/2x/3x files as the Settings header, shown at their exact size
     var _dpr = window.devicePixelRatio || 1;
     logo.src = 'img/OpenCurve2_Wordmark_small' + (_dpr >= 2.5 ? '@3x' : _dpr >= 1.5 ? '@2x' : '') + '.png';
-    logo.style.cssText = 'width:170px;height:26px;margin-bottom:20px;opacity:0.9;';
+    logo.style.cssText = 'width:171px;height:26px;margin-bottom:20px;opacity:0.9;';
     card.appendChild(logo);
 
     var text = document.createElement('div');
