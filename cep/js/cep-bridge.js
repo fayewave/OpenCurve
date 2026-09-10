@@ -112,10 +112,10 @@
             _saveBakeRecords();
             OpenCurve.showCopyToast('Undone: ' + res.removed + ' keyframes removed from ' + (name || 'property'), '#f0a030');
           } else {
-            OpenCurve.showCopyToast(res.error || 'Undo failed', '#f06060');
+            OpenCurve.showCopyToast(res.error || 'Undo failed', '#ff9090');
           }
         } catch(e) {
-          OpenCurve.showCopyToast('Undo failed', '#f06060');
+          OpenCurve.showCopyToast('Undo failed', '#ff9090');
         }
       });
     },
@@ -178,10 +178,10 @@
           OpenCurve.setState({ bakedParamKeys: [], status: 'idle' });
           OpenCurve.showCopyToast('Undone (' + res.removed + ' keyframes removed)', '#f0a030');
         } else {
-          OpenCurve.showCopyToast(res.error || 'Undo failed', '#f06060');
+          OpenCurve.showCopyToast(res.error || 'Undo failed', '#ff9090');
         }
       } catch(e2) {
-        OpenCurve.showCopyToast('Undo failed', '#f06060');
+        OpenCurve.showCopyToast('Undo failed', '#ff9090');
       }
     });
   });

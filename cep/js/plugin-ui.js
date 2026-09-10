@@ -1935,7 +1935,7 @@ function renderUI(s) {
       'status-warn':     { dot: '#555',    text: '#888'    },
       'status-detected': { dot: '#555',    text: '#888'    },
       'status-valid':    { dot: '#555',    text: '#888'    }, // grey like detected; the rows carry the blue
-      'status-error':    { dot: '#f06060', text: '#f06060' },
+      'status-error':    { dot: '#ff9090', text: '#ff9090' },
       'status-done':     { dot: '#555',    text: '#888'    }, // grey; the green rows carry the result
     }[cfg.cls] || { dot: '#555', text: '#888' };
     var dotEl = strip.querySelector('.status-dot');
@@ -2649,7 +2649,7 @@ function initPanel() {
     box.appendChild(input);
 
     var err = document.createElement('div');
-    err.style.cssText = 'color:#f06060;font-size:12px;min-height:16px;margin-bottom:10px;';
+    err.style.cssText = 'color:#ff9090;font-size:12px;min-height:16px;margin-bottom:10px;';
     box.appendChild(err);
 
     var btnRow = document.createElement('div');
@@ -3394,7 +3394,7 @@ function _refreshUpdateNotification() {
   delBtn.style.cssText = 'opacity:0;width:22px;height:22px;display:flex;align-items:center;justify-content:center;';
   notif.addEventListener('mouseenter', function() { delBtn.style.opacity = '1'; notif.style.background = 'rgba(240,180,0,0.15)'; });
   notif.addEventListener('mouseleave', function() { delBtn.style.opacity = '0'; delBtn.style.background = 'transparent'; notif.style.background = 'rgba(240,180,0,0.08)'; });
-  delBtn.addEventListener('mouseenter', function() { delBtn.style.background = 'rgba(240,96,96,0.25)'; });
+  delBtn.addEventListener('mouseenter', function() { delBtn.style.background = 'rgba(255,144,144,0.25)'; });
   delBtn.addEventListener('mouseleave', function() { delBtn.style.background = 'transparent'; });
   notif.addEventListener('click', function(e) {
     if (e.target === delBtn) return;
@@ -3624,7 +3624,7 @@ function _showSettingsModal() {
   colorSection.appendChild(colorLabel);
 
   // Green, red and orange are the property panel's --green / --red / --amber tones
-  var swatchColors = ['#4a9eff','#4ce890','#f06060','#f0a030','#c97ff0','#ff6eb4','#ffffff','#aaaaaa'];
+  var swatchColors = ['#4a9eff','#4ce890','#ff9090','#f0a030','#c97ff0','#ff6eb4','#ffffff','#aaaaaa'];
   var swatchRow = document.createElement('div');
   swatchRow.style.cssText = 'display:flex;margin-bottom:4px;flex-wrap:wrap;'; // spacing via swatch margins (UXP ignores flex gap)
   swatchColors.forEach(function(col) {
@@ -3711,11 +3711,11 @@ function _showSettingsModal() {
   var notifCheck = document.createElement('span');
   notifCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
   var _svgCheck = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><polyline points="1.5,6 4.5,9 10.5,3" stroke="#3ddc84" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  var _svgCross = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><line x1="2" y1="2" x2="10" y2="10" stroke="#f06060" stroke-width="1.8" stroke-linecap="round"/><line x1="10" y1="2" x2="2" y2="10" stroke="#f06060" stroke-width="1.8" stroke-linecap="round"/></svg>';
+  var _svgCross = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><line x1="2" y1="2" x2="10" y2="10" stroke="#ff9090" stroke-width="1.8" stroke-linecap="round"/><line x1="10" y1="2" x2="2" y2="10" stroke="#ff9090" stroke-width="1.8" stroke-linecap="round"/></svg>';
   function _updateNotifCheck() {
     notifCheck.innerHTML = _updateNotifsOn ? _svgCheck : _svgCross;
     notifLabel.textContent = 'Update Notifications ' + (_updateNotifsOn ? 'On' : 'Off');
-    notifRow.style.background = _updateNotifsOn ? 'rgba(61,220,132,0.08)' : 'rgba(240,96,96,0.08)';
+    notifRow.style.background = _updateNotifsOn ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)';
   }
   var notifIcon = document.createElement('span');
   notifIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
@@ -3724,8 +3724,8 @@ function _showSettingsModal() {
   notifRow.appendChild(notifIcon);
   notifRow.appendChild(notifLabel);
   notifRow.appendChild(notifCheck);
-  notifRow.addEventListener('mouseenter', function() { notifRow.style.background = _updateNotifsOn ? 'rgba(61,220,132,0.15)' : 'rgba(240,96,96,0.15)'; });
-  notifRow.addEventListener('mouseleave', function() { notifRow.style.background = _updateNotifsOn ? 'rgba(61,220,132,0.08)' : 'rgba(240,96,96,0.08)'; });
+  notifRow.addEventListener('mouseenter', function() { notifRow.style.background = _updateNotifsOn ? 'rgba(61,220,132,0.15)' : 'rgba(255,144,144,0.15)'; });
+  notifRow.addEventListener('mouseleave', function() { notifRow.style.background = _updateNotifsOn ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)'; });
   notifRow.addEventListener('click', function() {
     _updateNotifsOn = !_updateNotifsOn;
     localStorage.setItem(_UPDATE_NOTIF_KEY, _updateNotifsOn ? 'on' : 'off');
@@ -3744,7 +3744,7 @@ function _showSettingsModal() {
   function _updateAnimCheck() {
     animCheck.innerHTML = _animationsOn ? _svgCheck : _svgCross;
     animLabel.textContent = 'Animations ' + (_animationsOn ? 'On' : 'Off');
-    animRow.style.background = _animationsOn ? 'rgba(61,220,132,0.08)' : 'rgba(240,96,96,0.08)';
+    animRow.style.background = _animationsOn ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)';
   }
   var animIcon = document.createElement('span');
   animIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
@@ -3753,8 +3753,8 @@ function _showSettingsModal() {
   animRow.appendChild(animIcon);
   animRow.appendChild(animLabel);
   animRow.appendChild(animCheck);
-  animRow.addEventListener('mouseenter', function() { animRow.style.background = _animationsOn ? 'rgba(61,220,132,0.15)' : 'rgba(240,96,96,0.15)'; });
-  animRow.addEventListener('mouseleave', function() { animRow.style.background = _animationsOn ? 'rgba(61,220,132,0.08)' : 'rgba(240,96,96,0.08)'; });
+  animRow.addEventListener('mouseenter', function() { animRow.style.background = _animationsOn ? 'rgba(61,220,132,0.15)' : 'rgba(255,144,144,0.15)'; });
+  animRow.addEventListener('mouseleave', function() { animRow.style.background = _animationsOn ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)'; });
   animRow.addEventListener('click', function() {
     _animationsOn = !_animationsOn;
     localStorage.setItem(_ANIM_KEY, _animationsOn ? 'on' : 'off');
@@ -3773,7 +3773,7 @@ function _showSettingsModal() {
   function _updateGraphCheck() {
     graphCheck.innerHTML = _graphVisible ? _svgCheck : _svgCross;
     graphLabel.textContent = 'Graph ' + (_graphVisible ? 'On' : 'Off');
-    graphRow.style.background = _graphVisible ? 'rgba(61,220,132,0.08)' : 'rgba(240,96,96,0.08)';
+    graphRow.style.background = _graphVisible ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)';
   }
   var graphIcon = document.createElement('span');
   graphIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
@@ -3782,8 +3782,8 @@ function _showSettingsModal() {
   graphRow.appendChild(graphIcon);
   graphRow.appendChild(graphLabel);
   graphRow.appendChild(graphCheck);
-  graphRow.addEventListener('mouseenter', function() { graphRow.style.background = _graphVisible ? 'rgba(61,220,132,0.15)' : 'rgba(240,96,96,0.15)'; });
-  graphRow.addEventListener('mouseleave', function() { graphRow.style.background = _graphVisible ? 'rgba(61,220,132,0.08)' : 'rgba(240,96,96,0.08)'; });
+  graphRow.addEventListener('mouseenter', function() { graphRow.style.background = _graphVisible ? 'rgba(61,220,132,0.15)' : 'rgba(255,144,144,0.15)'; });
+  graphRow.addEventListener('mouseleave', function() { graphRow.style.background = _graphVisible ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)'; });
   graphRow.addEventListener('click', function() {
     _graphVisible = !_graphVisible;
     localStorage.setItem(_GRAPH_KEY, _graphVisible ? 'on' : 'off');
@@ -3802,7 +3802,7 @@ function _showSettingsModal() {
   function _updateTlCheck() {
     tlCheck.innerHTML = _tlVisible ? _svgCheck : _svgCross;
     tlLabel.textContent = 'Timeline ' + (_tlVisible ? 'On' : 'Off');
-    tlRow.style.background = _tlVisible ? 'rgba(61,220,132,0.08)' : 'rgba(240,96,96,0.08)';
+    tlRow.style.background = _tlVisible ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)';
   }
   var tlIcon = document.createElement('span');
   tlIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
@@ -3811,8 +3811,8 @@ function _showSettingsModal() {
   tlRow.appendChild(tlIcon);
   tlRow.appendChild(tlLabel);
   tlRow.appendChild(tlCheck);
-  tlRow.addEventListener('mouseenter', function() { tlRow.style.background = _tlVisible ? 'rgba(61,220,132,0.15)' : 'rgba(240,96,96,0.15)'; });
-  tlRow.addEventListener('mouseleave', function() { tlRow.style.background = _tlVisible ? 'rgba(61,220,132,0.08)' : 'rgba(240,96,96,0.08)'; });
+  tlRow.addEventListener('mouseenter', function() { tlRow.style.background = _tlVisible ? 'rgba(61,220,132,0.15)' : 'rgba(255,144,144,0.15)'; });
+  tlRow.addEventListener('mouseleave', function() { tlRow.style.background = _tlVisible ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)'; });
   tlRow.addEventListener('click', function() {
     _tlVisible = !_tlVisible;
     localStorage.setItem(_TL_KEY, _tlVisible ? 'on' : 'off');
@@ -3966,13 +3966,13 @@ function _showSettingsModal() {
   footerLeft.appendChild(ghLink);
 
   var resetRow = document.createElement('div');
-  resetRow.style.cssText = 'display:flex;align-items:center;padding:5px 10px;cursor:pointer;color:#f06060;font-size:13px;background:rgba(240,96,96,0.08);flex-shrink:0;';
+  resetRow.style.cssText = 'display:flex;align-items:center;padding:5px 10px;cursor:pointer;color:#ff9090;font-size:13px;background:rgba(255,144,144,0.08);flex-shrink:0;';
   var resetLabel = document.createElement('span');
   resetLabel.textContent = 'Reset All Settings';
   _attachTooltip(resetRow, 'Restore defaults and remove all presets');
   resetRow.appendChild(resetLabel);
-  resetRow.addEventListener('mouseenter', function() { resetRow.style.background='rgba(240,96,96,0.15)'; });
-  resetRow.addEventListener('mouseleave', function() { resetRow.style.background='rgba(240,96,96,0.08)'; });
+  resetRow.addEventListener('mouseenter', function() { resetRow.style.background='rgba(255,144,144,0.15)'; });
+  resetRow.addEventListener('mouseleave', function() { resetRow.style.background='rgba(255,144,144,0.08)'; });
   resetRow.addEventListener('click', function() {
     modal.remove();
     _confirmReset();
