@@ -501,16 +501,22 @@ html, body {
   height: 26px;
   min-height: 0;
   line-height: 26px;
-  background: transparent;
-  background-color: transparent;
+  /* UXP draws the text area as a black inset inside the input's box; painting
+     the input black too, with no padding ring, makes them read as one field */
+  -webkit-appearance: none;
+  appearance: none;
+  background: #000000;
+  background-color: #000000;
   border-top: none;
   border-left: none;
   border-right: none;
   border-bottom: none;
+  border-radius: 3px;
+  box-shadow: none;
   color: var(--text);
   font-family: "Segoe UI", system-ui, -apple-system, "Adobe Clean", sans-serif;
   font-size: 13px;
-  padding: 0 6px;
+  padding: 0;
   margin: 0;
   outline: none;
 }
