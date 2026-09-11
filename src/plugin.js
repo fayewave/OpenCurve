@@ -1117,6 +1117,7 @@ function initGraphEditor(svg) {
 
 
   function onResize() {
+    _ocDiagRO('graph svg');
     var rect = svg.getBoundingClientRect();
     var w = Math.floor(rect.width);
     var h = Math.floor(rect.height);
@@ -3401,15 +3402,11 @@ function _tlApplyPropsWidth() {
   if (!props) return;
   var w = _tlSavedPropsWidth();
   _tlPropsW = w;
-  if (_tlVisible) {
-    props.style.width    = w + 'px';
-    props.style.flex     = '0 0 ' + w + 'px';
-    props.style.maxWidth = '';
-  } else {
-    props.style.width    = '';
-    props.style.flex     = '1 1 auto';
-    props.style.maxWidth = 'none';
-  }
+  // Change-only writes: this runs from the .main-row ResizeObserver, which UXP
+  // fires on scroll too, and UXP relayouts the panel on every style write
+  var want = _tlVisible ? { width: w + 'px', flex: '0 0 ' + w + 'px', maxWidth: '' }
+                        : { width: '',       flex: '1 1 auto',        maxWidth: 'none' };
+  Object.keys(want).forEach(function(k) { if (props.style[k] !== want[k]) props.style[k] = want[k]; });
   _tlSetGoWidth(); // Go keeps the column's width even with the timeline off
 }
 
@@ -3432,6 +3429,7 @@ function _tlInit() {
   // One measure per frame: dragging the width handle fires the observer on every move
   var _measurePending = false;
   function measureSoon() {
+    _ocDiagRO('timeline wrap');
     if (_measurePending) return;
     _measurePending = true;
     requestAnimationFrame(function() { _measurePending = false; measure(); });
@@ -3879,6 +3877,13 @@ function _centerIcons() {
   });
 }
 
+// TEMP DIAG: which ResizeObservers UXP fires after a preset-list scroll
+var _ocLastListScroll = 0, _ocRoLogged = 0;
+function _ocDiagRO(name) {
+  var dt = Date.now() - _ocLastListScroll;
+  if (dt < 1500 && _ocRoLogged < 40) { _ocRoLogged++; console.log('[OC-DIAG] ResizeObserver "' + name + '" fired ' + dt + 'ms after list scroll'); }
+}
+
 // ─── Smooth wheel scrolling (UXP) ─────────────────────────────────────────
 // UXP delivers no wheel events at all (checked 2026-09: nothing on the
 // element, document or window, and `onwheel` isn't even a property). Its own
@@ -3950,6 +3955,7 @@ function initPanel() {
   // A-curve (peak) mode toggle
   _tlInit(); // mini timeline strip along the bottom
   _smoothWheel(document.getElementById('all-presets-list')); // UXP: proper wheel steps with easing
+  (function() { var l = document.getElementById('all-presets-list'); if (l) l.addEventListener('scroll', function() { _ocLastListScroll = Date.now(); }); })(); // TEMP DIAG
   _smoothWheel(document.getElementById('tl-scroll'));
   _centerIcons(); // UXP: pin the button icons at their centres (see _centerIcons)
 
@@ -4156,6 +4162,7 @@ function initPanel() {
     if (_tbDismiss) { window.removeEventListener('pointerdown', _tbDismiss); _tbDismiss = null; }
   }
   function _tbLayout() {
+    _ocDiagRO('graph toolbar');
     if (!toolbar || !menuBtn) return;
     var w = toolbar.clientWidth;
     if (!(w > 0)) return;
@@ -5082,6 +5089,7 @@ function initPanel() {
       var _mainRow = document.querySelector('.main-row');
       var _tlRow   = document.getElementById('oc-timeline');
       var _colRO = new ResizeObserver(function() {
+        _ocDiagRO('main-row / timeline row');
         if (!_resizing && _graphVisible) {
           var sw = _sidebarSavedW();
           var want = sw ? sw + 'px' : '';
@@ -5698,6 +5706,7 @@ var _LIST_2COL_W = 340; // list view splits into two columns from this width
 var _presetCols = 1;    // columns the last _applyPresetLayout laid out
 var _gridColsSize = '';
 function _updateGridCols(entries) {
+  _ocDiagRO('preset list');
   // UXP fires this on scroll as well as on a real resize; a scroll never
   // changes the list's box, so ignore callbacks where the size is the same
   if (entries && entries[0] && entries[0].contentRect) {
