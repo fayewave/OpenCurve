@@ -391,9 +391,12 @@ input, textarea {
 #preset-toolbar {
   justify-content: flex-end;
 }
-/* New Preset is the one tool at the left of the preset bar */
+/* New Preset, List/Grid and Paste sit at the left of the preset bar; the
+   Graph/Timeline toggles and Settings at the right */
 #preset-new {
   margin-left: 0;
+}
+#preset-paste {
   margin-right: auto;
 }
 
