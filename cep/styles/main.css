@@ -533,6 +533,8 @@ input, textarea {
 .oc-field-input.small {
   font-size: 12px;
 }
+.oc-field.paste { background: #1c1c1c; }
+.oc-field.hex   { background: #252525; }
 
 .preset-rename-input {
   flex: 1;

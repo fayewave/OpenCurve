@@ -484,11 +484,14 @@ html, body {
   display: flex;
   align-items: center;
   height: 26px;
-  padding: 0 8px;
+  padding: 0;
   box-sizing: border-box;
   overflow: hidden;
-  background: #111111;
-  border: 1px solid rgba(255,255,255,0.12);
+  /* UXP paints its own dark rounded field inside every <input>, so the
+     wrapper draws nothing here and that native field is the box (the CEP
+     stylesheet gives the wrapper the frame instead) */
+  background: transparent;
+  border: none;
 }
 .oc-field-input {
   flex: 1;
@@ -504,9 +507,9 @@ html, body {
   border-right: none;
   border-bottom: none;
   color: var(--text);
-  font-family: var(--font);
+  font-family: "Segoe UI", system-ui, -apple-system, "Adobe Clean", sans-serif;
   font-size: 13px;
-  padding: 0;
+  padding: 0 6px;
   margin: 0;
   outline: none;
 }

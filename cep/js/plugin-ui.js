@@ -1200,13 +1200,17 @@ function _jumpToParam(p) {
 // · G ghost · N numeric entry · U undo the last bake · Esc stops a preview or
 // leaves full screen. Enter (Go) is handled by the caller.
 var _lastHandle = { k: 'p1' }; // last handle pressed on the graph, for the arrow keys
+var _NATIVE_TRANSPORT = true; // CEP: Premiere still receives Space/J/K/L pressed in the panel, so it plays and shuttles itself
 function _panelShortcut(e) {
   var k = e.key || '', code = e.code || '';
   var lk = k.length === 1 ? k.toLowerCase() : k;
-  if (k === ' ' || code === 'Space') { _transport('toggle'); return true; }
-  if (lk === 'j') { _transport('rev');  return true; }
-  if (lk === 'k') { _transport('stop'); return true; }
-  if (lk === 'l') { _transport('fwd');  return true; }
+  var isTransport = k === ' ' || code === 'Space' || lk === 'j' || lk === 'k' || lk === 'l';
+  if (isTransport) {
+    if (_NATIVE_TRANSPORT) return false; // CEP: Premiere receives the key itself, doing it here doubled the toggle
+    if (k === ' ' || code === 'Space') _transport('toggle');
+    else _transport(lk === 'j' ? 'rev' : lk === 'k' ? 'stop' : 'fwd');
+    return true;
+  }
   if (lk === 'p') { if (_pv && _pv.back) _pvStop(); else _previewPair(); return true; }
   if (k.length === 1 && k >= '1' && k <= '9') { _pressPreset(parseInt(k, 10) - 1); return true; }
   if (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'ArrowUp' || k === 'ArrowDown') {
@@ -3118,7 +3122,7 @@ function initPanel() {
     desc.style.cssText = 'color:#888;font-size:13px;margin-bottom:10px;';
     box.appendChild(desc);
 
-    var pasteTf = _mkTextField(13, false, '#1c1c1c'), input = pasteTf.input;
+    var pasteTf = _mkTextField(13, false, 'paste'), input = pasteTf.input;
     input.placeholder = 'cubic-bezier(0.42, 0, 0.58, 1)';
     pasteTf.wrap.style.marginBottom = '6px';
     box.appendChild(pasteTf.wrap);
@@ -4069,10 +4073,9 @@ function _confirmReset() {
 // border and background therefore live on a wrapper div and the input itself
 // is bare (the preset rename field has always been styled that way). Same
 // look in CEP. Returns { wrap, input }; style the wrap for width/margins.
-function _mkTextField(fontSize, mono, bg) {
+function _mkTextField(fontSize, mono, variant) {
   var wrap = document.createElement('div');
-  wrap.className = 'oc-field';
-  if (bg) wrap.style.background = bg;
+  wrap.className = 'oc-field' + (variant ? ' ' + variant : ''); // 'paste' / 'hex': the CEP stylesheet tints them
   var inp = document.createElement('input');
   inp.type = 'text';
   inp.className = 'oc-field-input' + (mono ? ' mono' : '') + (fontSize && fontSize < 13 ? ' small' : '');
@@ -4333,7 +4336,7 @@ function _showSettingsModal() {
   hexInput.type = 'text';
   hexInput.value = _curveColor.toUpperCase();
   hexInput.maxLength = 7;
-  var hexTf = _mkTextField(13, true, '#252525');
+  var hexTf = _mkTextField(13, true, 'hex');
   hexTf.wrap.style.width = '90px'; hexTf.wrap.style.marginLeft = '8px'; hexTf.wrap.style.flexShrink = '0';
   hexTf.wrap.replaceChild(hexInput, hexTf.input); // keep the input the rest of this code refers to
   hexInput.className = hexTf.input.className;
