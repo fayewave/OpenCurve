@@ -505,14 +505,15 @@ html, body {
      the input black too, with no padding ring, makes them read as one field */
   -webkit-appearance: none;
   appearance: none;
-  background: #000000;
-  background-color: #000000;
-  border-top: none;
-  border-left: none;
-  border-right: none;
-  border-bottom: none;
-  border-radius: 3px;
+  background: #111111;
+  background-color: #111111;
+  border-top: 1px solid rgba(255,255,255,0.12);
+  border-left: 1px solid rgba(255,255,255,0.12);
+  border-right: 1px solid rgba(255,255,255,0.12);
+  border-bottom: 1px solid rgba(255,255,255,0.12);
+  border-radius: 0;
   box-shadow: none;
+  box-sizing: border-box;
   color: var(--text);
   font-family: "Segoe UI", system-ui, -apple-system, "Adobe Clean", sans-serif;
   font-size: 13px;
