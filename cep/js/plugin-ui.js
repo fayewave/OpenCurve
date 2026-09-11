@@ -102,6 +102,17 @@ function sampleBezier(x, curve) {
   var t = _tForX(cx, curve.p1x, curve.p2x);
   return _by(t, curve.p1y, curve.p2y);
 }
+// Lowest and highest y the curve reaches, at least 0..1. Thumbnails stretch to
+// this so a Back or Bounce curve isn't clipped at the box edge.
+function _curveYBounds(c) {
+  var lo = 0, hi = 1, N = 32;
+  for (var i = 1; i < N; i++) {
+    var y = sampleBezier(i / N, c);
+    if (y < lo) lo = y;
+    if (y > hi) hi = y;
+  }
+  return { lo: lo, hi: hi };
+}
 
 // ─── Multi-point curves ───────────────────────────────────────────────────
 // The Add Point tool (#add-point) turns the single cubic into a chain of them.
@@ -1039,6 +1050,46 @@ var BUILT_IN_PRESETS = [
   { id: 'linear',   name: 'Linear',  curve: PRESETS['linear'],   builtIn: true },
   { id: 's-curve',  name: 'S-Curve', curve: PRESETS['s-curve'],  builtIn: true },
 ];
+
+// Starter set: seeded on a fresh install and added on demand from the preset
+// list's context menu (Add Starter Presets). The Penner-style families as
+// cubic-beziers, plus Back (overshoot: a handle y outside 0..1, which the bake
+// follows as-is) and Bounce (a multi-point chain of parabolas, corners at the
+// touches). Bounce In is Bounce Out flipped.
+var _BOUNCE_OUT = {
+  p1x: 0.1212, p1y: 0, p2x: 0.9697, p2y: 0.9792,
+  pts: [
+    { x: 0.3636, y: 1, ix: 0.2424, iy: 0.3333, ox: 0.4848, oy: 0.6667, smooth: false },
+    { x: 0.7273, y: 1, ix: 0.6061, iy: 0.6667, ox: 0.7879, oy: 0.9167, smooth: false },
+    { x: 0.9091, y: 1, ix: 0.8485, iy: 0.9167, ox: 0.9394, oy: 0.9792, smooth: false },
+  ],
+};
+var STARTER_PRESETS = [
+  { name: 'Ease In',      curve: { p1x: 0.42, p1y: 0,     p2x: 1,    p2y: 1    } },
+  { name: 'Ease Out',     curve: { p1x: 0,    p1y: 0,     p2x: 0.58, p2y: 1    } },
+  { name: 'Ease In-Out',  curve: { p1x: 0.42, p1y: 0,     p2x: 0.58, p2y: 1    } },
+  { name: 'Cubic In',     curve: { p1x: 0.32, p1y: 0,     p2x: 0.67, p2y: 0    } },
+  { name: 'Cubic Out',    curve: { p1x: 0.33, p1y: 1,     p2x: 0.68, p2y: 1    } },
+  { name: 'Cubic In-Out', curve: { p1x: 0.65, p1y: 0,     p2x: 0.35, p2y: 1    } },
+  { name: 'Quint In',     curve: { p1x: 0.64, p1y: 0,     p2x: 0.78, p2y: 0    } },
+  { name: 'Quint Out',    curve: { p1x: 0.22, p1y: 1,     p2x: 0.36, p2y: 1    } },
+  { name: 'Quint In-Out', curve: { p1x: 0.83, p1y: 0,     p2x: 0.17, p2y: 1    } },
+  { name: 'Expo In',      curve: { p1x: 0.7,  p1y: 0,     p2x: 0.84, p2y: 0    } },
+  { name: 'Expo Out',     curve: { p1x: 0.16, p1y: 1,     p2x: 0.3,  p2y: 1    } },
+  { name: 'Expo In-Out',  curve: { p1x: 0.87, p1y: 0,     p2x: 0.13, p2y: 1    } },
+  { name: 'Back In',      curve: { p1x: 0.36, p1y: 0,     p2x: 0.66, p2y: -0.56 } },
+  { name: 'Back Out',     curve: { p1x: 0.34, p1y: 1.56,  p2x: 0.64, p2y: 1    } },
+  { name: 'Back In-Out',  curve: { p1x: 0.68, p1y: -0.6,  p2x: 0.32, p2y: 1.6  } },
+  { name: 'Bounce Out',   curve: _BOUNCE_OUT },
+  { name: 'Bounce In',    curve: _flipCurve(_BOUNCE_OUT) },
+];
+// Fresh preset entries for the starter set (new ids each time; names are what dedupes them)
+function _starterPresetEntries() {
+  var seq = Date.now();
+  return STARTER_PRESETS.map(function(p, i) {
+    return { id: 's' + seq + '_' + i, name: p.name, curve: _cloneCurve(p.curve) };
+  });
+}
 
 // Frame count of the selected keyframe pairs for the status strip: "24 frames",
 // or "18–24 frames" when the selected properties span different pairs.
@@ -2311,7 +2362,8 @@ function initPanel() {
   var _stored = _loadPresetList();
   var _presetList = _stored || BUILT_IN_PRESETS.map(function(p) {
     return { id: p.id, name: p.name, curve: p.curve, builtIn: true };
-  });
+  }).concat(_starterPresetEntries()); // fresh install: the starter set comes along
+  if (!_stored) _savePresetList(_presetList);
 
   // ── Context menu ──────────────────────────────────────────────
   var _ctxMenu = document.createElement('div');
@@ -2438,12 +2490,66 @@ function initPanel() {
   });
 
   // ── Thumbnails ────────────────────────────────────────────────
-  function _thumbPathD(c) {
+  // Thumbnail mapping: the 0..1 box, stretched to the curve's y extent when it
+  // overshoots (Back / Bounce presets), so the shape isn't clipped
+  function _thumbMap(c) {
     var W = 28, H = 28, pad = 3, gW = W - 2*pad, gH = H - 2*pad;
-    function tx(n) { return pad + n * gW; }
-    function ty(n) { return pad + (1 - n) * gH; }
-    if (_peakMode) return _peakBellPath(c, 40, tx, ty); // A-curve mode: thumbnails show the bell too
-    return _curvePathTx(c, tx, ty);
+    var b = _peakMode ? { lo: 0, hi: 1 } : _curveYBounds(c), span = b.hi - b.lo;
+    return {
+      tx: function(n) { return pad + n * gW; },
+      ty: function(n) { return pad + (1 - (n - b.lo) / span) * gH; },
+    };
+  }
+  function _thumbPathD(c) {
+    var m = _thumbMap(c);
+    if (_peakMode) return _peakBellPath(c, 40, m.tx, m.ty); // A-curve mode: thumbnails show the bell too
+    return _curvePathTx(c, m.tx, m.ty);
+  }
+
+  // Ease preview: while a tile is hovered a dot runs along its thumbnail with x
+  // as time and y as the eased value (the bell's height in A-curve mode), so
+  // the pace of the ease can be read without applying it. One tile at a time;
+  // follows the Animations setting.
+  var _tileAnim = null; // { raf, dot, thumb }
+  function _tileAnimStop() {
+    if (!_tileAnim) return;
+    cancelAnimationFrame(_tileAnim.raf);
+    if (_tileAnim.dot.parentNode) _tileAnim.dot.parentNode.removeChild(_tileAnim.dot);
+    _tileAnim = null;
+  }
+  function _tileAnimHook(btn, thumb, getCurve) {
+    btn.addEventListener('mouseenter', function() {
+      if (!_animationsOn) return;
+      _tileAnimStop();
+      var c = getCurve();
+      var m = _thumbMap(c);
+      var pk = _peakMode ? _peakOf(c, 48) : null;
+      var dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      dot.setAttribute('r', '2.6');
+      dot.setAttribute('fill', _curveColor);
+      dot.setAttribute('stroke', '#111111');
+      dot.setAttribute('stroke-width', '1');
+      thumb.appendChild(dot);
+      var st = { raf: 0, dot: dot, thumb: thumb }, t0 = null;
+      var run = 1300, hold = 400; // one pass, then a pause at the end
+      _tileAnim = st;
+      function yAt(x) {
+        if (!pk) return sampleBezier(x, c);
+        var h = 5e-4, xa = Math.max(0, x - h), xb = Math.min(1, x + h);
+        var v = (sampleBezier(xb, c) - sampleBezier(xa, c)) / (xb - xa);
+        return Math.max(0, Math.min(1, v / (pk.v > 1e-9 ? pk.v : 1)));
+      }
+      function frame(ts) {
+        if (_tileAnim !== st) return;
+        if (t0 === null) t0 = ts;
+        var x = Math.min(1, ((ts - t0) % (run + hold)) / run);
+        dot.setAttribute('cx', m.tx(x).toFixed(2));
+        dot.setAttribute('cy', m.ty(yAt(x)).toFixed(2));
+        st.raf = requestAnimationFrame(frame);
+      }
+      st.raf = requestAnimationFrame(frame);
+    });
+    btn.addEventListener('mouseleave', function() { if (_tileAnim && _tileAnim.thumb === thumb) _tileAnimStop(); });
   }
 
   function _buildPresetBtn(preset) {
@@ -2459,6 +2565,7 @@ function initPanel() {
     tp.setAttribute('stroke-width', '2'); tp.setAttribute('stroke-linecap', 'round');
     tp.setAttribute('d', _thumbPathD(preset.curve));
     thumb.appendChild(tp); btn.appendChild(thumb);
+    _tileAnimHook(btn, thumb, function() { return preset.curve; });
 
     var nameSpan = document.createElement('span');
     nameSpan.className = 'preset-name';
@@ -2685,6 +2792,63 @@ function initPanel() {
     if (ns) ns.dispatchEvent(new Event('dblclick'));
   }
 
+  // Add presets in bulk (starter set, file import): tiles go in before the New tile
+  function _addPresetEntries(entries) {
+    var list = document.getElementById('all-presets-list');
+    if (!list || !entries.length) return;
+    var newPBtn = document.getElementById('new-preset-btn');
+    entries.forEach(function(p) {
+      _presetList.push(p);
+      var btn = _buildPresetBtn(p);
+      if (newPBtn) list.insertBefore(btn, newPBtn); else list.appendChild(btn);
+    });
+    _savePresetList(_presetList);
+    _applyPresetLayout(true);
+  }
+  function _presetSig(p) { return p.name + '|' + _curveToText(p.curve); }
+  // Starter set (see STARTER_PRESETS): only the names not already in the list are added
+  function _addStarterPresets() {
+    var have = {};
+    _presetList.forEach(function(p) { have[p.name] = true; });
+    var add = _starterPresetEntries().filter(function(p) { return !have[p.name]; });
+    _addPresetEntries(add);
+    _showCopyToast(add.length ? 'Added ' + add.length + ' starter preset' + (add.length === 1 ? '' : 's') : 'All starter presets are already in the list', '#3ddc84');
+  }
+  // Export / Import Presets: a JSON file { opencurve: 1, presets: [{ name, curve }] }.
+  // Built-ins stay out of the file; imports skip entries already in the list.
+  function _exportPresetsToFile() {
+    var mine = _presetList.filter(function(p) { return !p.builtIn; });
+    if (!mine.length) { _showCopyToast('No presets to export'); return; }
+    var data = { opencurve: 1, version: CURRENT_VERSION, presets: mine.map(function(p) { return { name: p.name, curve: _cloneCurve(p.curve) }; }) };
+    _saveTextFile('opencurve-presets.json', JSON.stringify(data, null, 2)).then(function(ok) {
+      if (ok) _showCopyToast('Exported ' + mine.length + ' preset' + (mine.length === 1 ? '' : 's'), '#3ddc84');
+    }, function(e) { console.log('[OC] export failed:', e); _showCopyToast('Export failed', '#ff9090'); });
+  }
+  function _importPresetsFromFile() {
+    _openTextFile().then(function(text) {
+      if (text === null || text === undefined) return;
+      var parsed = null;
+      try { parsed = JSON.parse(text); } catch(_) {}
+      var arr = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.presets) ? parsed.presets : null);
+      if (!arr) { _showCopyToast('Not an OpenCurve preset file', '#ff9090'); return; }
+      var have = {};
+      _presetList.forEach(function(p) { have[_presetSig(p)] = true; });
+      var seq = Date.now(), add = [], skipped = 0;
+      arr.forEach(function(p, i) {
+        var raw = p && p.curve;
+        var c = typeof raw === 'string' ? _curveFromText(raw) : (raw ? _curveFromText(_curveToText(raw)) : null); // round trip validates the shape
+        if (!c) { skipped++; return; }
+        var entry = { id: 'i' + seq + '_' + i, name: String(p.name || ('Imported ' + (i + 1))).slice(0, 60), curve: c };
+        if (have[_presetSig(entry)]) { skipped++; return; }
+        have[_presetSig(entry)] = true;
+        add.push(entry);
+      });
+      _addPresetEntries(add);
+      if (add.length) _showCopyToast('Imported ' + add.length + ' preset' + (add.length === 1 ? '' : 's') + (skipped ? ' (' + skipped + ' skipped)' : ''), '#3ddc84');
+      else _showCopyToast('Nothing new to import');
+    }, function(e) { console.log('[OC] import failed:', e); _showCopyToast('Import failed', '#ff9090'); });
+  }
+
   function _showPastePanel() {
     console.log('[OC] _showPastePanel called');
     var existingOv = document.getElementById('_paste-overlay');
@@ -2799,6 +2963,10 @@ function initPanel() {
     var _icTlClip = '<svg width="16" height="16" viewBox="0 0 12 12" fill="none"><rect x="0.9" y="2.6" width="10.2" height="6.8" rx="1" fill="none" stroke="currentColor" stroke-width="1.6"/><polygon points="6,4.2 7.6,6 6,7.8 4.4,6" fill="currentColor"/></svg>';
     var _icPaste = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><rect x="3" y="2" width="8" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path fill="none" d="M5.5 2V1.5a1 1 0 011-1h1a1 1 0 011 1V2" stroke="currentColor" stroke-width="1.3"/><line x1="5.5" y1="6" x2="8.5" y2="6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="5.5" y1="8.5" x2="8.5" y2="8.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 
+    var _icStar   = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M7 1.6l1.6 3.4 3.7.5-2.7 2.6.7 3.7L7 10l-3.3 1.8.7-3.7L1.7 5.5l3.7-.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>';
+    var _icExport = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2 9.5v2.5h10V9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 9V1.5M4.2 4.3L7 1.5l2.8 2.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    var _icImport = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2 9.5v2.5h10V9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 1.5V9M4.2 6.2L7 9l2.8-2.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
     function _miniItem(label, icon, onClick) {
       var item = document.createElement('div');
       item.className = 'ctx-menu-item';
@@ -2852,6 +3020,9 @@ function initPanel() {
 
     if (showPaste) {
       _miniItem('Paste Preset', _icPaste, function() { _pasteCoordinates(); });
+      _miniItem('Add Starter Presets', _icStar, function() { _addStarterPresets(); });
+      _miniItem('Export Presets\u2026', _icExport, function() { _exportPresetsToFile(); });
+      _miniItem('Import Presets\u2026', _icImport, function() { _importPresetsFromFile(); });
     }
 
     if (showGrid) {
@@ -3820,6 +3991,17 @@ function _showNumericPanel() {
   box.style.top = Math.max(8, Math.round((vh - box.offsetHeight) / 2)) + 'px';
   box.style.visibility = 'visible';
   setTimeout(function() { fields.p1x.focus(); fields.p1x.select(); }, 0);
+}
+
+// Preset files (Export / Import Presets in the preset list's context menu).
+// CEP: the bridge shows the host's own dialogs through cep.fs.
+function _saveTextFile(name, text) {
+  if (!_bridge || !_bridge.saveTextFile) return Promise.reject(new Error('File dialogs are not available'));
+  return _bridge.saveTextFile(name, text);
+}
+function _openTextFile() {
+  if (!_bridge || !_bridge.openTextFile) return Promise.reject(new Error('File dialogs are not available'));
+  return _bridge.openTextFile();
 }
 
 function _showSettingsModal() {

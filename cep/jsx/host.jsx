@@ -679,6 +679,8 @@ function bakeKeyframes(argsJSON) {
             ];
           } else {
             value = val0 + (val1 - val0) * easedT;
+            // Overshoot curves: Opacity only goes 0..100
+            if (/opacity/i.test(label)) value = Math.max(0, Math.min(100, value));
           }
           var timeSec = startSec + f / fps;
 

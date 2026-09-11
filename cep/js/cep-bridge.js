@@ -121,6 +121,29 @@
     },
 
     // Open external URL
+    // Preset files: Export / Import Presets in the preset list's context menu
+    saveTextFile: function(name, text) {
+      return new Promise(function(resolve, reject) {
+        try {
+          var r = window.cep.fs.showSaveDialogEx('Export Presets', '', ['json'], name);
+          if (!r || r.err !== 0 || !r.data) { resolve(false); return; } // cancelled
+          var path = String(r.data);
+          if (path.toLowerCase().slice(-5) !== '.json') path += '.json';
+          var w = window.cep.fs.writeFile(path, text);
+          if (w && w.err === 0) resolve(true); else reject(new Error('writeFile error ' + (w && w.err)));
+        } catch(e) { reject(e); }
+      });
+    },
+    openTextFile: function() {
+      return new Promise(function(resolve, reject) {
+        try {
+          var r = window.cep.fs.showOpenDialogEx(false, false, 'Import Presets', '', ['json']);
+          if (!r || r.err !== 0 || !r.data || !r.data.length) { resolve(null); return; } // cancelled
+          var rd = window.cep.fs.readFile(String(r.data[0]));
+          if (rd && rd.err === 0) resolve(rd.data); else reject(new Error('readFile error ' + (rd && rd.err)));
+        } catch(e) { reject(e); }
+      });
+    },
     openExternal: function(url) {
       cs.openURLInDefaultBrowser(url);
       OpenCurve.showCopyToast('Opened link in browser', '#e6b800');
