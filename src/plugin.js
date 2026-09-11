@@ -16,7 +16,7 @@ console.log('[FS] plugin.js executing');
 //   ['dblclick']                                              preset names + timeline lanes
 //   ['mouseenter', 'mouseleave', 'pointerenter', 'pointerleave']  tooltips, hover classes, tile dot, lane highlight
 //   ['contextmenu']                                           graph, preset list, lanes
-var _EVT_SKIP = ['dblclick', 'mouseenter', 'mouseleave', 'pointerenter', 'pointerleave', 'contextmenu']; // STRIP BUILD: everything off, bisect from here
+var _EVT_SKIP = []; // normally empty
 (function() {
   if (!_EVT_SKIP.length) return;
   var seen = [];
@@ -3910,15 +3910,19 @@ function _centerIcons() {
 }
 
 // ─── Post-scroll pointer freeze: diagnostic + elimination switches (UXP) ──
-// CCX build: after wheel-scrolling a list (presets, the lanes + rows box,
-// Settings), the OS delivers NO pointer events to that container for ~500ms
-// after its last scroll change (measured 2026-09-11: first real event at
-// +508..+571ms in every burst; a press before that is dropped before JS).
-// Events earlier than that are synthesized by content moving under a still
-// pointer. No other CCX plugin does this, so something this panel does is
-// putting the scroller into that state. The switches below turn the panel's
-// behaviours off one at a time; Flyout > Scroll Debug prints only the
-// measurement, one short block per scroll burst:
+// CCX build: after wheel-scrolling a list, the OS delivers NO pointer events
+// to that scroll view for ~500ms after its last scroll change, or until the
+// pointer leaves it (measured 2026-09-11/12, first real event at +500..+550ms
+// in every burst; a press before that is dropped before JS). Events earlier
+// than ~60ms after a scroll change are synthesized by content moving under a
+// still pointer. It is the platform: a bare test plugin with nothing in it
+// (F:/tmp/oc-scrolltest) measures the same in a docked panel and in a dialog,
+// and with every switch below off this panel measured the same too. Nothing
+// in a plugin ends it (style writes, pointer-events toggles, re-creating the
+// scroll view were all tried). Mitigation: fewer notches (_smoothWheel's
+// amplification), and the ease kept short since the window runs from the
+// last scroll change. Flyout > Scroll Debug prints the measurement, one
+// short block per scroll burst:
 //   [OC-SCROLL] burst: <scroller> top=<px>
 //   [OC-SCROLL] +<ms> quiet          (a 100ms window with no OS pointer event)
 //   [OC-SCROLL] FIRST real event +<ms>: <type> -> <target>   <= the dead window
@@ -3927,16 +3931,16 @@ function _centerIcons() {
 // Protocol: one notch, keep the mouse moving over the tiles, then click.
 // Well-behaved = FIRST real event under ~100ms. document.elementFromPoint
 // always returns null in UXP, don't use it.
-var _SINK_FOCUS_ON  = false; // TEST: off. true = focus #oc-key-sink after every press (Enter-to-Go, shortcuts)
-var _TOOLTIPS_ON    = false; // false = _attachTooltip attaches nothing
-var _PRESS_STATE_ON = false; // false = _addPressState attaches nothing (hover/pressed classes)
-var _POLL_ON        = false; // false = the host is never polled after startup (rows/timeline freeze)
-var _THUMBS_ON      = false; // false = preset tiles are built without their SVG thumbnail
-var _TRANSITIONS_ON = false; // false = a style rule kills every CSS transition/animation at init
-var _CONTAIN_ON     = false; // false = contain:none on #all-presets-list at init
-var _SCROLL_KICK    = 3;     // after a scroll: 1 = toggle a transform on the scroller, 2 = re-create its scroll view (overflow off/on, scrollTop kept), 3 = pointer-events:none for one frame (a native pointer leave/enter, since leaving the list by hand ends the dead state at once)
+var _SINK_FOCUS_ON  = true;  // false = never focus #oc-key-sink (Enter-to-Go and the shortcuts stop)
+var _TOOLTIPS_ON    = true;  // false = _attachTooltip attaches nothing
+var _PRESS_STATE_ON = true;  // false = _addPressState attaches nothing (hover/pressed classes)
+var _POLL_ON        = true;  // false = the host is never polled after startup (rows/timeline freeze)
+var _THUMBS_ON      = true;  // false = preset tiles are built without their SVG thumbnail
+var _TRANSITIONS_ON = true;  // false = a style rule kills every CSS transition/animation at init
+var _CONTAIN_ON     = true;  // false = contain:none on #all-presets-list at init
+var _SCROLL_KICK    = 0;     // after a scroll: 1 = toggle a transform on the scroller, 2 = re-create its scroll view (overflow off/on, scrollTop kept), 3 = pointer-events:none for one frame (a native pointer leave/enter, since leaving the list by hand ends the dead state at once)
 var _SCROLL_KICK_MS = 40;    // delay after the last scroll event of a burst
-var _SCROLL_TESTLIST = true; // a bare plain scroller (40 rows) floated over the graph, watched as 'bare list', never kicked: tells the list's structure from any scroll view in this panel
+var _SCROLL_TESTLIST = false; // a bare plain scroller (40 rows) floated over the graph, watched as 'bare list', never kicked: tells the list's structure from any scroll view in this panel
 var _DEBUG_SCROLL_KEY = 'opencurve-debug-scroll';
 var _debugScroll = localStorage.getItem(_DEBUG_SCROLL_KEY) === 'on';
 function _toggleDebugScroll() {
@@ -4028,17 +4032,19 @@ function _sdInit() {
 // ─── Smooth wheel scrolling (UXP) ─────────────────────────────────────────
 // UXP delivers no wheel events at all (checked 2026-09: nothing on the
 // element, document or window, and `onwheel` isn't even a property). Its own
-// wheel handling scrolls a fixed _UXP_NOTCH px per notch with no easing and
-// fires a `scroll` event for it. So the wheel is amplified after the fact: a
-// scroll event whose step is a small multiple of the notch is taken as the
-// wheel, and scrollTop is eased on to where a _WHEEL_STEP notch would land.
+// wheel handling scrolls a fixed few px per notch (9, later 11 on the same
+// machine) with no easing and fires a `scroll` event for it. So the wheel is
+// amplified after the fact: a scroll event whose step is at most
+// _UXP_NOTCH_MAX px is taken as one notch, and scrollTop is eased on to where
+// a _WHEEL_STEP notch would land. Fewer notches also means fewer of UXP's
+// 500ms post-scroll input holds (see the block above).
 // Our own writes fire scroll events too; they are recognised by landing on
 // the value just written and ignored. Any other step (the scrollbar being
 // dragged, a programmatic jump) cancels the easing and is left alone.
-var _UXP_NOTCH  = 9;
+var _UXP_NOTCH_MAX = 24; // any scroll step up to this is taken as one wheel notch (UXP moved 9px per notch, later 11px)
 var _WHEEL_STEP = 90;
 var _WHEEL_MS   = 110; // ease duration; 0 = one write per notch, no easing
-var _WHEEL_ON   = false; // STRIP BUILD. false = leave UXP's own per-notch scrolling alone
+var _WHEEL_ON   = true;  // false = leave UXP's own per-notch scrolling alone
 function _smoothWheel(el) {
   if (!_WHEEL_ON || !el || el._ocWheel) return;
   el._ocWheel = true;
@@ -4065,9 +4071,9 @@ function _smoothWheel(el) {
     var d = top - lastTop;
     lastTop = top;
     if (!d) return;
-    var notches = d / _UXP_NOTCH;
+    var notches = d > 0 ? 1 : -1;
     var max = el.scrollHeight - el.clientHeight;
-    if (notches !== Math.round(notches) || Math.abs(notches) > 3) {
+    if (Math.abs(d) > _UXP_NOTCH_MAX) {
       // scrollbar drag or a jump: not the wheel, stop easing and follow it
       if (raf) { cancelAnimationFrame(raf); raf = 0; }
       target = null;
