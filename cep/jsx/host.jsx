@@ -22,6 +22,9 @@ var PARAM_NAMES = {
   // Vector Motion on graphic/shape clips (index 3 is the Uniform Scale checkbox)
   'AE.ADBE Graphic Group': { 0: 'Vector Position', 1: 'Vector Scale', 2: 'Vector Scale Width', 4: 'Vector Rotation', 5: 'Vector Anchor Point' },
   'ADBE Graphic Group':    { 0: 'Vector Position', 1: 'Vector Scale', 2: 'Vector Scale Width', 4: 'Vector Rotation', 5: 'Vector Anchor Point' },
+  // Shape layer's own Transform group (index 6 is the Uniform Scale checkbox)
+  'AE.ADBE Shape':      { 3: 'Shape Position', 4: 'Shape Scale', 5: 'Shape Scale Width', 7: 'Shape Rotation', 8: 'Shape Opacity', 9: 'Shape Anchor Point' },
+  'ADBE Shape':         { 3: 'Shape Position', 4: 'Shape Scale', 5: 'Shape Scale Width', 7: 'Shape Rotation', 8: 'Shape Opacity', 9: 'Shape Anchor Point' },
   'AE.ADBE AECrop':     { 0: 'Crop Left', 1: 'Crop Top', 2: 'Crop Right', 3: 'Crop Bottom' },
   'ADBE AECrop':        { 0: 'Crop Left', 1: 'Crop Top', 2: 'Crop Right', 3: 'Crop Bottom' },
 };
