@@ -56,7 +56,7 @@ try {
           console.log('[FS] panel show — starting poll');
           _applyPresetLayout(true);
           poll();
-          pollTimer = setInterval(poll, POLL_MS);
+          if (_POLL_ON) pollTimer = setInterval(poll, POLL_MS); // _POLL_ON: scroll-freeze elimination switch
           if (_updateNotifsOn) _checkForUpdates(true);
         },
         hide: function() {
@@ -71,6 +71,7 @@ try {
           { id: 'check-updates', label: 'Check for Updates' },
           { id: 'dump-comps',    label: 'Dump Components (Debug)' },
           { id: 'poll-timing',   label: 'Poll Timing (Debug)' },
+          { id: 'scroll-debug',  label: 'Scroll Debug' },
           { id: 'sep',           label: '-' },
           { id: 'made-by',       label: 'made by faye', enabled: false },
         ],
@@ -79,6 +80,7 @@ try {
           if (id === 'check-updates') _checkForUpdates();
           if (id === 'dump-comps')    _dumpComponents();
           if (id === 'poll-timing')   _toggleDebugTiming();
+          if (id === 'scroll-debug')  _toggleDebugScroll();
           if (id === 'reset')         _confirmReset();
         },
       },
@@ -3629,7 +3631,7 @@ function _showTooltip(el, text) {
 // Pressed look for the small row buttons (pin / undo): CSS :active is not
 // reliable in UXP, so a .pressed class follows the pointer instead
 function _addPressState(el) {
-  if (!el) return;
+  if (!el || !_PRESS_STATE_ON) return;
   function up() { el.classList.remove('pressed'); }
   el.addEventListener('pointerdown', function(e) { if (e.button === 0) el.classList.add('pressed'); });
   el.addEventListener('pointerup', up);
@@ -3658,7 +3660,7 @@ function _setMarker(host, mode) {
 }
 
 function _attachTooltip(el, text) {
-  if (!el) return;
+  if (!el || !_TOOLTIPS_ON) return;
   var DELAY = 500;
   el.addEventListener('mouseenter', function() {
     if (_tipTimer) clearTimeout(_tipTimer);
@@ -3880,33 +3882,46 @@ function _centerIcons() {
   });
 }
 
-// ─── Post-scroll pointer freeze: diagnostic + experiments (UXP) ───────────
-// CCX build, seen 2026-09-11: after wheel-scrolling a list (presets, the
-// lanes + rows box, Settings), that list shows no hover and seems to take no
-// clicks for roughly 0.5-1s while the rest of the panel answers at once.
-// Measured 2026-09-11 (second run, mouse kept moving after one notch): the
-// OS delivers NO pointer events to the scrolled container for ~500ms after
-// its last scroll change (first real event at +508..+571ms in every burst;
-// a press made before that is dropped, it never reaches JS). Events seen
-// earlier than that are synthesized by content moving under the pointer.
-// Nothing in the plugin runs in that window: it is host/UXP input routing.
-// document.elementFromPoint always returns null in UXP.
-// Flyout > Poll Timing (Debug) arms the logging. For 1.5s after each scroll
-// event of a watched scroller:
-//   [OC-SCROLL] +<ms>: last 100ms N moves, N overs, N downs, N clicks | :hover on <tile>
-//   [OC-SCROLL] first pointer event >=60ms after the last scroll event: ...
+// ─── Post-scroll pointer freeze: diagnostic + elimination switches (UXP) ──
+// CCX build: after wheel-scrolling a list (presets, the lanes + rows box,
+// Settings), the OS delivers NO pointer events to that container for ~500ms
+// after its last scroll change (measured 2026-09-11: first real event at
+// +508..+571ms in every burst; a press before that is dropped before JS).
+// Events earlier than that are synthesized by content moving under a still
+// pointer. No other CCX plugin does this, so something this panel does is
+// putting the scroller into that state. The switches below turn the panel's
+// behaviours off one at a time; Flyout > Scroll Debug prints only the
+// measurement, one short block per scroll burst:
+//   [OC-SCROLL] burst: <scroller> top=<px>
+//   [OC-SCROLL] +<ms> quiet          (a 100ms window with no OS pointer event)
+//   [OC-SCROLL] FIRST real event +<ms>: <type> -> <target>   <= the dead window
 //   [OC-SCROLL] pointerdown/click +<ms> -> <target>
-// and the status strip mirrors what the list receives ("hover <tile> +ms",
-// "CLICK <tile> +ms"), so a tile that gets hover events but no highlight is
-// visible without the console.
-var _SINK_FOCUS_ON = false; // TEST BUILD: off. true = focus #oc-key-sink after every press (Enter-to-Go, shortcuts); a focused text field is the one plugin-side thing that can change host input routing
-var _SCROLL_KICK   = 0;    // experiment, 60ms after a scroll burst: 1 = toggle a transform on the scroller, 2 = re-create its scroll view (overflow off/on, scrollTop kept)
-var _sd = { last: 0, name: '', el: null, x: -1, y: -1, timer: null, n: 0, burst0: 0, cnt: {}, late: false, kickTimer: null };
+//   [OC-SCROLL] burst done: <n> scroll events over <ms>ms, dead window <ms>ms
+// Protocol: one notch, keep the mouse moving over the tiles, then click.
+// Well-behaved = FIRST real event under ~100ms. document.elementFromPoint
+// always returns null in UXP, don't use it.
+var _SINK_FOCUS_ON  = false; // TEST: off. true = focus #oc-key-sink after every press (Enter-to-Go, shortcuts)
+var _TOOLTIPS_ON    = true;  // false = _attachTooltip attaches nothing
+var _PRESS_STATE_ON = true;  // false = _addPressState attaches nothing (hover/pressed classes)
+var _POLL_ON        = true;  // false = the host is never polled after startup (rows/timeline freeze)
+var _SCROLL_KICK    = 0;     // 60ms after a burst: 1 = toggle a transform on the scroller, 2 = re-create its scroll view (overflow off/on, scrollTop kept)
+var _DEBUG_SCROLL_KEY = 'opencurve-debug-scroll';
+var _debugScroll = localStorage.getItem(_DEBUG_SCROLL_KEY) === 'on';
+function _toggleDebugScroll() {
+  _debugScroll = !_debugScroll;
+  localStorage.setItem(_DEBUG_SCROLL_KEY, _debugScroll ? 'on' : 'off');
+  if (_debugScroll) {
+    console.log('[OC-SCROLL] ON. Switches: sink ' + _SINK_FOCUS_ON + ', tooltips ' + _TOOLTIPS_ON + ', pressState ' + _PRESS_STATE_ON
+      + ', poll ' + _POLL_ON + ', wheel ' + _WHEEL_ON + '/' + _WHEEL_MS + 'ms, kick ' + _SCROLL_KICK);
+  }
+  _showCopyToast('Scroll debug ' + (_debugScroll ? 'ON: scroll a list, keep the mouse moving, then click' : 'OFF'));
+}
+var _sd = { last: 0, name: '', el: null, x: -1, y: -1, timer: null, n: 0, burst0: 0, cnt: 0, late: 0, dead: -1, kickTimer: null };
 function _sdDesc(el) {
   if (!el) return 'null';
   var d = el.id ? '#' + el.id : (typeof el.className === 'string' && el.className ? '.' + el.className.split(' ')[0] : el.nodeName);
   var tile = el.closest ? (el.closest('.preset-btn') || el.closest('.prop-btn')) : null;
-  if (tile) d += ' in "' + (tile.textContent || '').trim().slice(0, 18) + '"';
+  if (tile) d += ' "' + (tile.textContent || '').trim().slice(0, 18) + '"';
   return d;
 }
 function _sdInside(el, x, y) {
@@ -3923,12 +3938,12 @@ function _sdWatch(el, name) {
       if (_sd.kickTimer) clearTimeout(_sd.kickTimer);
       _sd.kickTimer = setTimeout(function() { _sdKick(el); }, 60);
     }
-    if (!_debugTiming) return;
+    if (!_debugScroll) return;
     if (now - _sd.last > 300) {
       _sd.n = 0; _sd.burst0 = now;
-      console.log('[OC-SCROLL] ' + name + ': scroll burst starts at top=' + el.scrollTop + ', pointer over it: ' + (_sd.x >= 0 && _sdInside(el, _sd.x, _sd.y)));
+      console.log('[OC-SCROLL] burst: ' + name + ' top=' + el.scrollTop);
     }
-    _sd.n++; _sd.last = now; _sd.name = name; _sd.el = el; _sd.late = false; _sd.cnt = {};
+    _sd.n++; _sd.last = now; _sd.name = name; _sd.el = el; _sd.late = 0; _sd.cnt = 0; _sd.dead = -1;
     if (_sd.timer) clearTimeout(_sd.timer);
     _sd.timer = setTimeout(_sdProbe, 100);
   });
@@ -3941,39 +3956,36 @@ function _sdKick(el) {
     else if (_SCROLL_KICK === 2) { var top = el.scrollTop; el.style.overflowY = 'hidden'; void el.offsetHeight; el.style.overflowY = 'auto'; el.scrollTop = top; }
   } catch(_) {}
   setTimeout(function() { el._sdKicking = false; }, 50);
-  if (_debugTiming) console.log('[OC-SCROLL] kick ' + _SCROLL_KICK + ' applied to ' + (el.id || el.nodeName));
+  if (_debugScroll) console.log('[OC-SCROLL] kick ' + _SCROLL_KICK + ' applied to ' + (el.id || el.nodeName));
 }
 function _sdProbe() {
   _sd.timer = null;
-  if (!_debugTiming || !_sd.el) return;
+  if (!_debugScroll || !_sd.el) return;
   var dt = Date.now() - _sd.last;
-  if (dt > 1500) { console.log('[OC-SCROLL] ' + _sd.name + ': window closed (' + _sd.n + ' scroll events over ' + (_sd.last - _sd.burst0) + 'ms)'); return; }
-  var c = _sd.cnt; _sd.cnt = {};
-  var chain = '?', hovTile = null;
-  try { chain = String(document.querySelectorAll(':hover').length); } catch(_) {}
-  try { var hs = document.querySelectorAll('.preset-btn:hover, .prop-btn:hover'); hovTile = hs.length ? hs[hs.length - 1] : null; } catch(_) {}
-  console.log('[OC-SCROLL] +' + dt + 'ms: last 100ms ' + (c.pointermove || 0) + ' moves, ' + (c.pointerover || 0) + ' overs, '
-    + (c.pointerdown || 0) + ' downs, ' + (c.click || 0) + ' clicks | :hover on ' + (hovTile ? _sdDesc(hovTile) : 'no tile') + ' (chain ' + chain + ')');
+  if (dt > 1500) {
+    console.log('[OC-SCROLL] burst done: ' + _sd.n + ' scroll events over ' + (_sd.last - _sd.burst0) + 'ms, dead window '
+      + (_sd.dead < 0 ? 'unknown (no OS pointer event seen in 1.5s)' : _sd.dead + 'ms'));
+    return;
+  }
+  if (!_sd.cnt && !_sd.late) console.log('[OC-SCROLL] +' + dt + ' quiet');
+  _sd.cnt = 0;
   _sd.timer = setTimeout(_sdProbe, 100);
 }
 function _sdInit() {
   ['pointermove', 'pointerover', 'pointerdown', 'pointerup', 'click'].forEach(function(type) {
     document.addEventListener(type, function(e) {
       if (type === 'pointermove') { _sd.x = e.clientX; _sd.y = e.clientY; }
-      if (!_debugTiming || !_sd.el) return;
+      if (!_debugScroll || !_sd.el) return;
       var dt = Date.now() - _sd.last;
       if (dt > 1500) return;
-      _sd.cnt[type] = (_sd.cnt[type] || 0) + 1;
-      var over = _sdInside(_sd.el, e.clientX, e.clientY), hit = _sd.el.contains(e.target);
-      var where = over ? (hit ? '' : ' [OVER ' + _sd.name + ' BUT TARGET OUTSIDE IT]') : ' [outside ' + _sd.name + ']';
-      if (!_sd.late && dt >= 60) { _sd.late = true; console.log('[OC-SCROLL] first pointer event >=60ms after the last scroll event: ' + type + ' +' + dt + 'ms -> ' + _sdDesc(e.target) + where); }
-      else if (type === 'pointerdown' || type === 'click' || where) console.log('[OC-SCROLL] ' + type + ' +' + dt + 'ms -> ' + _sdDesc(e.target) + where);
-      // Visual mirror outside the scroller: the strip shows what the list is receiving
-      if (hit && (type === 'pointerover' || type === 'click')) {
-        var tile = e.target.closest ? (e.target.closest('.preset-btn') || e.target.closest('.prop-btn')) : null;
-        var st = document.getElementById('status-text');
-        if (st && tile) st.textContent = (type === 'click' ? 'CLICK ' : 'hover ') + (tile.textContent || '').trim().slice(0, 18) + ' +' + dt + 'ms';
+      _sd.cnt++;
+      // Events in the first 60ms after a scroll change are synthesized by the
+      // content moving under the pointer; the first one after that is the OS
+      if (!_sd.late && dt >= 60) {
+        _sd.late = dt; _sd.dead = dt;
+        console.log('[OC-SCROLL] FIRST real event +' + dt + 'ms: ' + type + ' -> ' + _sdDesc(e.target));
       }
+      if (type === 'pointerdown' || type === 'click') console.log('[OC-SCROLL] ' + type + ' +' + dt + 'ms -> ' + _sdDesc(e.target));
     }, true);
   });
 }
@@ -4050,7 +4062,7 @@ function initPanel() {
   _tlInit(); // mini timeline strip along the bottom
   _smoothWheel(document.getElementById('all-presets-list')); // UXP: proper wheel steps with easing
   _smoothWheel(document.getElementById('tl-scroll'));
-  _sdInit(); // post-scroll freeze diagnostic (logs only while Poll Timing (Debug) is on)
+  _sdInit(); // post-scroll freeze diagnostic (logs only while Flyout > Scroll Debug is on)
   _sdWatch(document.getElementById('all-presets-list'), 'preset list');
   _sdWatch(document.getElementById('tl-scroll'), 'timeline box');
   _centerIcons(); // UXP: pin the button icons at their centres (see _centerIcons)
@@ -5403,11 +5415,7 @@ function _dbgSummary() {
 function _toggleDebugTiming() {
   _debugTiming = !_debugTiming;
   localStorage.setItem(_DEBUG_TIMING_KEY, _debugTiming ? 'on' : 'off');
-  if (_debugTiming) {
-    _dbgReset();
-    _showCopyToast('Poll timing ON: watch the debug console');
-    console.log('[OC-SCROLL] armed: scroll a list, then move/click over it; [OC-SCROLL] lines follow for 1.5s after each scroll');
-  }
+  if (_debugTiming) { _dbgReset(); _showCopyToast('Poll timing ON: watch the debug console'); }
   else { _showCopyToast('Poll timing OFF: ' + _dbgSummary()); }
 }
 
