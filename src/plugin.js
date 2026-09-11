@@ -2689,12 +2689,19 @@ async function _hostSeqInfo() {
   return { pos: pos.seconds, end: end && typeof end.seconds === 'number' ? end.seconds : pos.seconds + 3600, fps: await _fps(sequence), seq: sequence };
 }
 async function _hostSetPlayhead(sec, info) {
-  var sequence = info && info.seq;
-  if (!sequence) { var i = await _hostSeqInfo(); sequence = i && i.seq; }
-  if (!sequence) throw new Error('No active sequence');
   // +1us keeps the playhead at or after the frame despite tick/float rounding
   var tt = await ppro.TickTime.createWithSeconds(Math.max(0, sec) + 0.000001);
+  var sequence = info && info.seq;
+  if (sequence) {
+    try { await sequence.setPlayerPosition(tt); return; }
+    catch(e) { console.log('[OC] preview: kept sequence handle failed, refetching:', e && e.message ? e.message : e); }
+  }
+  // Fresh handle (the pin buttons fetch one per jump; a kept proxy may go stale)
+  var project = await ppro.Project.getActiveProject();
+  sequence = project ? await project.getActiveSequence() : null;
+  if (!sequence) throw new Error('No active sequence');
   await sequence.setPlayerPosition(tt);
+  if (info) info.seq = sequence;
 }
 function _hostTransport(cmd) { return Promise.resolve(false); }
 // Value readout: what Premiere interpolates for the property at that media time
@@ -2792,16 +2799,22 @@ function _pvStart(rate, opts) {
   _pv = st;
   _hostSeqInfo().then(function(info) {
     if (_pv !== st) return;
-    if (!info) { _pv = null; return; }
+    if (!info) { _pv = null; console.log('[OC] preview: no active sequence'); _showCopyToast('Preview needs an open sequence'); return; }
     st.info = info;
     st.fps  = info.fps > 0 ? info.fps : 25;
     st.from = typeof opts.from === 'number' ? opts.from : info.pos;
     st.to   = typeof opts.to   === 'number' ? opts.to   : (rate > 0 ? info.end : 0);
     st.t0   = Date.now();
     st.busy = false;
+    st.steps = 0;
+    console.log('[OC] preview: start ' + st.from.toFixed(3) + 's -> ' + st.to.toFixed(3) + 's at x' + st.rate + ', ' + st.fps + ' fps');
     st.timer = setInterval(function() { _pvTick(st); }, Math.max(15, Math.round(500 / st.fps)));
     _pvTick(st);
-  }, function(e) { console.log('[OC] preview: no sequence info', e); if (_pv === st) _pv = null; });
+  }, function(e) {
+    console.log('[OC] preview: sequence info failed:', e && e.message ? e.message : e);
+    _showCopyToast('Preview failed: ' + (e && e.message ? e.message : 'no sequence info'), '#ff9090');
+    if (_pv === st) _pv = null;
+  });
 }
 function _pvTick(st) {
   if (_pv !== st || st.busy) return;
@@ -2814,8 +2827,14 @@ function _pvTick(st) {
   st.busy = true;
   _hostSetPlayhead(frame / st.fps, st.info).then(function() {
     st.busy = false;
-    if (done) _pvStop(true);
-  }, function(e) { console.log('[OC] preview: set playhead failed', e); st.busy = false; _pvStop(); });
+    st.steps++;
+    if (done) { console.log('[OC] preview: done after ' + st.steps + ' steps'); _pvStop(true); }
+  }, function(e) {
+    console.log('[OC] preview: set playhead failed at frame ' + frame + ':', e && e.message ? e.message : e);
+    _showCopyToast('Preview failed: ' + (e && e.message ? e.message : 'could not move the playhead'), '#ff9090');
+    st.busy = false;
+    _pvStop();
+  });
 }
 function _pvStop(finished) {
   var st = _pv;
@@ -4642,11 +4661,10 @@ function initPanel() {
     desc.style.cssText = 'color:#888;font-size:13px;margin-bottom:10px;';
     box.appendChild(desc);
 
-    var input = document.createElement('input');
-    input.type = 'text';
+    var pasteTf = _mkTextField(13, false, '#1c1c1c'), input = pasteTf.input;
     input.placeholder = 'cubic-bezier(0.42, 0, 0.58, 1)';
-    input.style.cssText = 'width:100%;background:#1c1c1c;border:1px solid rgba(255,255,255,0.12);color:#e4e4e4;font-size:13px;padding:7px 10px;outline:none;margin-bottom:6px;box-sizing:border-box;font-family:inherit;';
-    box.appendChild(input);
+    pasteTf.wrap.style.marginBottom = '6px';
+    box.appendChild(pasteTf.wrap);
 
     var err = document.createElement('div');
     err.style.cssText = 'color:#ff9090;font-size:12px;min-height:16px;margin-bottom:10px;';
@@ -5825,6 +5843,22 @@ function _confirmReset() {
   });
 }
 
+// ─── Text fields ─────────────────────────────────────────────────────────
+// UXP paints its own frame and minimum height inside a styled <input>, so a
+// bordered, padded input shows as a box inside a box with tall padding. The
+// border and background therefore live on a wrapper div and the input itself
+// is bare (the preset rename field has always been styled that way). Same
+// look in CEP. Returns { wrap, input }; style the wrap for width/margins.
+function _mkTextField(fontSize, mono, bg) {
+  var wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;align-items:center;height:26px;padding:0 8px;box-sizing:border-box;overflow:hidden;background:' + (bg || '#111111') + ';border:1px solid rgba(255,255,255,0.12);';
+  var inp = document.createElement('input');
+  inp.type = 'text';
+  inp.style.cssText = 'flex:1;min-width:0;width:100%;background:transparent;border:none;outline:none;padding:0;margin:0;min-height:0;height:20px;line-height:20px;color:#e4e4e4;font-size:' + (fontSize || 13) + 'px;font-family:' + (mono ? 'monospace' : 'inherit') + ';';
+  wrap.appendChild(inp);
+  return { wrap: wrap, input: inp };
+}
+
 // ─── Numeric entry ───────────────────────────────────────────────────────
 // Toolbar #numeric-entry: type the handle coordinates instead of dragging
 // them. The four fields (the (0,0) handle and the (1,1) handle) update the
@@ -5880,11 +5914,9 @@ function _showNumericPanel() {
     var lb = document.createElement('div');
     lb.textContent = label;
     lb.style.cssText = 'color:#888;font-size:11px;margin-bottom:3px;';
-    var inp = document.createElement('input');
-    inp.type = 'text';
+    var tf = _mkTextField(13), inp = tf.input;
     inp.value = _numStr(val);
-    inp.style.cssText = 'width:100%;background:#111111;border:1px solid rgba(255,255,255,0.12);color:#e4e4e4;font-size:13px;padding:5px 8px;outline:none;box-sizing:border-box;font-family:inherit;';
-    wrap.appendChild(lb); wrap.appendChild(inp);
+    wrap.appendChild(lb); wrap.appendChild(tf.wrap);
     grid.appendChild(wrap);
     fields[name] = inp;
     inp.addEventListener('input', applyFields);
@@ -5900,10 +5932,8 @@ function _showNumericPanel() {
   textLabel.textContent = 'As text';
   textLabel.style.cssText = 'color:#888;font-size:11px;margin:2px 0 3px;';
   box.appendChild(textLabel);
-  var textInp = document.createElement('input');
-  textInp.type = 'text';
-  textInp.style.cssText = 'width:100%;background:#111111;border:1px solid rgba(255,255,255,0.12);color:#e4e4e4;font-size:12px;padding:5px 8px;outline:none;box-sizing:border-box;font-family:inherit;';
-  box.appendChild(textInp);
+  var textTf = _mkTextField(12), textInp = textTf.input;
+  box.appendChild(textTf.wrap);
   textInp.addEventListener('keydown', onKey);
   _attachTooltip(textInp, 'The curve as cubic-bezier() or opencurve() text. Edit it and press Enter or Apply; this is also where a curve with added points is typed');
 
@@ -6094,7 +6124,10 @@ function _showSettingsModal() {
   hexInput.type = 'text';
   hexInput.value = _curveColor.toUpperCase();
   hexInput.maxLength = 7;
-  hexInput.style.cssText = 'background:#252525;border:1px solid rgba(255,255,255,0.12);color:#e4e4e4;font-size:13px;padding:3px 8px;width:90px;outline:none;font-family:monospace;margin-left:8px;';
+  var hexTf = _mkTextField(13, true, '#252525');
+  hexTf.wrap.style.width = '90px'; hexTf.wrap.style.marginLeft = '8px'; hexTf.wrap.style.flexShrink = '0';
+  hexTf.wrap.replaceChild(hexInput, hexTf.input); // keep the input the rest of this code refers to
+  hexInput.style.cssText = hexTf.input.style.cssText;
   var hexPreview = document.createElement('div');
   hexPreview.style.cssText = 'width:20px;height:20px;background:'+_curveColor+';flex-shrink:0;border:1px solid rgba(255,255,255,0.12);margin-left:8px;';
   hexInput.addEventListener('input', function() {
@@ -6118,7 +6151,7 @@ function _showSettingsModal() {
     if (!/^#[0-9A-F]{6}$/.test(hexInput.value)) hexInput.value = _curveColor.toUpperCase();
   });
   hexRow.appendChild(hexLabel);
-  hexRow.appendChild(hexInput);
+  hexRow.appendChild(hexTf.wrap);
   hexRow.appendChild(hexPreview);
   colorSection.appendChild(hexRow);
   // Check for updates row
