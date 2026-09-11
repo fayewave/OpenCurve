@@ -3890,9 +3890,10 @@ function _centerIcons() {
 // dragged, a programmatic jump) cancels the easing and is left alone.
 var _UXP_NOTCH  = 9;
 var _WHEEL_STEP = 90;
-var _WHEEL_MS   = 110; // ease duration; kept short because UXP ignores presses while scrollTop is being written
+var _WHEEL_MS   = 110; // ease duration; 0 = one write per notch, no easing
+var _WHEEL_ON   = true;  // false = leave UXP's own 9px-per-notch scrolling alone
 function _smoothWheel(el) {
-  if (!el || el._ocWheel) return;
+  if (!_WHEEL_ON || !el || el._ocWheel) return;
   el._ocWheel = true;
   var target = null, raf = 0, lastTop = el.scrollTop, wrote = null, from = 0, t0 = 0;
   function write(v) { wrote = v; lastTop = v; el.scrollTop = v; }
@@ -3928,6 +3929,7 @@ function _smoothWheel(el) {
     var base = target === null ? top - d : target;
     target = Math.max(0, Math.min(max, Math.round(base + notches * _WHEEL_STEP)));
     if (target === top) { target = null; return; }
+    if (_WHEEL_MS <= 0) { finish(); return; } // no easing: land in one write
     from = top; t0 = Date.now();
     if (!raf) raf = requestAnimationFrame(step);
   });
