@@ -3879,42 +3879,51 @@ function _centerIcons() {
 }
 
 // ─── Smooth wheel scrolling (UXP) ─────────────────────────────────────────
-// UXP scrolls a small fixed step per wheel notch with no easing, so the wheel
-// is handled here on every scrolling area: one notch moves _WHEEL_STEP px and
-// scrollTop is eased there over a few frames. scrollTop is written absolutely
-// each frame, so it makes no difference whether preventDefault stops UXP's own
-// scroll or not. Rapid small deltas (a trackpad) are used as they come.
+// UXP delivers no wheel events at all (checked 2026-09: nothing on the
+// element, document or window, and `onwheel` isn't even a property). Its own
+// wheel handling scrolls a fixed _UXP_NOTCH px per notch with no easing and
+// fires a `scroll` event for it. So the wheel is amplified after the fact: a
+// scroll event whose step is a small multiple of the notch is taken as the
+// wheel, and scrollTop is eased on to where a _WHEEL_STEP notch would land.
+// Our own writes fire scroll events too; they are recognised by landing on
+// the value just written and ignored. Any other step (the scrollbar being
+// dragged, a programmatic jump) cancels the easing and is left alone.
+var _UXP_NOTCH  = 9;
 var _WHEEL_STEP = 90;
-var _wheelLogged = 0;
 function _smoothWheel(el) {
   if (!el || el._ocWheel) return;
   el._ocWheel = true;
-  var target = null, raf = 0, lastAt = 0;
+  var target = null, raf = 0, lastTop = el.scrollTop, wrote = null;
   function step() {
     raf = 0;
     if (target === null) return;
     var cur = el.scrollTop, diff = target - cur;
-    if (Math.abs(diff) < 0.6) { el.scrollTop = target; target = null; return; }
-    el.scrollTop = cur + diff * 0.3;
-    raf = requestAnimationFrame(step);
+    var next = Math.abs(diff) < 0.6 ? target : cur + diff * 0.3;
+    next = Math.round(next);
+    if (next === cur) next = target; // a sub-pixel ease would never arrive
+    if (next === target) target = null;
+    wrote = next; lastTop = next;
+    el.scrollTop = next;
+    if (target !== null) raf = requestAnimationFrame(step);
   }
-  el.addEventListener('wheel', function(e) {
+  el.addEventListener('scroll', function() {
+    var top = el.scrollTop;
+    if (top === wrote) { wrote = null; return; } // our own write landing
+    var d = top - lastTop;
+    lastTop = top;
+    if (!d) return;
+    var notches = d / _UXP_NOTCH;
     var max = el.scrollHeight - el.clientHeight;
-    var d = e.deltaY;
-    if (max <= 0 || !d) return;
-    var now = Date.now(), gap = now - lastAt;
-    lastAt = now;
-    if (_wheelLogged < 5) { _wheelLogged++; console.log('[OC] wheel deltaY=' + d + ' mode=' + e.deltaMode + ' gap=' + gap + 'ms'); }
-    var move;
-    if (e.deltaMode === 1)      move = d * (_WHEEL_STEP / 3);          // lines: 3 per notch
-    else if (e.deltaMode === 2) move = d * el.clientHeight * 0.8;      // pages
-    else if (Math.abs(d) < 40 && gap < 40) move = d * 1.5;             // trackpad stream
-    else move = Math.sign(d) * _WHEEL_STEP * Math.max(1, Math.min(3, Math.round(Math.abs(d) / 100))); // notches
-    if (e.cancelable) e.preventDefault();
-    var from = target === null ? el.scrollTop : target;
-    target = Math.max(0, Math.min(max, from + move));
+    if (notches !== Math.round(notches) || Math.abs(notches) > 3) {
+      // scrollbar drag or a jump: not the wheel, stop easing and follow it
+      target = null;
+      return;
+    }
+    var from = target === null ? top - d : target;
+    target = Math.max(0, Math.min(max, Math.round(from + notches * _WHEEL_STEP)));
+    if (target === top) { target = null; return; }
     if (!raf) raf = requestAnimationFrame(step);
-  }, { passive: false });
+  });
 }
 
 // ─── Panel init ───────────────────────────────────────────────────────────
