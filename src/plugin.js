@@ -16,7 +16,7 @@ console.log('[FS] plugin.js executing');
 //   ['dblclick']                                              preset names + timeline lanes
 //   ['mouseenter', 'mouseleave', 'pointerenter', 'pointerleave']  tooltips, hover classes, tile dot, lane highlight
 //   ['contextmenu']                                           graph, preset list, lanes
-var _EVT_SKIP = ['dblclick']; // TEST BUILD: dblclick dropped (rename via the context menu is off too)
+var _EVT_SKIP = ['dblclick', 'mouseenter', 'mouseleave', 'pointerenter', 'pointerleave', 'contextmenu']; // STRIP BUILD: everything off, bisect from here
 (function() {
   if (!_EVT_SKIP.length) return;
   var seen = [];
@@ -3928,9 +3928,12 @@ function _centerIcons() {
 // Well-behaved = FIRST real event under ~100ms. document.elementFromPoint
 // always returns null in UXP, don't use it.
 var _SINK_FOCUS_ON  = false; // TEST: off. true = focus #oc-key-sink after every press (Enter-to-Go, shortcuts)
-var _TOOLTIPS_ON    = true;  // false = _attachTooltip attaches nothing
-var _PRESS_STATE_ON = true;  // false = _addPressState attaches nothing (hover/pressed classes)
-var _POLL_ON        = true;  // false = the host is never polled after startup (rows/timeline freeze)
+var _TOOLTIPS_ON    = false; // false = _attachTooltip attaches nothing
+var _PRESS_STATE_ON = false; // false = _addPressState attaches nothing (hover/pressed classes)
+var _POLL_ON        = false; // false = the host is never polled after startup (rows/timeline freeze)
+var _THUMBS_ON      = false; // false = preset tiles are built without their SVG thumbnail
+var _TRANSITIONS_ON = false; // false = a style rule kills every CSS transition/animation at init
+var _CONTAIN_ON     = false; // false = contain:none on #all-presets-list at init
 var _SCROLL_KICK    = 0;     // 60ms after a burst: 1 = toggle a transform on the scroller, 2 = re-create its scroll view (overflow off/on, scrollTop kept)
 var _DEBUG_SCROLL_KEY = 'opencurve-debug-scroll';
 var _debugScroll = localStorage.getItem(_DEBUG_SCROLL_KEY) === 'on';
@@ -3940,6 +3943,7 @@ function _toggleDebugScroll() {
   if (_debugScroll) {
     console.log('[OC-SCROLL] ON. Switches: sink ' + _SINK_FOCUS_ON + ', tooltips ' + _TOOLTIPS_ON + ', pressState ' + _PRESS_STATE_ON
       + ', poll ' + _POLL_ON + ', wheel ' + _WHEEL_ON + '/' + _WHEEL_MS + 'ms, kick ' + _SCROLL_KICK
+      + ', thumbs ' + _THUMBS_ON + ', transitions ' + _TRANSITIONS_ON + ', contain ' + _CONTAIN_ON
       + ', dropped listener types [' + _EVT_SKIP.join(', ') + ']');
   }
   _showCopyToast('Scroll debug ' + (_debugScroll ? 'ON: scroll a list, keep the mouse moving, then click' : 'OFF'));
@@ -4031,7 +4035,7 @@ function _sdInit() {
 var _UXP_NOTCH  = 9;
 var _WHEEL_STEP = 90;
 var _WHEEL_MS   = 110; // ease duration; 0 = one write per notch, no easing
-var _WHEEL_ON   = true;  // false = leave UXP's own 9px-per-notch scrolling alone
+var _WHEEL_ON   = false; // STRIP BUILD. false = leave UXP's own per-notch scrolling alone
 function _smoothWheel(el) {
   if (!_WHEEL_ON || !el || el._ocWheel) return;
   el._ocWheel = true;
@@ -4080,6 +4084,13 @@ function _smoothWheel(el) {
 // ─── Panel init ───────────────────────────────────────────────────────────
 function initPanel() {
   console.log('[FS] initPanel called');
+  // Scroll-freeze elimination switches (see the block before _smoothWheel)
+  if (!_TRANSITIONS_ON) {
+    var _noTr = document.createElement('style');
+    _noTr.textContent = '* { transition: none !important; animation: none !important; }';
+    document.head.appendChild(_noTr);
+  }
+  if (!_CONTAIN_ON) { var _pl = document.getElementById('all-presets-list'); if (_pl) _pl.style.contain = 'none'; }
 
   var svg = document.getElementById('bezier-svg');
   if (svg) {
@@ -4600,16 +4611,19 @@ function initPanel() {
     btn.className = 'preset-btn';
     btn.dataset.id = preset.id;
 
-    // Thumbnail
-    var thumb = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    thumb.setAttribute('class', 'preset-thumb');
-    thumb.setAttribute('width', '28'); thumb.setAttribute('height', '28'); thumb.setAttribute('viewBox', '0 0 28 28');
-    var tp = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    tp.setAttribute('fill', 'none'); tp.setAttribute('stroke', _curveColor);
-    tp.setAttribute('stroke-width', '2'); tp.setAttribute('stroke-linecap', 'round');
-    tp.setAttribute('d', _thumbPathD(preset.curve));
-    thumb.appendChild(tp); btn.appendChild(thumb);
-    _tileAnimHook(btn, thumb, function() { return preset.curve; });
+    // Thumbnail (_THUMBS_ON: scroll-freeze elimination switch)
+    var thumb = null;
+    if (_THUMBS_ON) {
+      thumb = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      thumb.setAttribute('class', 'preset-thumb');
+      thumb.setAttribute('width', '28'); thumb.setAttribute('height', '28'); thumb.setAttribute('viewBox', '0 0 28 28');
+      var tp = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      tp.setAttribute('fill', 'none'); tp.setAttribute('stroke', _curveColor);
+      tp.setAttribute('stroke-width', '2'); tp.setAttribute('stroke-linecap', 'round');
+      tp.setAttribute('d', _thumbPathD(preset.curve));
+      thumb.appendChild(tp); btn.appendChild(thumb);
+      _tileAnimHook(btn, thumb, function() { return preset.curve; });
+    }
 
     // Name
     var nameSpan = document.createElement('span');
