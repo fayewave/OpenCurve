@@ -1071,7 +1071,13 @@ function initGraphEditor(svg) {
     updateDynamicSVG(liveCurve, _svgW, _svgH);
   }
 
+  // Only touch the DOM when the snap state actually changes: this runs on
+  // every drag pointermove and rewrites every grid line, which UXP repaints
+  var _snapBgOn = false;
   function _setSnapBg(snap) {
+    snap = !!snap;
+    if (snap === _snapBgOn) return;
+    _snapBgOn = snap;
     var bg = document.getElementById('sg-range-bg');
     if (bg) {
       bg.setAttribute('fill', snap ? '#4a9eff' : '#1c1c1c'); // same as #sg-range-bg in index.html
