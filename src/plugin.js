@@ -126,7 +126,7 @@ function _animateToCurve(target, onUpdate) {
   var duration = 150;
   var start = null;
   function easeInOut(t) { return t < 0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
-  function step() {
+  function step(ts) {
     if (!start) start = ts;
     var p = Math.min((ts - start) / duration, 1);
     var e = easeInOut(p);
