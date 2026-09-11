@@ -2680,6 +2680,8 @@ var _tlSig   = '';    // what the lanes were last built from
 var _tlGeo   = null;  // { W, H, laneH, y0, n, a, b } of the last build
 var _tlLanes = [];    // per lane: { key, name, bg, kf: [{ x, t }] }
 var _tlPh    = null;  // playhead { line, tri }
+var _tlGhost = null;  // ghost playhead { line, tri }: where a press would move it, follows the pointer
+var _tlGhostSec = null; // its time in sequence seconds while the pointer is over a lane, else null
 var _tlHoverKey = null; // row lit up because its lane is hovered
 var _tlHoverText = '';  // shown in the status strip while the pointer is over a lane
 var _tlPropsW    = 0;   // current property column width (saved value, or live while its handle is dragged)
@@ -2814,6 +2816,7 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
   if (els.wrap) els.wrap.querySelectorAll('.tl-lane-div').forEach(function(el) { el.parentNode.removeChild(el); });
   _tlLanes = [];
   _tlPh = null;
+  _tlGhost = null;
   var g = { W: W, H: H, laneH: laneH, n: n, a: range ? range.a : 0, b: range ? range.b : 1, y0: 0 };
   _tlGeo = g;
   var hasLanes = n > 0 && W > 2 * _TL_PAD_X + 10;
@@ -2885,6 +2888,14 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
     });
     _tlLanes.push(lane);
   });
+  // Ghost playhead: a faint copy that follows the pointer at the frame a press would
+  // jump to (placed by _tlPlaceGhost); under the real playhead so that paints over it
+  _tlGhost = {
+    line: _tlMk('line', { x1: 0, y1: 0, x2: 0, y2: H, stroke: '#ffffff', 'stroke-opacity': '0.35', 'stroke-width': 1, visibility: 'hidden', 'pointer-events': 'none' }),
+    tri:  _tlMk('polygon', { points: '0,0', fill: '#e6e6e6', 'fill-opacity': '0.45', visibility: 'hidden', 'pointer-events': 'none' }),
+  };
+  els.svg.appendChild(_tlGhost.line);
+  els.svg.appendChild(_tlGhost.tri);
   // Playhead: a line with a small cap at the top, placed by _tlPlacePlayhead
   _tlPh = {
     line: _tlMk('line', { x1: 0, y1: 0, x2: 0, y2: H, stroke: '#ffffff', 'stroke-opacity': '0.9', 'stroke-width': 1 }), // see the divider note
@@ -2893,6 +2904,7 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
   els.svg.appendChild(_tlPh.line);
   els.svg.appendChild(_tlPh.tri);
   if (_tlHoverKey) _tlHighlightLane(_tlHoverKey);
+  _tlPlaceGhost(_tlGhostSec); // a rebuild under a still pointer keeps the ghost where it was
 }
 
 function _tlPlacePlayhead(s) {
@@ -2906,6 +2918,23 @@ function _tlPlacePlayhead(s) {
   _tlPh.line.setAttribute('x1', x);
   _tlPh.line.setAttribute('x2', x);
   _tlPh.tri.setAttribute('points', (x - 3.5) + ',0 ' + (x + 3.5) + ',0 ' + x + ',4');
+}
+
+// Ghost playhead at sec (sequence seconds), hidden with null. Snaps to the same
+// frame or keyframe the press would land on, so it shows exactly where the
+// playhead will go.
+function _tlPlaceGhost(sec) {
+  _tlGhostSec = (typeof sec === 'number') ? sec : null;
+  if (!_tlGhost || !_tlGeo) return;
+  var g = _tlGeo, x = _tlGhostSec === null ? -1 : _tlX(_tlGhostSec, g);
+  var on = x >= 0 && x <= g.W;
+  _tlGhost.line.setAttribute('visibility', on ? 'visible' : 'hidden');
+  _tlGhost.tri.setAttribute('visibility',  on ? 'visible' : 'hidden');
+  if (!on) return;
+  x = Math.round(x) + 0.5;
+  _tlGhost.line.setAttribute('x1', x);
+  _tlGhost.line.setAttribute('x2', x);
+  _tlGhost.tri.setAttribute('points', (x - 3.5) + ',0 ' + (x + 3.5) + ',0 ' + x + ',4');
 }
 
 // Select or deselect a property for baking: the row click, and a double press
@@ -3013,6 +3042,7 @@ function _tlApplyHeight(live) {
       _tlGeo.H = H;
       els.svg.setAttribute('height', H);
       if (_tlPh) _tlPh.line.setAttribute('y2', H);
+      if (_tlGhost) _tlGhost.line.setAttribute('y2', H);
     }
     return;
   }
@@ -3159,8 +3189,9 @@ function _tlInit() {
     _tlHighlightLane(lane ? lane.key : null);
     _tlRowHover(lane ? lane.key : null);
     _tlShowReadout(t, lane);
+    _tlPlaceGhost(t ? t.sec : null);
   });
-  function leave() { _tlHighlightLane(null); _tlRowHover(null); _tlShowReadout(null); } // a press in flight is kept: a rebuild can fire this mid-press
+  function leave() { _tlHighlightLane(null); _tlRowHover(null); _tlShowReadout(null); _tlPlaceGhost(null); } // a press in flight is kept: a rebuild can fire this mid-press
   svg.addEventListener('pointerleave', leave);
   svg.addEventListener('mouseleave',   leave);
   // Handle between the lanes and the property rows drags the rows' width (same
