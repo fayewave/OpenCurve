@@ -3450,7 +3450,15 @@ function _tlInit() {
              wrap: root.querySelector('.tl-canvas-wrap'), svg: document.getElementById('tl-svg'),
              empty: document.getElementById('tl-empty'),
              fade: document.getElementById('tl-fade'), fadeTop: document.getElementById('tl-fade-top') };
-  if (_tlEls.scroll) _tlEls.scroll.addEventListener('scroll', _tlUpdateFade);
+  function _wireTlScroll(el) {
+    _tlEls.scroll = el;
+    el.addEventListener('scroll', _tlUpdateFade);
+    _smoothWheel(el);           // UXP: proper wheel steps with easing
+    _sdWatch(el, 'timeline box');
+    _holdFixWatch(el);          // fresh element after each scroll burst
+    el._ocRewire = _wireTlScroll;
+  }
+  if (_tlEls.scroll) _wireTlScroll(_tlEls.scroll);
   var svg = _tlEls.svg;
   function measure() {
     var rect = _tlEls.wrap.getBoundingClientRect();
@@ -3917,12 +3925,11 @@ function _centerIcons() {
 // than ~60ms after a scroll change are synthesized by content moving under a
 // still pointer. It is the platform: a bare test plugin with nothing in it
 // (F:/tmp/oc-scrolltest) measures the same in a docked panel and in a dialog,
-// and with every switch below off this panel measured the same too. Nothing
-// in a plugin ends it (style writes, pointer-events toggles, re-creating the
-// scroll view were all tried). Mitigation: fewer notches (_smoothWheel's
-// amplification), and the ease kept short since the window runs from the
-// last scroll change. Flyout > Scroll Debug prints the measurement, one
-// short block per scroll burst:
+// and with every switch below off this panel measured the same too. What
+// does end it: a fresh scroller element (kick 6 below measured 61-68ms), now
+// shipped as _refreshScroller in the next block. Fewer notches help too
+// (_smoothWheel's amplification). Flyout > Scroll Debug prints the
+// measurement, one short block per scroll burst:
 //   [OC-SCROLL] burst: <scroller> top=<px>
 //   [OC-SCROLL] +<ms> quiet          (a 100ms window with no OS pointer event)
 //   [OC-SCROLL] FIRST real event +<ms>: <type> -> <target>   <= the dead window
@@ -3938,7 +3945,7 @@ var _POLL_ON        = true;  // false = the host is never polled after startup (
 var _THUMBS_ON      = true;  // false = preset tiles are built without their SVG thumbnail
 var _TRANSITIONS_ON = true;  // false = a style rule kills every CSS transition/animation at init
 var _CONTAIN_ON     = true;  // false = contain:none on #all-presets-list at init
-var _SCROLL_KICK    = [2, 4, 5, 6]; // TEST: a list rotates one kick per scroll burst (the log names it). After a scroll: 1 = toggle a transform on the scroller, 2 = re-create its scroll view (overflow off/on, scrollTop kept), 3 = pointer-events:none for one frame, 4 = display:none and back, 5 = detach and re-insert the same node, 6 = swap the list for a fresh element rebuilt by _renderPresets (a clone elsewhere). Leaving the list by hand ends the hold at once, so the aim is a view the pointer has not scrolled
+var _SCROLL_KICK    = 0;     // experiment tooling only; the shipped workaround is _refreshScroller. A number or a list rotated per burst. After a scroll: 1 = toggle a transform on the scroller, 2 = re-create its scroll view (overflow off/on, scrollTop kept), 3 = pointer-events:none for one frame, 4 = display:none and back, 5 = detach and re-insert the same node, 6 = swap the list for a fresh element rebuilt by _renderPresets (a clone elsewhere). Leaving the list by hand ends the hold at once, so the aim is a view the pointer has not scrolled
 var _SCROLL_KICK_MS = 40;    // delay after the last scroll event of a burst
 var _SCROLL_TESTLIST = false; // a bare plain scroller (40 rows) floated over the graph, watched as 'bare list', never kicked: tells the list's structure from any scroll view in this panel
 var _DEBUG_SCROLL_KEY = 'opencurve-debug-scroll';
@@ -3950,6 +3957,7 @@ function _toggleDebugScroll() {
     console.log('[OC-SCROLL] ON. Switches: sink ' + _SINK_FOCUS_ON + ', tooltips ' + _TOOLTIPS_ON + ', pressState ' + _PRESS_STATE_ON
       + ', poll ' + _POLL_ON + ', wheel ' + _WHEEL_ON + '/' + _WHEEL_MS + 'ms, kick ' + _SCROLL_KICK
       + ', thumbs ' + _THUMBS_ON + ', transitions ' + _TRANSITIONS_ON + ', contain ' + _CONTAIN_ON + ', bare list ' + _SCROLL_TESTLIST
+      + ', holdFix ' + _HOLD_FIX + '/' + _HOLD_FIX_MS + 'ms'
       + ', dropped listener types [' + _EVT_SKIP.join(', ') + ']');
   }
   _showCopyToast('Scroll debug ' + (_debugScroll ? 'ON: scroll a list, keep the mouse moving, then click' : 'OFF'));
@@ -4057,6 +4065,52 @@ function _sdInit() {
   });
 }
 
+// ─── Post-scroll input hold: the workaround (UXP) ──────────────────────────
+// UXP keeps OS pointer input off a scroll view for 500ms after its last
+// scroll change, unless the pointer leaves it (measured, see the block above).
+// The hold belongs to the element's native scroll view: a brand-new element
+// with the same children has none (measured 61-68ms with kick 6 on
+// 2026-09-12, against ~500ms for hide/show, overflow toggles or detaching and
+// re-inserting the same node). So _HOLD_FIX_MS after the last scroll event of
+// a burst the scroller is replaced by a fresh element and its children are
+// moved across, which keeps every handler on them; each scroller's wiring is
+// a function stored as el._ocRewire and run again on the replacement.
+// Skipped while a press is in progress (drag-sort, a scrollbar drag) or a
+// field inside the scroller has focus (a rename).
+var _HOLD_FIX    = true;
+var _HOLD_FIX_MS = 40; // after the last scroll event; the amplification's own writes count, so its ease runs first
+var _ocPtrDown   = false;
+document.addEventListener('pointerdown',   function() { _ocPtrDown = true;  }, true);
+document.addEventListener('pointerup',     function() { _ocPtrDown = false; }, true);
+document.addEventListener('pointercancel', function() { _ocPtrDown = false; }, true);
+function _holdFixWatch(el) {
+  if (!_HOLD_FIX || !el || el._ocHoldFix) return;
+  el._ocHoldFix = true;
+  var timer = null;
+  el.addEventListener('scroll', function() {
+    if (el._ocRefreshing) return;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(function() {
+      timer = null;
+      if (!el.parentNode || _ocPtrDown) return;
+      var ae = document.activeElement;
+      if (ae && ae !== document.body && el.contains(ae)) return;
+      _refreshScroller(el);
+    }, _HOLD_FIX_MS);
+  });
+}
+function _refreshScroller(el) {
+  var fresh = el.cloneNode(false), top = el.scrollTop; // same tag, attributes and inline style, no children
+  fresh._ocRefreshing = true;
+  while (el.firstChild) fresh.appendChild(el.firstChild);
+  el.parentNode.replaceChild(fresh, el);
+  fresh.scrollTop = top;
+  if (typeof el._ocRewire === 'function') el._ocRewire(fresh);
+  setTimeout(function() { fresh._ocRefreshing = false; }, 60);
+  if (_debugScroll) console.log('[OC-SCROLL] scroller refreshed: #' + fresh.id + ' (top ' + top + ' -> ' + fresh.scrollTop + ')');
+  return fresh;
+}
+
 // ─── Smooth wheel scrolling (UXP) ─────────────────────────────────────────
 // UXP delivers no wheel events at all (checked 2026-09: nothing on the
 // element, document or window, and `onwheel` isn't even a property). Its own
@@ -4136,8 +4190,24 @@ function initPanel() {
 
   // A-curve (peak) mode toggle
   _tlInit(); // mini timeline strip along the bottom
-  _smoothWheel(document.getElementById('all-presets-list')); // UXP: proper wheel steps with easing
-  _smoothWheel(document.getElementById('tl-scroll'));
+  // Preset list scroller: everything bound to the element itself, so it can be
+  // wired again on the fresh element _refreshScroller swaps in after a scroll
+  var _presetRO = null;
+  function _wirePresetList(el, replacement) {
+    _smoothWheel(el);           // UXP: proper wheel steps with easing
+    _sdWatch(el, 'preset list');
+    _holdFixWatch(el);
+    if (replacement) _initDragSort(el); // the first element gets it from _renderPresets
+    el.addEventListener('contextmenu', function(e) {
+      // Right-click on empty space (or the New tile): the list menu; presets have their own
+      var onPreset = e.target.closest && e.target.closest('.preset-btn');
+      if (onPreset && onPreset.id !== 'new-preset-btn') return;
+      _showMiniCtxMenu(e, true);
+    });
+    if (_presetRO) { _presetRO.disconnect(); _presetRO.observe(el); }
+    el._ocRewire = function(fresh) { _wirePresetList(fresh, true); };
+  }
+  _wirePresetList(document.getElementById('all-presets-list'), false);
   _sdInit(); // post-scroll freeze diagnostic (logs only while Flyout > Scroll Debug is on)
   if (_SCROLL_TESTLIST) {
     var _bare = document.createElement('div');
@@ -4152,8 +4222,6 @@ function initPanel() {
     document.body.appendChild(_bare);
     _sdWatch(_bare, 'bare list', true);
   }
-  _sdWatch(document.getElementById('all-presets-list'), 'preset list');
-  _sdWatch(document.getElementById('tl-scroll'), 'timeline box');
   _centerIcons(); // UXP: pin the button icons at their centres (see _centerIcons)
 
   var peakBtn = document.getElementById('peak-mode');
@@ -4874,7 +4942,8 @@ function initPanel() {
   _applyPresetLayout(true);
   var _presetListEl = document.getElementById('all-presets-list');
   if (_presetListEl && typeof ResizeObserver !== 'undefined') {
-    new ResizeObserver(_updateGridCols).observe(_presetListEl);
+    _presetRO = new ResizeObserver(_updateGridCols);
+    _presetRO.observe(_presetListEl);
   }
 
   // Parse cubic-bezier string → curve object or null
@@ -5193,18 +5262,6 @@ function initPanel() {
     }
     window.addEventListener('pointerdown', removeMini);
   }
-
-  // Right-click on empty space in preset list
-  (function() {
-    var list = document.getElementById('all-presets-list');
-    if (!list) return;
-    list.addEventListener('contextmenu', function(e) {
-      var onPreset = e.target.closest && e.target.closest('.preset-btn');
-      // Real presets have their own menu; the New Preset tile gets the list menu
-      if (onPreset && onPreset.id !== 'new-preset-btn') return;
-      _showMiniCtxMenu(e, true);
-    });
-  })();
 
   // Right-click on the mini timeline's lanes: zoom toggle + Open Settings.
   // Bound to the SVG and its wrapper both; _showMiniCtxMenu stops propagation,
@@ -6422,8 +6479,14 @@ function _showSettingsModal() {
   content.style.cssText = dualCol
     ? 'flex:1;overflow-y:auto;display:flex;flex-direction:row;'
     : 'flex:1;overflow-y:auto;display:flex;flex-direction:column;';
-  _smoothWheel(content); // UXP: proper wheel steps with easing
-  _sdWatch(content, 'settings');
+  function _wireContent(c) { // re-run on the fresh element _refreshScroller swaps in after a scroll
+    content = c;
+    _smoothWheel(c);           // UXP: proper wheel steps with easing
+    _sdWatch(c, 'settings');
+    _holdFixWatch(c);
+    c._ocRewire = _wireContent;
+  }
+  _wireContent(content);
   var rowsCol = document.createElement('div');
   rowsCol.style.cssText = dualCol ? 'flex:1;display:flex;flex-direction:column;' : 'flex-shrink:0;display:flex;flex-direction:column;';
 
