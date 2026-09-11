@@ -3878,6 +3878,45 @@ function _centerIcons() {
   });
 }
 
+// ─── Smooth wheel scrolling (UXP) ─────────────────────────────────────────
+// UXP scrolls a small fixed step per wheel notch with no easing, so the wheel
+// is handled here on every scrolling area: one notch moves _WHEEL_STEP px and
+// scrollTop is eased there over a few frames. scrollTop is written absolutely
+// each frame, so it makes no difference whether preventDefault stops UXP's own
+// scroll or not. Rapid small deltas (a trackpad) are used as they come.
+var _WHEEL_STEP = 90;
+var _wheelLogged = 0;
+function _smoothWheel(el) {
+  if (!el || el._ocWheel) return;
+  el._ocWheel = true;
+  var target = null, raf = 0, lastAt = 0;
+  function step() {
+    raf = 0;
+    if (target === null) return;
+    var cur = el.scrollTop, diff = target - cur;
+    if (Math.abs(diff) < 0.6) { el.scrollTop = target; target = null; return; }
+    el.scrollTop = cur + diff * 0.3;
+    raf = requestAnimationFrame(step);
+  }
+  el.addEventListener('wheel', function(e) {
+    var max = el.scrollHeight - el.clientHeight;
+    var d = e.deltaY;
+    if (max <= 0 || !d) return;
+    var now = Date.now(), gap = now - lastAt;
+    lastAt = now;
+    if (_wheelLogged < 5) { _wheelLogged++; console.log('[OC] wheel deltaY=' + d + ' mode=' + e.deltaMode + ' gap=' + gap + 'ms'); }
+    var move;
+    if (e.deltaMode === 1)      move = d * (_WHEEL_STEP / 3);          // lines: 3 per notch
+    else if (e.deltaMode === 2) move = d * el.clientHeight * 0.8;      // pages
+    else if (Math.abs(d) < 40 && gap < 40) move = d * 1.5;             // trackpad stream
+    else move = Math.sign(d) * _WHEEL_STEP * Math.max(1, Math.min(3, Math.round(Math.abs(d) / 100))); // notches
+    if (e.cancelable) e.preventDefault();
+    var from = target === null ? el.scrollTop : target;
+    target = Math.max(0, Math.min(max, from + move));
+    if (!raf) raf = requestAnimationFrame(step);
+  }, { passive: false });
+}
+
 // ─── Panel init ───────────────────────────────────────────────────────────
 function initPanel() {
   console.log('[FS] initPanel called');
@@ -3889,6 +3928,8 @@ function initPanel() {
 
   // A-curve (peak) mode toggle
   _tlInit(); // mini timeline strip along the bottom
+  _smoothWheel(document.getElementById('all-presets-list')); // UXP: proper wheel steps with easing
+  _smoothWheel(document.getElementById('tl-scroll'));
   _centerIcons(); // UXP: pin the button icons at their centres (see _centerIcons)
 
   var peakBtn = document.getElementById('peak-mode');
@@ -6141,6 +6182,7 @@ function _showSettingsModal() {
   content.style.cssText = dualCol
     ? 'flex:1;overflow-y:auto;display:flex;flex-direction:row;'
     : 'flex:1;overflow-y:auto;display:flex;flex-direction:column;';
+  _smoothWheel(content); // UXP: proper wheel steps with easing
   var rowsCol = document.createElement('div');
   rowsCol.style.cssText = dualCol ? 'flex:1;display:flex;flex-direction:column;' : 'flex-shrink:0;display:flex;flex-direction:column;';
 
