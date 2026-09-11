@@ -3834,10 +3834,12 @@ function renderUI(s) {
 
 // UXP's flex centring leaves the 14px button icons a little down and right
 // of centre, and stylesheet rules on the SVGs reach only some of them, so each
-// icon is pinned inline at the exact centre of its button: (26-14)/2 = 6px in
-// a tool button, (22-14)/2 = 4px in the row pin/undo/curve and Undo buttons.
+// icon is pinned inline one pixel short of the exact centre of its button,
+// because UXP paints the SVG content a pixel down and right of its box:
+// (26-14)/2 - 1 = 5px in a tool button, (22-14)/2 - 1 = 3px in the row
+// pin/undo/curve and Undo buttons (checked by eye at 1x, 2026-09).
 // Run after every render because the property rows are rebuilt there.
-var _ICON_OFF = { 'tool-btn': 6, 'prop-pin': 4, 'prop-undo': 4, 'prop-curve': 4, 'btn-undo': 4 };
+var _ICON_OFF = { 'tool-btn': 5, 'prop-pin': 3, 'prop-undo': 3, 'prop-curve': 3, 'btn-undo': 3 };
 function _centerIcons() {
   Object.keys(_ICON_OFF).forEach(function(cls) {
     var off = _ICON_OFF[cls] + 'px';
