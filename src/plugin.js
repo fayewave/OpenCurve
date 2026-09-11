@@ -3938,7 +3938,7 @@ var _POLL_ON        = true;  // false = the host is never polled after startup (
 var _THUMBS_ON      = true;  // false = preset tiles are built without their SVG thumbnail
 var _TRANSITIONS_ON = true;  // false = a style rule kills every CSS transition/animation at init
 var _CONTAIN_ON     = true;  // false = contain:none on #all-presets-list at init
-var _SCROLL_KICK    = 0;     // after a scroll: 1 = toggle a transform on the scroller, 2 = re-create its scroll view (overflow off/on, scrollTop kept), 3 = pointer-events:none for one frame (a native pointer leave/enter, since leaving the list by hand ends the dead state at once)
+var _SCROLL_KICK    = [2, 4, 5, 6]; // TEST: a list rotates one kick per scroll burst (the log names it). After a scroll: 1 = toggle a transform on the scroller, 2 = re-create its scroll view (overflow off/on, scrollTop kept), 3 = pointer-events:none for one frame, 4 = display:none and back, 5 = detach and re-insert the same node, 6 = swap the list for a clone (listeners lost, measurement only). Leaving the list by hand ends the hold at once, so the aim is a view the pointer has not scrolled
 var _SCROLL_KICK_MS = 40;    // delay after the last scroll event of a burst
 var _SCROLL_TESTLIST = false; // a bare plain scroller (40 rows) floated over the graph, watched as 'bare list', never kicked: tells the list's structure from any scroll view in this panel
 var _DEBUG_SCROLL_KEY = 'opencurve-debug-scroll';
@@ -3986,16 +3986,31 @@ function _sdWatch(el, name, noKick) {
     _sd.timer = setTimeout(_sdProbe, 100);
   });
 }
+var _sdKickN = 0;
 function _sdKick(el) {
   _sd.kickTimer = null;
+  var kind = Array.isArray(_SCROLL_KICK) ? _SCROLL_KICK[_sdKickN++ % _SCROLL_KICK.length] : _SCROLL_KICK;
   el._sdKicking = true;
+  var top = el.scrollTop, done = el;
   try {
-    if (_SCROLL_KICK === 1) { el.style.transform = 'translateZ(0)'; void el.offsetHeight; el.style.transform = ''; }
-    else if (_SCROLL_KICK === 2) { var top = el.scrollTop; el.style.overflowY = 'hidden'; void el.offsetHeight; el.style.overflowY = 'auto'; el.scrollTop = top; }
-    else if (_SCROLL_KICK === 3) { el.style.pointerEvents = 'none'; void el.offsetHeight; setTimeout(function() { el.style.pointerEvents = ''; }, 16); }
-  } catch(_) {}
-  setTimeout(function() { el._sdKicking = false; }, 50);
-  if (_debugScroll) console.log('[OC-SCROLL] kick ' + _SCROLL_KICK + ' applied to ' + (el.id || el.nodeName));
+    if (kind === 1) { el.style.transform = 'translateZ(0)'; void el.offsetHeight; el.style.transform = ''; }
+    else if (kind === 2) { el.style.overflowY = 'hidden'; void el.offsetHeight; el.style.overflowY = 'auto'; el.scrollTop = top; }
+    else if (kind === 3) { el.style.pointerEvents = 'none'; void el.offsetHeight; setTimeout(function() { el.style.pointerEvents = ''; }, 16); }
+    else if (kind === 4) { var disp = el.style.display; el.style.display = 'none'; void el.offsetHeight; el.style.display = disp; el.scrollTop = top; }
+    else if (kind === 5) { var par = el.parentNode, next = el.nextSibling; par.removeChild(el); void par.offsetHeight; par.insertBefore(el, next); el.scrollTop = top; }
+    else if (kind === 6) {
+      var c = el.cloneNode(true);
+      c._sdKicking = true;
+      el.parentNode.replaceChild(c, el);
+      c.scrollTop = top;
+      _sdWatch(c, _sd.name);
+      _smoothWheel(c);
+      if (_sd.el === el) _sd.el = c;
+      done = c;
+    }
+  } catch(err) { if (_debugScroll) console.log('[OC-SCROLL] kick ' + kind + ' threw: ' + err); }
+  setTimeout(function() { done._sdKicking = false; el._sdKicking = false; }, 50);
+  if (_debugScroll) console.log('[OC-SCROLL] kick ' + kind + ' applied to ' + (el.id || el.nodeName) + ' (top ' + top + ' -> ' + done.scrollTop + ')');
 }
 function _sdProbe() {
   _sd.timer = null;
