@@ -1124,22 +1124,24 @@ function ocTransport(cmd, moving) {
     // Premiere may have been started or stopped from its own controls, so the
     // playhead (moving or still over the last polls) beats our own memory
     var playing = moving === 'moving' ? true : moving === 'still' ? false : _ocPlayRate !== 0;
+    // qe.stopPlayback() (and startPlayback, they are the same call) is the
+    // spacebar: a play/stop toggle. It is the only QE call that actually halts
+    // playback on recent versions; player.play(0) and player.stop() don't.
+    var qeToggle = (typeof qe.stopPlayback === 'function') ? function() { qe.stopPlayback(); }
+                 : (typeof qe.startPlayback === 'function') ? function() { qe.startPlayback(); } : null;
+    if (cmd === 'toggle' && qeToggle) {
+      qeToggle();
+      _ocPlayRate = playing ? 0 : 1;
+      return 'toggle';
+    }
     var rate = playing ? (_ocPlayRate || 1) : 0;
     if (cmd === 'toggle')    rate = playing ? 0 : 1;
     else if (cmd === 'stop') rate = 0;
     else if (cmd === 'fwd')  rate = rate > 0 ? Math.min(8, rate * 2) : 1;
     else if (cmd === 'rev')  rate = rate < 0 ? Math.max(-8, rate * 2) : -1;
     if (rate === 0) {
-      // Stop. play(0) and stop() are what the QE player offers, but on recent
-      // versions neither halts playback; re-setting the playhead to where it
-      // is does (Premiere stops playback whenever the position is set), so
-      // that is done as well.
-      try { player.play(0); } catch(e0) {}
-      if (typeof player.stop === 'function') { try { player.stop(); } catch(e1) {} }
-      try {
-        var seq = app.project.activeSequence;
-        if (seq) seq.setPlayerPosition(String(seq.getPlayerPosition().ticks));
-      } catch(e2) {}
+      if (playing && qeToggle) qeToggle(); // K while playing: the toggle stops it
+      else { try { player.play(0); } catch(e0) {} if (typeof player.stop === 'function') { try { player.stop(); } catch(e1) {} } }
     } else {
       player.play(rate);
     }
