@@ -4080,9 +4080,28 @@ function _sdInit() {
 var _HOLD_FIX    = true;
 var _HOLD_FIX_MS = 40; // after the last scroll event; the amplification's own writes count, so its ease runs first
 var _ocPtrDown   = false;
+var _ocHoldDeferred = null; // scroller whose refresh was skipped because a press was in progress
+var _ocCursorHeld   = null; // element carrying the hovered cursor across a swap (cleared on the next hover)
 document.addEventListener('pointerdown',   function() { _ocPtrDown = true;  }, true);
-document.addEventListener('pointerup',     function() { _ocPtrDown = false; }, true);
-document.addEventListener('pointercancel', function() { _ocPtrDown = false; }, true);
+document.addEventListener('pointerup',     function() { _ocPtrDown = false; _holdFixResume(); }, true);
+document.addEventListener('pointercancel', function() { _ocPtrDown = false; _holdFixResume(); }, true);
+// The next real hover ends the carried cursor: UXP has hit-tested again by then
+document.addEventListener('pointerover', function() {
+  if (_ocCursorHeld) { _ocCursorHeld.style.cursor = ''; document.body.style.cursor = ''; _ocCursorHeld = null; }
+}, true);
+function _holdFixResume() {
+  // A press skipped the refresh (so a drag was not broken); do it once the press ends
+  var el = _ocHoldDeferred;
+  _ocHoldDeferred = null;
+  if (el) setTimeout(function() { _holdFixTry(el); }, 20);
+}
+function _holdFixTry(el) {
+  if (!el.parentNode) return;
+  if (_ocPtrDown) { _ocHoldDeferred = el; return; }
+  var ae = document.activeElement;
+  if (ae && ae !== document.body && el.contains(ae)) return; // a field inside (a rename) has focus
+  _refreshScroller(el);
+}
 function _holdFixWatch(el) {
   if (!_HOLD_FIX || !el || el._ocHoldFix) return;
   el._ocHoldFix = true;
@@ -4090,24 +4109,31 @@ function _holdFixWatch(el) {
   el.addEventListener('scroll', function() {
     if (el._ocRefreshing) return;
     if (timer) clearTimeout(timer);
-    timer = setTimeout(function() {
-      timer = null;
-      if (!el.parentNode || _ocPtrDown) return;
-      var ae = document.activeElement;
-      if (ae && ae !== document.body && el.contains(ae)) return;
-      _refreshScroller(el);
-    }, _HOLD_FIX_MS);
+    timer = setTimeout(function() { timer = null; _holdFixTry(el); }, _HOLD_FIX_MS);
   });
 }
 function _refreshScroller(el) {
   var fresh = el.cloneNode(false), top = el.scrollTop; // same tag, attributes and inline style, no children
+  // The swap takes the hovered element out of the document for an instant and
+  // UXP drops the cursor to the arrow until the next mouse move; carry the
+  // hovered element's cursor on the new scroller and the body until then
+  var cursor = '';
+  try {
+    var hov = el.querySelectorAll(':hover');
+    if (hov.length) cursor = getComputedStyle(hov[hov.length - 1]).cursor || '';
+  } catch(_) {}
   fresh._ocRefreshing = true;
   while (el.firstChild) fresh.appendChild(el.firstChild);
   el.parentNode.replaceChild(fresh, el);
   fresh.scrollTop = top;
+  if (cursor && cursor !== 'auto' && cursor !== 'default') {
+    fresh.style.cursor = cursor;
+    document.body.style.cursor = cursor;
+    _ocCursorHeld = fresh;
+  }
   if (typeof el._ocRewire === 'function') el._ocRewire(fresh);
   setTimeout(function() { fresh._ocRefreshing = false; }, 60);
-  if (_debugScroll) console.log('[OC-SCROLL] scroller refreshed: #' + fresh.id + ' (top ' + top + ' -> ' + fresh.scrollTop + ')');
+  if (_debugScroll) console.log('[OC-SCROLL] scroller refreshed: #' + fresh.id + ' (top ' + top + ' -> ' + fresh.scrollTop + (cursor ? ', cursor ' + cursor : '') + ')');
   return fresh;
 }
 
