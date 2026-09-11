@@ -934,7 +934,8 @@ function _styleViewBtns() {
   [['toggle-graph', _graphVisible], ['toggle-timeline', _tlVisible]].forEach(function(pair) {
     var btn = document.getElementById(pair[0]);
     if (!btn) return;
-    var bg = pair[1] ? 'rgba(61,220,132,0.18)' : '', col = pair[1] ? '#3ddc84' : '', op = pair[1] ? '1' : '';
+    // Green while the region is shown, red while it is hidden (the Settings rows use the same pair)
+    var bg = pair[1] ? 'rgba(61,220,132,0.18)' : 'rgba(255,144,144,0.18)', col = pair[1] ? '#3ddc84' : '#ff9090', op = '1';
     if (btn.style.background !== bg) btn.style.background = bg; // write only on change: UXP relayouts on every style write
     if (btn.style.color !== col) btn.style.color = col;
     if (btn.style.opacity !== op) btn.style.opacity = op;
