@@ -3938,7 +3938,7 @@ var _POLL_ON        = true;  // false = the host is never polled after startup (
 var _THUMBS_ON      = true;  // false = preset tiles are built without their SVG thumbnail
 var _TRANSITIONS_ON = true;  // false = a style rule kills every CSS transition/animation at init
 var _CONTAIN_ON     = true;  // false = contain:none on #all-presets-list at init
-var _SCROLL_KICK    = [2, 4, 5, 6]; // TEST: a list rotates one kick per scroll burst (the log names it). After a scroll: 1 = toggle a transform on the scroller, 2 = re-create its scroll view (overflow off/on, scrollTop kept), 3 = pointer-events:none for one frame, 4 = display:none and back, 5 = detach and re-insert the same node, 6 = swap the list for a clone (listeners lost, measurement only). Leaving the list by hand ends the hold at once, so the aim is a view the pointer has not scrolled
+var _SCROLL_KICK    = [2, 4, 5, 6]; // TEST: a list rotates one kick per scroll burst (the log names it). After a scroll: 1 = toggle a transform on the scroller, 2 = re-create its scroll view (overflow off/on, scrollTop kept), 3 = pointer-events:none for one frame, 4 = display:none and back, 5 = detach and re-insert the same node, 6 = swap the list for a fresh element rebuilt by _renderPresets (a clone elsewhere). Leaving the list by hand ends the hold at once, so the aim is a view the pointer has not scrolled
 var _SCROLL_KICK_MS = 40;    // delay after the last scroll event of a burst
 var _SCROLL_TESTLIST = false; // a bare plain scroller (40 rows) floated over the graph, watched as 'bare list', never kicked: tells the list's structure from any scroll view in this panel
 var _DEBUG_SCROLL_KEY = 'opencurve-debug-scroll';
@@ -3987,6 +3987,7 @@ function _sdWatch(el, name, noKick) {
   });
 }
 var _sdKickN = 0;
+var _renderPresetsRef = null; // set in initPanel; kick 6 rebuilds the preset list into a fresh element with it
 function _sdKick(el) {
   _sd.kickTimer = null;
   var kind = Array.isArray(_SCROLL_KICK) ? _SCROLL_KICK[_sdKickN++ % _SCROLL_KICK.length] : _SCROLL_KICK;
@@ -3999,9 +4000,21 @@ function _sdKick(el) {
     else if (kind === 4) { var disp = el.style.display; el.style.display = 'none'; void el.offsetHeight; el.style.display = disp; el.scrollTop = top; }
     else if (kind === 5) { var par = el.parentNode, next = el.nextSibling; par.removeChild(el); void par.offsetHeight; par.insertBefore(el, next); el.scrollTop = top; }
     else if (kind === 6) {
-      var c = el.cloneNode(true);
-      c._sdKicking = true;
-      el.parentNode.replaceChild(c, el);
+      // A brand-new element (so a brand-new native scroll view) rebuilt by the
+      // real renderer, so tiles keep their handlers; clone only as a fallback
+      var c;
+      if (el.id === 'all-presets-list' && _renderPresetsRef) {
+        c = document.createElement('div');
+        c.id = el.id; c.className = el.className; c.style.cssText = el.style.cssText;
+        c._sdKicking = true;
+        el.parentNode.replaceChild(c, el);
+        _renderPresetsRef();
+        _applyPresetLayout(true);
+      } else {
+        c = el.cloneNode(true);
+        c._sdKicking = true;
+        el.parentNode.replaceChild(c, el);
+      }
       c.scrollTop = top;
       _sdWatch(c, _sd.name);
       _smoothWheel(c);
@@ -4854,6 +4867,7 @@ function initPanel() {
     }
   };
 
+  _renderPresetsRef = _renderPresets;
   _renderPresets();
   _refreshUpdateNotification();
 
