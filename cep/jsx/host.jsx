@@ -1130,10 +1130,16 @@ function ocTransport(cmd, moving) {
     else if (cmd === 'fwd')  rate = rate > 0 ? Math.min(8, rate * 2) : 1;
     else if (cmd === 'rev')  rate = rate < 0 ? Math.max(-8, rate * 2) : -1;
     if (rate === 0) {
-      // Stop: player.stop() where this Premiere has it, play(0) otherwise
-      var stopped = false;
-      if (typeof player.stop === 'function') { try { player.stop(); stopped = true; } catch(e0) {} }
-      if (!stopped) player.play(0);
+      // Stop. play(0) and stop() are what the QE player offers, but on recent
+      // versions neither halts playback; re-setting the playhead to where it
+      // is does (Premiere stops playback whenever the position is set), so
+      // that is done as well.
+      try { player.play(0); } catch(e0) {}
+      if (typeof player.stop === 'function') { try { player.stop(); } catch(e1) {} }
+      try {
+        var seq = app.project.activeSequence;
+        if (seq) seq.setPlayerPosition(String(seq.getPlayerPosition().ticks));
+      } catch(e2) {}
     } else {
       player.play(rate);
     }

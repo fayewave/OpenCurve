@@ -487,30 +487,32 @@ html, body {
   padding: 0;
   box-sizing: border-box;
   overflow: hidden;
-  /* UXP paints its own dark rounded field inside every <input>, so the
-     wrapper draws nothing here and that native field is the box (the CEP
-     stylesheet gives the wrapper the frame instead) */
-  background: transparent;
-  border: none;
+  /* UXP paints its own field inside every <input>: the input is painted flat
+     (#111111, no padding ring) and this wrapper carries the stroke around it */
+  background: #111111;
+  border-top: 1px solid rgba(255,255,255,0.12);
+  border-left: 1px solid rgba(255,255,255,0.12);
+  border-right: 1px solid rgba(255,255,255,0.12);
+  border-bottom: 1px solid rgba(255,255,255,0.12);
 }
 .oc-field-input {
   flex: 1;
   min-width: 0;
   width: 100%;
   /* the native field is the box here, so it takes the wrapper's full height */
-  height: 26px;
+  height: 24px;
   min-height: 0;
-  line-height: 26px;
-  /* UXP draws the text area as a black inset inside the input's box; painting
-     the input black too, with no padding ring, makes them read as one field */
+  line-height: 24px;
+  /* UXP draws the text area as an inset inside the input's box; painting the
+     input the same flat colour, with no padding ring, makes them read as one */
   -webkit-appearance: none;
   appearance: none;
   background: #111111;
   background-color: #111111;
-  border-top: 1px solid rgba(255,255,255,0.12);
-  border-left: 1px solid rgba(255,255,255,0.12);
-  border-right: 1px solid rgba(255,255,255,0.12);
-  border-bottom: 1px solid rgba(255,255,255,0.12);
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
   border-radius: 0;
   box-shadow: none;
   box-sizing: border-box;

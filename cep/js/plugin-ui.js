@@ -1200,7 +1200,7 @@ function _jumpToParam(p) {
 // · G ghost · N numeric entry · U undo the last bake · Esc stops a preview or
 // leaves full screen. Enter (Go) is handled by the caller.
 var _lastHandle = { k: 'p1' }; // last handle pressed on the graph, for the arrow keys
-var _NATIVE_TRANSPORT = true; // CEP: Premiere still receives Space/J/K/L pressed in the panel, so it plays and shuttles itself
+var _NATIVE_TRANSPORT = false; // CEP: Premiere does not receive Space/J/K/L while the panel has focus either (tested), so QE plays
 function _panelShortcut(e) {
   var k = e.key || '', code = e.code || '';
   var lk = k.length === 1 ? k.toLowerCase() : k;
