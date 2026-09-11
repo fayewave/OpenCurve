@@ -399,6 +399,11 @@ input, textarea {
 #preset-paste {
   margin-right: auto;
 }
+/* Collapsed preset bar: the menu button takes the left spot, Settings keeps the right */
+#preset-tools-menu {
+  margin-left: 0;
+  margin-right: auto;
+}
 
 .tool-btn:hover {
   background: rgba(255,255,255,0.16);

@@ -4570,6 +4570,102 @@ function initPanel() {
   if (toolbar && typeof ResizeObserver !== 'undefined') new ResizeObserver(_tbLayout).observe(toolbar);
   _tbLayout();
 
+  // Collapsed preset toolbar, the same way as the graph bar: once the bar is too
+  // narrow for the New/List/Paste group and the Graph/Timeline/Settings group to
+  // sit apart, every tool but Settings hides and one menu button takes the
+  // left spot; its dropdown lists all of them. Elements are looked up by id at
+  // use time (the toolbar itself is never swapped, but this keeps it simple).
+  var ptb      = document.getElementById('preset-toolbar');
+  var pMenuBtn = document.getElementById('preset-tools-menu');
+  var _PTB_IDS = ['preset-new', 'preset-layout', 'preset-paste', 'toggle-graph', 'toggle-timeline'];
+  var _PTB_NEED = (3 * 26 + 2 * 5) + (3 * 26 + 2 * 5) + 10 + 8;
+  var _ptbCollapsed = null;
+  var _ptbDismiss   = null;
+  function _hidePresetMenu() {
+    var m = document.getElementById('_preset-tools-menu');
+    if (m && m.parentNode) m.parentNode.removeChild(m);
+    if (_ptbDismiss) { window.removeEventListener('pointerdown', _ptbDismiss); _ptbDismiss = null; }
+  }
+  function _ptbLayout() {
+    if (!ptb || !pMenuBtn) return;
+    var w = ptb.clientWidth;
+    if (!(w > 0)) return;
+    var collapse = w < _PTB_NEED;
+    if (collapse === _ptbCollapsed) return;
+    _ptbCollapsed = collapse;
+    // inline display: UXP ignores class-driven display changes
+    _PTB_IDS.forEach(function(id) { var b = document.getElementById(id); if (b) b.style.display = collapse ? 'none' : ''; });
+    pMenuBtn.style.display = collapse ? '' : 'none';
+    if (!collapse) _hidePresetMenu();
+  }
+  function _showPresetMenu() {
+    _hidePresetMenu();
+    var menu = document.createElement('div');
+    menu.className = 'ctx-menu';
+    menu.id = '_preset-tools-menu';
+    menu.style.display = 'block';
+    function item(label, svg, onClick, opts) {
+      opts = opts || {};
+      var it = document.createElement('div');
+      it.className = 'ctx-menu-item';
+      it.style.display = 'flex';
+      it.style.alignItems = 'center';
+      var ic = document.createElement('span');
+      ic.style.cssText = 'display:flex;align-items:center;justify-content:center;flex-shrink:0;opacity:0.7;margin-right:10px;width:16px;';
+      if (svg) { var c = svg.cloneNode(true); c.style.display = ''; ic.appendChild(c); } // the tool's own icon
+      it.appendChild(ic);
+      var lb = document.createElement('span');
+      lb.textContent = label;
+      it.appendChild(lb);
+      if (opts.active === true)  { it.style.color = '#3ddc84'; ic.style.opacity = '1'; }
+      if (opts.active === false) { it.style.color = '#ff9090'; ic.style.opacity = '1'; }
+      it.addEventListener('click', function(ev) {
+        ev.stopPropagation();
+        _hidePresetMenu();
+        onClick();
+      });
+      menu.appendChild(it);
+    }
+    function svgOf(id, sel) { var b = document.getElementById(id); return b ? b.querySelector(sel || 'svg') : null; }
+    var newBtn = document.getElementById('preset-new');
+    item('New Preset', svgOf('preset-new'), function() { if (newBtn) newBtn.click(); });
+    item(_presetLayout === 'list' ? 'Grid View' : 'List View',
+         svgOf('preset-layout', _presetLayout === 'list' ? '.ic-grid' : '.ic-list'),
+         function() { _presetLayout = _presetLayout === 'list' ? 'grid' : 'list'; localStorage.setItem(_LAYOUT_KEY, _presetLayout); _applyPresetLayout(true); });
+    item('Paste Preset', svgOf('preset-paste'), function() { _pasteCoordinates(); });
+    item(_graphVisible ? 'Graph: On' : 'Graph: Off', svgOf('toggle-graph'), function() { _setGraphVisible(!_graphVisible); }, { active: _graphVisible });
+    item(_tlVisible ? 'Timeline: On' : 'Timeline: Off', svgOf('toggle-timeline'), function() { _setTimelineVisible(!_tlVisible); }, { active: _tlVisible });
+    menu.style.left = '0px';
+    menu.style.top  = '0px';
+    document.body.appendChild(menu);
+    void menu.offsetHeight;
+    // Below the button, left-aligned with it; above when there is no room below
+    var r  = pMenuBtn.getBoundingClientRect();
+    var mw = menu.offsetWidth  || 170;
+    var mh = menu.offsetHeight || 100;
+    var ww = document.documentElement.clientWidth  || document.body.clientWidth;
+    var wh = document.documentElement.clientHeight || document.body.clientHeight;
+    var x  = Math.max(0, Math.min(r.left, ww - mw));
+    var y  = (r.bottom + 2 + mh > wh) ? Math.max(0, r.top - 2 - mh) : r.bottom + 2;
+    menu.style.left = x + 'px';
+    menu.style.top  = y + 'px';
+    _ptbDismiss = function(ev) {
+      if (menu.contains(ev.target) || pMenuBtn.contains(ev.target)) return;
+      _hidePresetMenu();
+    };
+    // Deferred so the press that opened it doesn't dismiss it
+    var pd = _ptbDismiss;
+    setTimeout(function() { if (_ptbDismiss === pd) window.addEventListener('pointerdown', pd); }, 0);
+  }
+  if (pMenuBtn) {
+    _attachTooltip(pMenuBtn, 'Preset tools');
+    pMenuBtn.addEventListener('click', function() {
+      if (document.getElementById('_preset-tools-menu')) _hidePresetMenu(); else _showPresetMenu();
+    });
+  }
+  if (ptb && typeof ResizeObserver !== 'undefined') new ResizeObserver(_ptbLayout).observe(ptb);
+  _ptbLayout();
+
   // ── Unified preset system ─────────────────────────────────────
   var _STORAGE_KEY  = 'opencurve-presets-v10';
 
