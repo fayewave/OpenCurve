@@ -3254,7 +3254,12 @@ function _tlComposeReadout() {
   }
   if (text === _tlHoverText) return;
   _tlHoverText = text;
-  renderUI(getState());
+  // Only the strip's text changes, so write that rather than run a full
+  // renderUI on every pointer move over the lanes
+  var txt = document.getElementById('status-text'), clipEl = document.getElementById('status-clip');
+  if (!txt) return;
+  var s = getState();
+  txt.textContent = _statusMsg(s, !!clipEl && clipEl.style.display !== 'none' && !!s.clipName);
 }
 // The property's value under the pointer (what Premiere interpolates there, so
 // it reflects the baked keyframes). One host read in flight at a time; the
@@ -3780,8 +3785,7 @@ function renderUI(s) {
   var txt   = document.getElementById('status-text');
   if (strip && txt) {
     var cfg  = STATUS_CONFIG[s.status] || STATUS_CONFIG['idle'];
-    var msg  = typeof cfg.text === 'function' ? cfg.text(s) : cfg.text;
-    strip.className = 'status-strip ' + cfg.cls;
+    var cls  = 'status-strip ' + cfg.cls;
     // Marker: hollow diamond while the playhead is outside every pair ("Move
     // playhead..."), a tick once properties are selected (blue), solid otherwise
     // (including "N properties ready")
@@ -3810,12 +3814,12 @@ function renderUI(s) {
     if (dotEl)  dotEl.style.color  = _sc.dot;
     txt.style.color = _sc.text;
     if (clipEl) clipEl.style.color = _sc.text;
-    if (_tlHoverText) msg = _tlHoverText; // pointer over the mini timeline: what's under it
-    if (showClip) msg = '\u00b7 ' + msg;
+    var msg  = _statusMsg(s, showClip);
     // Clickable whenever there are valid params: click selects all, click again clears
     var _vk = s.validParamKeys || [];
-    if (_vk.length > 0 && s.status !== 'done' && !s.isBaking) strip.className += ' status-clickable';
-    txt.textContent = msg;
+    if (_vk.length > 0 && s.status !== 'done' && !s.isBaking) cls += ' status-clickable';
+    if (strip.className !== cls) strip.className = cls; // a class write restyles the strip's subtree
+    if (txt.textContent !== msg) txt.textContent = msg;
   }
 
   // Go button
@@ -3836,6 +3840,16 @@ function renderUI(s) {
 
   _tlRender(s);
   _centerIcons();
+}
+
+// The status strip's message: the mini timeline's hover readout while the
+// pointer is over a lane, else the state's text; a middle dot before it when
+// the clip name is shown ahead of it.
+function _statusMsg(s, showClip) {
+  var cfg = STATUS_CONFIG[s.status] || STATUS_CONFIG['idle'];
+  var msg = typeof cfg.text === 'function' ? cfg.text(s) : cfg.text;
+  if (_tlHoverText) msg = _tlHoverText; // pointer over the mini timeline: what's under it
+  return showClip ? '\u00b7 ' + msg : msg;
 }
 
 // UXP's flex centring leaves the 14px button icons a little down and right
@@ -5310,6 +5324,15 @@ async function poll() {
       console.log('[FS] status changed:', _lastStatus, '→', result.status, result.hint || '');
       _lastStatus = result.status;
     }
+    // Nothing the UI shows has changed: keep the newest live handles (param
+    // proxies, timeline data) without notifying the listeners. UXP repaints on
+    // every style write, so an idle tick used to pay for a full renderUI, a
+    // timeline pass and six forced layouts ten times a second for nothing.
+    if (_pollSig(updates) === _pollSig(state)) {
+      Object.assign(state, { availableParams: updates.availableParams, paramContexts: updates.paramContexts, tl: updates.tl });
+      if (_debugTiming) _dbgRecord(_dbgKind, _tDet, result, _t0, 0, _cache.playhead);
+      return;
+    }
     var _tR = _debugTiming ? Date.now() : 0;
     setState(updates);
     if (_debugTiming) _dbgRecord(_dbgKind, _tDet, result, _t0, Date.now() - _tR, _cache.playhead);
@@ -5320,6 +5343,23 @@ async function poll() {
   }
 }
 window.__opencurvePoll = poll;
+
+// Everything renderUI / the timeline / the strip cursor read from a poll's
+// updates, as one string, so a tick that changes nothing visible can skip the
+// render. Compared against the current state (not the last poll) so a change
+// made through setState elsewhere is never left un-rendered.
+function _pollSig(u) {
+  var ps = (u.availableParams || []).map(function(p) {
+    return p.key + ':' + p.displayName
+      + ':' + (p.tlOut ? 'o' : Math.round(p.tlKf0 * 1000) + '/' + Math.round(p.tlKf1 * 1000))
+      + ':' + (p.tlKf || []).map(function(t) { return Math.round(t * 1000); }).join(',')
+      + ':' + (p.tlSpans || []).map(function(sp) { return Math.round(sp[0] * 1000) + '~' + Math.round(sp[1] * 1000); }).join(',')
+      + ':' + (typeof p.nearSec === 'number' ? Math.round(p.nearSec * 1000) : '');
+  }).join(';');
+  var tl = u.tl ? [u.tl.ph, u.tl.clipStart, u.tl.clipEnd, u.tl.clipIn, u.tl.fps].join('/') : '';
+  return [u.status, u.clipId || '', u.clipName || '', u.hint || '', u.errorMessage || '', tl, ps,
+          (u.selectedParamKeys || []).join(','), (u.validParamKeys || []).join(','), (u.bakedParamKeys || []).join(',')].join('|');
+}
 
 // ─── Settings / flyout ─────────────────────────────────────────────────────
 var CURRENT_VERSION     = '2.0.0';
