@@ -928,6 +928,30 @@ function _setDragGhost(on) {
   if (!_dragGhost) _hideDragGhost();
   _styleGhostBtn();
 }
+// Preset toolbar Graph / Timeline toggles: the same switches as Settings, tinted
+// green while the region is shown, like the A-curve and Ghost buttons
+function _styleViewBtns() {
+  [['toggle-graph', _graphVisible], ['toggle-timeline', _tlVisible]].forEach(function(pair) {
+    var btn = document.getElementById(pair[0]);
+    if (!btn) return;
+    var bg = pair[1] ? 'rgba(61,220,132,0.18)' : '', col = pair[1] ? '#3ddc84' : '', op = pair[1] ? '1' : '';
+    if (btn.style.background !== bg) btn.style.background = bg; // write only on change: UXP relayouts on every style write
+    if (btn.style.color !== col) btn.style.color = col;
+    if (btn.style.opacity !== op) btn.style.opacity = op;
+  });
+}
+function _setGraphVisible(on) {
+  _graphVisible = !!on;
+  localStorage.setItem(_GRAPH_KEY, _graphVisible ? 'on' : 'off');
+  _applyGraphVisibility();
+  _styleViewBtns();
+}
+function _setTimelineVisible(on) {
+  _tlVisible = !!on;
+  localStorage.setItem(_TL_KEY, _tlVisible ? 'on' : 'off');
+  _applyTimelineVisibility();
+  _styleViewBtns();
+}
 
 function updateDynamicSVG(curve, W, H) {
   if (_peakMode) { _updatePeakSVG(curve, W, H); return; }
@@ -4324,6 +4348,18 @@ function initPanel() {
     _attachTooltip(pasteBtn, 'Paste Preset: add a preset from cubic-bezier() or opencurve() text');
     pasteBtn.addEventListener('click', function() { _pasteCoordinates(); });
   }
+  // Graph / Timeline toggles: the same switches as Settings (see _setGraphVisible)
+  var graphTog = document.getElementById('toggle-graph');
+  if (graphTog) {
+    _attachTooltip(graphTog, function() { return _graphVisible ? 'Graph is shown. Click to hide it' : 'Graph is hidden. Click to show it'; });
+    graphTog.addEventListener('click', function() { _setGraphVisible(!_graphVisible); });
+  }
+  var tlTog = document.getElementById('toggle-timeline');
+  if (tlTog) {
+    _attachTooltip(tlTog, function() { return _tlVisible ? 'Timeline is shown. Click to hide it' : 'Timeline is hidden. Click to show it'; });
+    tlTog.addEventListener('click', function() { _setTimelineVisible(!_tlVisible); });
+  }
+  _styleViewBtns();
 
   // Enter presses Go. UXP only delivers keydown to inputs and buttons, and
   // Premiere keeps Enter for itself unless a text field in the panel has
@@ -6697,10 +6733,8 @@ function _showSettingsModal() {
   graphRow.addEventListener('mouseenter', function() { graphRow.style.background = _graphVisible ? 'rgba(61,220,132,0.15)' : 'rgba(255,144,144,0.15)'; });
   graphRow.addEventListener('mouseleave', function() { graphRow.style.background = _graphVisible ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)'; });
   graphRow.addEventListener('click', function() {
-    _graphVisible = !_graphVisible;
-    localStorage.setItem(_GRAPH_KEY, _graphVisible ? 'on' : 'off');
+    _setGraphVisible(!_graphVisible);
     _updateGraphCheck();
-    _applyGraphVisibility();
   });
   rowsCol.appendChild(graphRow);
 
@@ -6726,10 +6760,8 @@ function _showSettingsModal() {
   tlRow.addEventListener('mouseenter', function() { tlRow.style.background = _tlVisible ? 'rgba(61,220,132,0.15)' : 'rgba(255,144,144,0.15)'; });
   tlRow.addEventListener('mouseleave', function() { tlRow.style.background = _tlVisible ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)'; });
   tlRow.addEventListener('click', function() {
-    _tlVisible = !_tlVisible;
-    localStorage.setItem(_TL_KEY, _tlVisible ? 'on' : 'off');
+    _setTimelineVisible(!_tlVisible);
     _updateTlCheck();
-    _applyTimelineVisibility();
   });
   rowsCol.appendChild(tlRow);
 
