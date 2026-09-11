@@ -497,9 +497,10 @@ html, body {
   flex: 1;
   min-width: 0;
   width: 100%;
-  height: 20px;
+  /* the native field is the box here, so it takes the wrapper's full height */
+  height: 26px;
   min-height: 0;
-  line-height: 20px;
+  line-height: 26px;
   background: transparent;
   background-color: transparent;
   border-top: none;
