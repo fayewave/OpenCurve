@@ -1198,6 +1198,7 @@ function _jumpToParam(p) {
 // · G ghost · N numeric entry · U undo the last bake · Esc stops a preview or
 // leaves full screen. Enter (Go) is handled by the caller.
 var _lastHandle = { k: 'p1' }; // last handle pressed on the graph, for the arrow keys
+var _ocPressInField = false; // the current press started in a text field (see the key sink listeners)
 var _NATIVE_TRANSPORT = false; // CEP: Premiere does not receive Space/J/K/L while the panel has focus either (tested), so QE plays
 function _panelShortcut(e) {
   var k = e.key || '', code = e.code || '';
@@ -2388,8 +2389,16 @@ function initPanel() {
   }
   // Focus on the press and again on release/click: UXP moves focus around
   // between the two, and a field the user is clicking keeps its own focus
-  document.addEventListener('pointerdown', function(e) { if (!_isField(e.target)) setTimeout(function() { _focusSink('pointerdown'); }, 0); }, true);
-  document.addEventListener('click',       function(e) { if (!_isField(e.target)) setTimeout(function() { _focusSink('click'); }, 0); }, true);
+  // A press that starts in a real field (selecting its text) must not hand
+  // focus to the sink when it is released elsewhere, or the selection is lost
+  document.addEventListener('pointerdown', function(e) {
+    _ocPressInField = _isField(e.target);
+    if (!_ocPressInField) setTimeout(function() { _focusSink('pointerdown'); }, 0);
+  }, true);
+  document.addEventListener('click', function(e) {
+    if (_ocPressInField) return;
+    if (!_isField(e.target)) setTimeout(function() { _focusSink('click'); }, 0);
+  }, true);
   if (keySink) {
     // Nothing should ever be typed into it
     keySink.addEventListener('input', function() { keySink.value = ''; });
@@ -3108,7 +3117,11 @@ function initPanel() {
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
       if (box.parentNode) box.parentNode.removeChild(box);
     }
-    overlay.addEventListener('click', close);
+    // Close on a click on the dark area, but only a press that also started
+    // there: releasing a text-selection drag over it must not close the panel
+    var ovDown = false;
+    overlay.addEventListener('pointerdown', function() { ovDown = true; });
+    overlay.addEventListener('click', function() { if (ovDown) close(); ovDown = false; });
 
     var title = document.createElement('div');
     title.textContent = 'Paste Preset';
@@ -4081,7 +4094,11 @@ function _showNumericPanel() {
     if (_svgW > 0 && _svgH > 0) updateDynamicSVG(getState().curve, _svgW, _svgH);
     close();
   }
-  overlay.addEventListener('click', function(ev) { if (ev.target === overlay) cancel(); });
+  // Cancel on a click on the dark area, but only a press that also started
+  // there: releasing a text-selection drag over it must not close the panel
+  var ovDown = false;
+  overlay.addEventListener('pointerdown', function(ev) { ovDown = ev.target === overlay; });
+  overlay.addEventListener('click', function(ev) { if (ev.target === overlay && ovDown) cancel(); ovDown = false; });
 
   var title = document.createElement('div');
   title.textContent = 'Numeric Entry';

@@ -353,6 +353,19 @@ html, body {
   transition: background 0.12s, color 0.12s;
 }
 
+/* Icons sit dead centre in their buttons. As inline elements the SVGs sat on
+   the text baseline, which in UXP pushed them down and right of centre. */
+.tool-btn svg,
+.prop-pin svg,
+.prop-undo svg,
+.prop-curve svg,
+.btn svg {
+  display: block;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0;
+}
+
 /* First tool on the left sits flush with the toolbar padding (the collapsed
    menu button and A-curve are never shown together, so both are "first") */
 #graph-tools-menu,
