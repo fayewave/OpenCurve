@@ -8,6 +8,33 @@
 
 console.log('[FS] plugin.js executing');
 
+// ─── Post-scroll freeze elimination: listener types dropped at registration ─
+// Windows' double-click time here is 500ms and the measured dead window is
+// 507-548ms, so the engine's own input state machine is the suspect. Every
+// addEventListener for a type listed here is ignored (edit, reload, measure
+// with Flyout > Scroll Debug). Candidates, one at a time:
+//   ['dblclick']                                              preset names + timeline lanes
+//   ['mouseenter', 'mouseleave', 'pointerenter', 'pointerleave']  tooltips, hover classes, tile dot, lane highlight
+//   ['contextmenu']                                           graph, preset list, lanes
+var _EVT_SKIP = ['dblclick']; // TEST BUILD: dblclick dropped (rename via the context menu is off too)
+(function() {
+  if (!_EVT_SKIP.length) return;
+  var seen = [];
+  [typeof EventTarget !== 'undefined' ? EventTarget : null, typeof Node !== 'undefined' ? Node : null,
+   typeof Element !== 'undefined' ? Element : null, typeof Document !== 'undefined' ? Document : null,
+   typeof Window !== 'undefined' ? Window : null].forEach(function(C) {
+    if (!C || !C.prototype || !Object.prototype.hasOwnProperty.call(C.prototype, 'addEventListener')) return;
+    var orig = C.prototype.addEventListener;
+    if (seen.indexOf(orig) >= 0) return;
+    seen.push(orig);
+    C.prototype.addEventListener = function(type, fn, opts) {
+      if (_EVT_SKIP.indexOf(type) >= 0) return;
+      return orig.call(this, type, fn, opts);
+    };
+  });
+  console.log('[OC-SCROLL] listener types dropped this session: ' + _EVT_SKIP.join(', ') + ' (patched ' + seen.length + ' prototype(s))');
+})();
+
 // ─── UXP built-ins ────────────────────────────────────────────────────────
 var uxp, ppro;
 try {
@@ -3912,7 +3939,8 @@ function _toggleDebugScroll() {
   localStorage.setItem(_DEBUG_SCROLL_KEY, _debugScroll ? 'on' : 'off');
   if (_debugScroll) {
     console.log('[OC-SCROLL] ON. Switches: sink ' + _SINK_FOCUS_ON + ', tooltips ' + _TOOLTIPS_ON + ', pressState ' + _PRESS_STATE_ON
-      + ', poll ' + _POLL_ON + ', wheel ' + _WHEEL_ON + '/' + _WHEEL_MS + 'ms, kick ' + _SCROLL_KICK);
+      + ', poll ' + _POLL_ON + ', wheel ' + _WHEEL_ON + '/' + _WHEEL_MS + 'ms, kick ' + _SCROLL_KICK
+      + ', dropped listener types [' + _EVT_SKIP.join(', ') + ']');
   }
   _showCopyToast('Scroll debug ' + (_debugScroll ? 'ON: scroll a list, keep the mouse moving, then click' : 'OFF'));
 }
