@@ -509,10 +509,12 @@ html, body {
   appearance: none;
   background: #111111;
   background-color: #111111;
-  border-top: none;
-  border-left: none;
-  border-right: none;
-  border-bottom: none;
+  /* the native control keeps a stroke of its own whatever 'none' says, so it
+     is given the fill colour and the wrapper's stroke is the only visible one */
+  border-top: 1px solid #111111;
+  border-left: 1px solid #111111;
+  border-right: 1px solid #111111;
+  border-bottom: 1px solid #111111;
   border-radius: 0;
   box-shadow: none;
   box-sizing: border-box;
