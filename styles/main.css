@@ -353,40 +353,15 @@ html, body {
   transition: background 0.12s, color 0.12s;
 }
 
-/* Icons sit dead centre in their buttons. UXP's flex centring left every
-   14px icon a little down and right of centre (block display made no
-   difference), so the icons are placed at explicit offsets instead. UXP also
-   paints the SVG content about a pixel down and right of its box, so the
-   offsets are one less than centre: 5px in a 26px tool button, 3px in the
-   22px row and Undo buttons. */
+/* Icons sit dead centre in their buttons. UXP's flex centring left the 14px
+   icons a little down and right of centre, and stylesheet rules on the SVGs
+   reached only some of them, so plugin.js places every icon inline
+   (_centerIcons); the buttons just need to be positioned for that. */
 .tool-btn,
 .prop-pin,
 .prop-undo,
 .prop-curve {
   position: relative;
-}
-.tool-btn svg,
-.prop-pin svg,
-.prop-undo svg,
-.prop-curve svg,
-.btn-undo svg {
-  display: block;
-  position: absolute;
-  margin: 0;
-  padding: 0;
-  width: 14px;
-  height: 14px;
-}
-.tool-btn svg {
-  left: 5px;
-  top: 5px;
-}
-.prop-pin svg,
-.prop-undo svg,
-.prop-curve svg,
-.btn-undo svg {
-  left: 3px;
-  top: 3px;
 }
 
 /* First tool on the left sits flush with the toolbar padding (the collapsed

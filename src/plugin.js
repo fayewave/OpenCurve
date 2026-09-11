@@ -3829,6 +3829,31 @@ function renderUI(s) {
   }
 
   _tlRender(s);
+  _centerIcons();
+}
+
+// UXP's flex centring leaves the 14px button icons a little down and right
+// of centre, and stylesheet rules on the SVGs reach only some of them, so each
+// icon is pinned inline at the exact centre of its button: (26-14)/2 = 6px in
+// a tool button, (22-14)/2 = 4px in the row pin/undo/curve and Undo buttons.
+// Run after every render because the property rows are rebuilt there.
+var _ICON_OFF = { 'tool-btn': 6, 'prop-pin': 4, 'prop-undo': 4, 'prop-curve': 4, 'btn-undo': 4 };
+function _centerIcons() {
+  Object.keys(_ICON_OFF).forEach(function(cls) {
+    var off = _ICON_OFF[cls] + 'px';
+    var svgs = document.querySelectorAll('.' + cls + ' > svg');
+    for (var i = 0; i < svgs.length; i++) {
+      var sv = svgs[i];
+      if (sv._ocCentered) continue;
+      sv._ocCentered = true;
+      sv.style.display  = sv.style.display === 'none' ? 'none' : 'block';
+      sv.style.position = 'absolute';
+      sv.style.left     = off;
+      sv.style.top      = off;
+      sv.style.margin   = '0';
+      sv.style.padding  = '0';
+    }
+  });
 }
 
 // ─── Panel init ───────────────────────────────────────────────────────────
@@ -3842,6 +3867,7 @@ function initPanel() {
 
   // A-curve (peak) mode toggle
   _tlInit(); // mini timeline strip along the bottom
+  _centerIcons(); // UXP: pin the button icons at their centres (see _centerIcons)
 
   var peakBtn = document.getElementById('peak-mode');
   if (peakBtn) {
