@@ -355,8 +355,10 @@ html, body {
 
 /* Icons sit dead centre in their buttons. UXP's flex centring left every
    14px icon a little down and right of centre (block display made no
-   difference), so the icons are placed at explicit offsets instead: 6px in a
-   26px tool button, 4px in the 22px row and Undo buttons. */
+   difference), so the icons are placed at explicit offsets instead. UXP also
+   paints the SVG content about a pixel down and right of its box, so the
+   offsets are one less than centre: 5px in a 26px tool button, 3px in the
+   22px row and Undo buttons. */
 .tool-btn,
 .prop-pin,
 .prop-undo,
@@ -376,15 +378,15 @@ html, body {
   height: 14px;
 }
 .tool-btn svg {
-  left: 6px;
-  top: 6px;
+  left: 5px;
+  top: 5px;
 }
 .prop-pin svg,
 .prop-undo svg,
 .prop-curve svg,
 .btn-undo svg {
-  left: 4px;
-  top: 4px;
+  left: 3px;
+  top: 3px;
 }
 
 /* First tool on the left sits flush with the toolbar padding (the collapsed
