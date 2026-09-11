@@ -4279,22 +4279,31 @@ function initPanel() {
   function _tileAnimStop() {
     if (!_tileAnim) return;
     cancelAnimationFrame(_tileAnim.raf);
-    if (_tileAnim.dot.parentNode) _tileAnim.dot.parentNode.removeChild(_tileAnim.dot);
+    _tileAnim.dot.setAttribute('opacity', '0'); _tileAnim.dot.setAttribute('visibility', 'hidden');
     _tileAnim = null;
   }
   function _tileAnimHook(btn, thumb, getCurve) {
-    btn.addEventListener('mouseenter', function() {
+    // The dot exists from the start and is only shown while hovered: UXP is
+    // happier toggling opacity/visibility on an existing SVG child than
+    // rendering one appended mid-hover (the graph's handles work the same way)
+    var dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    dot.setAttribute('class', 'thumb-dot');
+    dot.setAttribute('r', '2.6');
+    dot.setAttribute('cx', '3'); dot.setAttribute('cy', '25');
+    dot.setAttribute('fill', _curveColor);
+    dot.setAttribute('stroke', '#111111');
+    dot.setAttribute('stroke-width', '1');
+    dot.setAttribute('opacity', '0'); dot.setAttribute('visibility', 'hidden');
+    thumb.appendChild(dot);
+    function start() {
       if (!_animationsOn) return;
+      if (_tileAnim && _tileAnim.thumb === thumb) return;
       _tileAnimStop();
       var c = getCurve();
       var m = _thumbMap(c);
       var pk = _peakMode ? _peakOf(c, 48) : null;
-      var dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      dot.setAttribute('r', '2.6');
       dot.setAttribute('fill', _curveColor);
-      dot.setAttribute('stroke', '#111111');
-      dot.setAttribute('stroke-width', '1');
-      thumb.appendChild(dot);
+      dot.setAttribute('opacity', '1'); dot.setAttribute('visibility', 'visible');
       var st = { raf: 0, dot: dot, thumb: thumb }, t0 = null;
       var run = 1300, hold = 400; // one pass, then a pause at the end
       _tileAnim = st;
@@ -4313,8 +4322,12 @@ function initPanel() {
         st.raf = requestAnimationFrame(frame);
       }
       st.raf = requestAnimationFrame(frame);
-    });
-    btn.addEventListener('mouseleave', function() { if (_tileAnim && _tileAnim.thumb === thumb) _tileAnimStop(); });
+    }
+    function stop() { if (_tileAnim && _tileAnim.thumb === thumb) _tileAnimStop(); }
+    btn.addEventListener('mouseenter',   start);
+    btn.addEventListener('pointerenter', start);
+    btn.addEventListener('mouseleave',   stop);
+    btn.addEventListener('pointerleave', stop);
   }
 
   function _buildPresetBtn(preset) {
@@ -5851,10 +5864,11 @@ function _confirmReset() {
 // look in CEP. Returns { wrap, input }; style the wrap for width/margins.
 function _mkTextField(fontSize, mono, bg) {
   var wrap = document.createElement('div');
-  wrap.style.cssText = 'display:flex;align-items:center;height:26px;padding:0 8px;box-sizing:border-box;overflow:hidden;background:' + (bg || '#111111') + ';border:1px solid rgba(255,255,255,0.12);';
+  wrap.className = 'oc-field';
+  if (bg) wrap.style.background = bg;
   var inp = document.createElement('input');
   inp.type = 'text';
-  inp.style.cssText = 'flex:1;min-width:0;width:100%;background:transparent;border:none;outline:none;padding:0;margin:0;min-height:0;height:20px;line-height:20px;color:#e4e4e4;font-size:' + (fontSize || 13) + 'px;font-family:' + (mono ? 'monospace' : 'inherit') + ';';
+  inp.className = 'oc-field-input' + (mono ? ' mono' : '') + (fontSize && fontSize < 13 ? ' small' : '');
   wrap.appendChild(inp);
   return { wrap: wrap, input: inp };
 }
@@ -6127,7 +6141,7 @@ function _showSettingsModal() {
   var hexTf = _mkTextField(13, true, '#252525');
   hexTf.wrap.style.width = '90px'; hexTf.wrap.style.marginLeft = '8px'; hexTf.wrap.style.flexShrink = '0';
   hexTf.wrap.replaceChild(hexInput, hexTf.input); // keep the input the rest of this code refers to
-  hexInput.style.cssText = hexTf.input.style.cssText;
+  hexInput.className = hexTf.input.className;
   var hexPreview = document.createElement('div');
   hexPreview.style.cssText = 'width:20px;height:20px;background:'+_curveColor+';flex-shrink:0;border:1px solid rgba(255,255,255,0.12);margin-left:8px;';
   hexInput.addEventListener('input', function() {

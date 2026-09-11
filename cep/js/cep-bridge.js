@@ -131,7 +131,7 @@
         cs.evalScript("ocTransport('" + String(cmd).replace(/[^a-z]/g, '') + "', '" + moving + "')", function(r) {
           if (r === 'noqe') { resolve(false); return; }
           if (String(r).indexOf('err:') === 0) { console.log('[OC-CEP] transport:', r); resolve(false); return; }
-          _lastPh = null; _skipPollUntil = 0;
+          _skipPollUntil = 0; // keep _lastPh: the next polls tell whether the playhead is moving
           resolve(true);
         });
       });

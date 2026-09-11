@@ -1129,7 +1129,14 @@ function ocTransport(cmd, moving) {
     else if (cmd === 'stop') rate = 0;
     else if (cmd === 'fwd')  rate = rate > 0 ? Math.min(8, rate * 2) : 1;
     else if (cmd === 'rev')  rate = rate < 0 ? Math.max(-8, rate * 2) : -1;
-    player.play(rate); // play(0) stops
+    if (rate === 0) {
+      // Stop: player.stop() where this Premiere has it, play(0) otherwise
+      var stopped = false;
+      if (typeof player.stop === 'function') { try { player.stop(); stopped = true; } catch(e0) {} }
+      if (!stopped) player.play(0);
+    } else {
+      player.play(rate);
+    }
     _ocPlayRate = rate;
     return String(rate);
   } catch(e) {

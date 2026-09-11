@@ -492,6 +492,48 @@ input, textarea {
   opacity: 1;
 }
 
+/* Text fields built by _mkTextField (numeric entry, paste, theme hex). The
+   frame is the wrapper and the input is bare, like the rename field below:
+   UXP paints its own frame, background and font inside a styled <input>, and
+   inline background/font-family on the input were ignored there, so these
+   rules live here with explicit values. */
+.oc-field {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: #111111;
+  border: 1px solid rgba(255,255,255,0.12);
+}
+.oc-field-input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  height: 20px;
+  min-height: 0;
+  line-height: 20px;
+  background: transparent;
+  background-color: transparent;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  padding: 0;
+  margin: 0;
+  outline: none;
+}
+.oc-field-input.mono {
+  font-family: Consolas, Menlo, monospace;
+}
+.oc-field-input.small {
+  font-size: 12px;
+}
+
 .preset-rename-input {
   flex: 1;
   background: transparent;
