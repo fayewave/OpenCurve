@@ -1117,7 +1117,6 @@ function initGraphEditor(svg) {
 
 
   function onResize() {
-    _ocDiagRO('graph svg');
     var rect = svg.getBoundingClientRect();
     var w = Math.floor(rect.width);
     var h = Math.floor(rect.height);
@@ -3058,11 +3057,16 @@ function _tlUpdateFade() {
     var rr = els.root.getBoundingClientRect();
     if (pr && pr.width > 0) rightInset = Math.max(0, Math.round(rr.right - pr.right));
   } catch(_) {}
-  els.fade.style.right   = rightInset + 'px';
-  els.fade.style.opacity = showBottom ? '1' : '0';
+  // Change-only writes: this runs on every scroll event of the box and after
+  // every render, and UXP relayouts the panel on any inline style write
+  var right = rightInset + 'px', ob = showBottom ? '1' : '0', ot = showTop ? '1' : '0';
+  var fs = els.fade.style;
+  if (fs.right   !== right) fs.right   = right;
+  if (fs.opacity !== ob)    fs.opacity = ob;
   if (els.fadeTop) {
-    els.fadeTop.style.right   = rightInset + 'px';
-    els.fadeTop.style.opacity = showTop ? '1' : '0';
+    var ts = els.fadeTop.style;
+    if (ts.right   !== right) ts.right   = right;
+    if (ts.opacity !== ot)    ts.opacity = ot;
   }
 }
 
@@ -3429,7 +3433,6 @@ function _tlInit() {
   // One measure per frame: dragging the width handle fires the observer on every move
   var _measurePending = false;
   function measureSoon() {
-    _ocDiagRO('timeline wrap');
     if (_measurePending) return;
     _measurePending = true;
     requestAnimationFrame(function() { _measurePending = false; measure(); });
@@ -3877,11 +3880,81 @@ function _centerIcons() {
   });
 }
 
-// TEMP DIAG: which ResizeObservers UXP fires after a preset-list scroll
-var _ocLastListScroll = 0, _ocRoLogged = 0;
-function _ocDiagRO(name) {
-  var dt = Date.now() - _ocLastListScroll;
-  if (dt < 1500 && _ocRoLogged < 40) { _ocRoLogged++; console.log('[OC-DIAG] ResizeObserver "' + name + '" fired ' + dt + 'ms after list scroll'); }
+// ─── Post-scroll pointer freeze: diagnostic (UXP) ─────────────────────────
+// CCX build, seen 2026-09-11: after wheel-scrolling a list (presets, the
+// lanes + rows box, Settings), that list gets no hover and no clicks for
+// roughly 0.5-1s while the rest of the panel answers at once. Ruled out so
+// far (see CLAUDE.md "Post-scroll pointer freeze"): the smooth-wheel writes,
+// the ResizeObservers (none fires after a scroll), the poll render, the tile
+// hover animation, and DOM reads/writes after the scroll.
+// Flyout > Poll Timing (Debug) arms this as well. For 1.5s after each scroll
+// event of a watched scroller it logs
+//   [OC-SCROLL] ptr <type> +<ms> -> <target>   every pointer event that reaches
+//                                             the document (capture phase)
+//   [OC-SCROLL] probe +<ms>: under pointer …   document.elementFromPoint at
+//                                             the last pointer position, every 100ms
+// which separates "nothing is delivered" (probe finds the tile, no ptr lines)
+// from "delivered to the wrong element" (ptr lines whose target is outside the
+// scroller while the pointer is over it) from "stale hit-testing" (the probe
+// finds the column or body under the pointer).
+var _SINK_FOCUS_ON = true; // false = never focus #oc-key-sink (Enter-to-Go and the shortcuts stop); A/B for the freeze
+var _sd = { last: 0, name: '', el: null, x: -1, y: -1, timer: null, n: 0, mv: 0, first: false };
+function _sdDesc(el) {
+  if (!el) return 'null';
+  var d = el.id ? '#' + el.id : (typeof el.className === 'string' && el.className ? '.' + el.className.split(' ')[0] : el.nodeName);
+  var tile = el.closest ? (el.closest('.preset-btn') || el.closest('.prop-btn')) : null;
+  if (tile) d += ' in "' + (tile.textContent || '').trim().slice(0, 18) + '"';
+  return d;
+}
+function _sdInside(el, x, y) {
+  var r = el.getBoundingClientRect();
+  return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+}
+function _sdWatch(el, name) {
+  if (!el || el._sdWatched) return;
+  el._sdWatched = true;
+  el.addEventListener('scroll', function() {
+    if (!_debugTiming) return;
+    var now = Date.now();
+    if (now - _sd.last > 300) {
+      _sd.n = 0; _sd.mv = 0;
+      console.log('[OC-SCROLL] ' + name + ': scroll burst starts at top=' + el.scrollTop + ', pointer over it: ' + (_sd.x >= 0 && _sdInside(el, _sd.x, _sd.y)));
+    }
+    _sd.n++; _sd.last = now; _sd.name = name; _sd.el = el; _sd.first = true;
+    if (_sd.timer) clearTimeout(_sd.timer);
+    _sd.timer = setTimeout(_sdProbe, 100); // first probe 100ms after the last scroll event of the burst
+  });
+}
+function _sdProbe() {
+  _sd.timer = null;
+  if (!_debugTiming || !_sd.el) return;
+  var dt = Date.now() - _sd.last;
+  if (dt > 1500) { console.log('[OC-SCROLL] ' + _sd.name + ': window closed (' + _sd.n + ' scroll events in the burst)'); return; }
+  if (_sd.x >= 0) {
+    var under = null, hov = '?';
+    try { under = document.elementFromPoint(_sd.x, _sd.y); } catch(_) {}
+    try { hov = String(document.querySelectorAll(':hover').length); } catch(_) {}
+    var ae = document.activeElement;
+    console.log('[OC-SCROLL] probe +' + dt + 'ms: under pointer ' + _sdDesc(under)
+      + (under && _sd.el.contains(under) ? ' (inside ' + _sd.name + ')' : ' (NOT inside ' + _sd.name + ')')
+      + ', :hover chain ' + hov + ', focus ' + (ae ? (ae.id || ae.tagName) : 'none'));
+  }
+  _sd.timer = setTimeout(_sdProbe, 100);
+}
+function _sdInit() {
+  ['pointermove', 'pointerover', 'pointerdown', 'pointerup', 'click'].forEach(function(type) {
+    document.addEventListener(type, function(e) {
+      if (type === 'pointermove') { _sd.x = e.clientX; _sd.y = e.clientY; }
+      if (!_debugTiming || !_sd.el) return;
+      var dt = Date.now() - _sd.last;
+      if (dt > 1500) return;
+      if (type === 'pointermove' && !_sd.first && (_sd.mv++ % 5)) return; // every 5th move
+      if (_sd.first) { _sd.first = false; console.log('[OC-SCROLL] first pointer event after that scroll: ' + type + ' +' + dt + 'ms'); }
+      var over = _sdInside(_sd.el, e.clientX, e.clientY), hit = _sd.el.contains(e.target);
+      console.log('[OC-SCROLL] ptr ' + type + ' +' + dt + 'ms -> ' + _sdDesc(e.target)
+        + (over ? (hit ? ' [in ' + _sd.name + ']' : ' [OVER ' + _sd.name + ' BUT TARGET OUTSIDE IT]') : ' [outside ' + _sd.name + ']'));
+    }, true);
+  });
 }
 
 // ─── Smooth wheel scrolling (UXP) ─────────────────────────────────────────
@@ -3955,8 +4028,10 @@ function initPanel() {
   // A-curve (peak) mode toggle
   _tlInit(); // mini timeline strip along the bottom
   _smoothWheel(document.getElementById('all-presets-list')); // UXP: proper wheel steps with easing
-  (function() { var l = document.getElementById('all-presets-list'); if (l) l.addEventListener('scroll', function() { _ocLastListScroll = Date.now(); }); })(); // TEMP DIAG
   _smoothWheel(document.getElementById('tl-scroll'));
+  _sdInit(); // post-scroll freeze diagnostic (logs only while Poll Timing (Debug) is on)
+  _sdWatch(document.getElementById('all-presets-list'), 'preset list');
+  _sdWatch(document.getElementById('tl-scroll'), 'timeline box');
   _centerIcons(); // UXP: pin the button icons at their centres (see _centerIcons)
 
   var peakBtn = document.getElementById('peak-mode');
@@ -4046,7 +4121,7 @@ function initPanel() {
     return t !== keySink && (tag === 'input' || tag === 'textarea' || tag === 'select' || !!(t && t.isContentEditable));
   }
   function _focusSink(why) {
-    if (!keySink) return;
+    if (!keySink || !_SINK_FOCUS_ON) return;
     try { keySink.focus(); } catch(_) {}
     var ok = document.activeElement === keySink;
     if (!ok) console.log('[OC] key sink focus (' + why + ') failed; active=' + (document.activeElement && document.activeElement.tagName));
@@ -4162,7 +4237,6 @@ function initPanel() {
     if (_tbDismiss) { window.removeEventListener('pointerdown', _tbDismiss); _tbDismiss = null; }
   }
   function _tbLayout() {
-    _ocDiagRO('graph toolbar');
     if (!toolbar || !menuBtn) return;
     var w = toolbar.clientWidth;
     if (!(w > 0)) return;
@@ -5089,7 +5163,6 @@ function initPanel() {
       var _mainRow = document.querySelector('.main-row');
       var _tlRow   = document.getElementById('oc-timeline');
       var _colRO = new ResizeObserver(function() {
-        _ocDiagRO('main-row / timeline row');
         if (!_resizing && _graphVisible) {
           var sw = _sidebarSavedW();
           var want = sw ? sw + 'px' : '';
@@ -5309,7 +5382,11 @@ function _dbgSummary() {
 function _toggleDebugTiming() {
   _debugTiming = !_debugTiming;
   localStorage.setItem(_DEBUG_TIMING_KEY, _debugTiming ? 'on' : 'off');
-  if (_debugTiming) { _dbgReset(); _showCopyToast('Poll timing ON: watch the debug console'); }
+  if (_debugTiming) {
+    _dbgReset();
+    _showCopyToast('Poll timing ON: watch the debug console');
+    console.log('[OC-SCROLL] armed: scroll a list, then move/click over it; [OC-SCROLL] lines follow for 1.5s after each scroll');
+  }
   else { _showCopyToast('Poll timing OFF: ' + _dbgSummary()); }
 }
 
@@ -5706,7 +5783,6 @@ var _LIST_2COL_W = 340; // list view splits into two columns from this width
 var _presetCols = 1;    // columns the last _applyPresetLayout laid out
 var _gridColsSize = '';
 function _updateGridCols(entries) {
-  _ocDiagRO('preset list');
   // UXP fires this on scroll as well as on a real resize; a scroll never
   // changes the list's box, so ignore callbacks where the size is the same
   if (entries && entries[0] && entries[0].contentRect) {
@@ -6225,6 +6301,7 @@ function _showSettingsModal() {
     ? 'flex:1;overflow-y:auto;display:flex;flex-direction:row;'
     : 'flex:1;overflow-y:auto;display:flex;flex-direction:column;';
   _smoothWheel(content); // UXP: proper wheel steps with easing
+  _sdWatch(content, 'settings');
   var rowsCol = document.createElement('div');
   rowsCol.style.cssText = dualCol ? 'flex:1;display:flex;flex-direction:column;' : 'flex-shrink:0;display:flex;flex-direction:column;';
 
@@ -6651,8 +6728,10 @@ function _showSettingsModal() {
   var _settingsRO = new ResizeObserver(function() {
     var nvw = document.documentElement.clientWidth  || document.body.clientWidth;
     var nvh = document.documentElement.clientHeight || document.body.clientHeight;
-    modal.style.width  = nvw + 'px';
-    modal.style.height = nvh + 'px';
+    // Change-only writes (UXP relayouts the panel on any inline style write)
+    var mw = nvw + 'px', mh = nvh + 'px';
+    if (modal.style.width  !== mw) modal.style.width  = mw;
+    if (modal.style.height !== mh) modal.style.height = mh;
     _layoutFooter(nvw);
     var nowDual = nvw > 520;
     if (nowDual !== dualCol) {
