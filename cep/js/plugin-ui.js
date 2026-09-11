@@ -4196,10 +4196,18 @@ function _showNumericPanel() {
   cancelBtn.addEventListener('mouseleave', function() { cancelBtn.style.color = '#888'; cancelBtn.style.borderColor = 'rgba(255,255,255,0.15)'; });
   box.appendChild(btnRow);
 
-  void box.offsetHeight;
-  box.style.top = Math.max(8, Math.round((vh - box.offsetHeight) / 2)) + 'px';
-  box.style.visibility = 'visible';
-  setTimeout(function() { fields.p1x.focus(); fields.p1x.select(); }, 0);
+  // Centre once the box has been laid out: UXP reports no height until the
+  // next tick (the paste panel measures the same way)
+  setTimeout(function() {
+    var bh = box.offsetHeight || 300;
+    var bw = box.offsetWidth  || boxW;
+    var vw2 = document.documentElement.clientWidth  || document.body.clientWidth  || vw;
+    var vh2 = document.documentElement.clientHeight || document.body.clientHeight || vh;
+    box.style.left = Math.max(0, Math.round((vw2 - bw) / 2)) + 'px';
+    box.style.top  = Math.max(0, Math.round((vh2 - bh) / 2)) + 'px';
+    box.style.visibility = 'visible';
+    fields.p1x.focus(); fields.p1x.select();
+  }, 0);
 }
 
 // Preset files (Export / Import Presets in the preset list's context menu).
