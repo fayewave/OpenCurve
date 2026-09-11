@@ -1109,3 +1109,75 @@ function _ocSampleMulti(x, c) {
   }
   return _ocCub(t, s.y0, s.c1y, s.c2y, s.y3);
 }
+
+// ─── Transport, preview and value readout (panel keys Space, J, K, L, P) ───
+// QE's player is the only ExtendScript route to real playback; it isn't
+// documented, so everything is guarded and 'noqe' lets the panel fall back to
+// stepping the playhead itself.
+var _ocPlayRate = 0;
+function ocTransport(cmd, moving) {
+  try {
+    if (typeof app.enableQE === 'function') app.enableQE();
+    var qs = (typeof qe !== 'undefined' && qe && qe.project) ? qe.project.getActiveSequence() : null;
+    var player = qs ? qs.player : null;
+    if (!player || typeof player.play !== 'function') return 'noqe';
+    // Premiere may have been started or stopped from its own controls, so the
+    // playhead (moving or still over the last polls) beats our own memory
+    var playing = moving === 'moving' ? true : moving === 'still' ? false : _ocPlayRate !== 0;
+    var rate = playing ? (_ocPlayRate || 1) : 0;
+    if (cmd === 'toggle')    rate = playing ? 0 : 1;
+    else if (cmd === 'stop') rate = 0;
+    else if (cmd === 'fwd')  rate = rate > 0 ? Math.min(8, rate * 2) : 1;
+    else if (cmd === 'rev')  rate = rate < 0 ? Math.max(-8, rate * 2) : -1;
+    player.play(rate); // play(0) stops
+    _ocPlayRate = rate;
+    return String(rate);
+  } catch(e) {
+    return 'err:' + (e.message || String(e));
+  }
+}
+function ocSeqInfo() {
+  try {
+    var sequence = app.project.activeSequence;
+    if (!sequence) return '{"ok":false}';
+    var TICKS_PER_SECOND = 254016000000;
+    var end = parseFloat(sequence.end) / TICKS_PER_SECOND;
+    return _jsonStringify({ ok: true, pos: sequence.getPlayerPosition().seconds, end: isFinite(end) ? end : 0, fps: _fpsCached(sequence) });
+  } catch(e) {
+    return '{"ok":false}';
+  }
+}
+// Value of a scanned property (key = compIdx_propIdx of the cached clip) at a
+// media time. getValueAtTime when this Premiere has it, else a straight line
+// between the neighbouring keyframes (exact once the pair is baked).
+function ocValueAt(key, mediaSec) {
+  try {
+    var c = _ocParamCache;
+    if (!c) return 'null';
+    var e = null;
+    for (var i = 0; i < c.entries.length; i++) {
+      if (c.entries[i].compIdx + '_' + c.entries[i].propIdx === key) { e = c.entries[i]; break; }
+    }
+    if (!e) return 'null';
+    var t = parseFloat(mediaSec);
+    var v = null;
+    if (typeof e.prop.getValueAtTime === 'function') {
+      try { v = e.prop.getValueAtTime(t); } catch(x1) { v = null; }
+      if (e.isCompound) { if (!v || v.length !== 2 || typeof v[0] !== 'number') v = null; else v = [v[0], v[1]]; }
+      else if (typeof v !== 'number') v = null;
+    }
+    if (v === null) {
+      var kt = e.kfTimes, a = null, b = null;
+      for (var k = 0; k < kt.length; k++) { if (kt[k] <= t) a = kt[k]; else { b = kt[k]; break; } }
+      if (a === null) a = kt[0];
+      if (b === null) b = kt[kt.length - 1];
+      var va = _ocCachedVal(e, a), vb = _ocCachedVal(e, b);
+      if (va === undefined || vb === undefined) return 'null';
+      var f = b > a ? Math.max(0, Math.min(1, (t - a) / (b - a))) : 0;
+      v = e.isCompound ? [va[0] + (vb[0] - va[0]) * f, va[1] + (vb[1] - va[1]) * f] : va + (vb - va) * f;
+    }
+    return _jsonStringify(v);
+  } catch(err) {
+    return 'null';
+  }
+}

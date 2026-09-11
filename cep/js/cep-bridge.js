@@ -21,6 +21,7 @@
   var _lastStatus    = '';
   var _skipPollUntil = 0;
   var _lastPh        = null; // last playhead position (seconds)
+  var _phMovedAt     = 0;    // when the playhead was last seen moving (transport toggle: playing or not)
 
   // ─── Bridge object ──────────────────────────────────────────────────────
   var bridge = {
@@ -76,6 +77,7 @@
             // Show undo button
             _showUndoBtn(true);
             _saveBakeRecords();
+            if (OpenCurve.onBakeDone) OpenCurve.onBakeDone(bakedKeys);
             setTimeout(function() {
               _lastStatus = '';
               OpenCurve.setState({ status: 'idle' });
@@ -121,6 +123,44 @@
     },
 
     // Open external URL
+    // Transport keys (Space, J, K, L): QE plays the active sequence. 'noqe'
+    // means the panel's preview engine should step the playhead instead.
+    transport: function(cmd) {
+      var moving = (Date.now() - _phMovedAt) < 700 ? 'moving' : 'still';
+      return new Promise(function(resolve) {
+        cs.evalScript("ocTransport('" + String(cmd).replace(/[^a-z]/g, '') + "', '" + moving + "')", function(r) {
+          if (r === 'noqe') { resolve(false); return; }
+          if (String(r).indexOf('err:') === 0) { console.log('[OC-CEP] transport:', r); resolve(false); return; }
+          _lastPh = null; _skipPollUntil = 0;
+          resolve(true);
+        });
+      });
+    },
+    // Preview engine: sequence position/end/fps, and a playhead move without the pin's toast
+    seqInfo: function() {
+      return new Promise(function(resolve) {
+        cs.evalScript('ocSeqInfo()', function(r) {
+          var v = null; try { v = JSON.parse(r); } catch(_) {}
+          resolve(v && v.ok ? v : null);
+        });
+      });
+    },
+    setPlayhead: function(sec) {
+      return new Promise(function(resolve, reject) {
+        cs.evalScript('jumpPlayhead(' + Number(sec) + ')', function(r) {
+          if (r === 'true') { _lastPh = null; _skipPollUntil = 0; resolve(); } else reject(new Error('jump failed'));
+        });
+      });
+    },
+    // Mini timeline hover: the property's value at a media time
+    valueAt: function(key, sec) {
+      return new Promise(function(resolve) {
+        cs.evalScript("ocValueAt('" + String(key).replace(/[^0-9_]/g, '') + "', " + Number(sec) + ")", function(r) {
+          var v = null; try { v = JSON.parse(r); } catch(_) {}
+          resolve(v);
+        });
+      });
+    },
     // Preset files: Export / Import Presets in the preset list's context menu
     saveTextFile: function(name, text) {
       return new Promise(function(resolve, reject) {
@@ -314,13 +354,14 @@
       // Nothing changed since the last poll — the host skipped the full scan.
       // Keep the current UI state untouched (no setState, no re-render).
       if (result.status === 'unchanged') {
-        if (result.ph !== undefined) _lastPh = result.ph;
+        if (result.ph !== undefined) { if (_lastPh !== null && result.ph !== _lastPh) _phMovedAt = Date.now(); _lastPh = result.ph; }
         if (_debugTiming) _dbgRecord(_dbgK, _tDet, result, _t0, 0, result.ph);
         return;
       }
 
       // Scanning continues during playback (the 1.x pause option was removed in 2.0.0)
       var ph = result.ph;
+      if (_lastPh !== null && ph !== _lastPh) _phMovedAt = Date.now();
       _lastPh = ph;
 
       var s = OpenCurve.getState();

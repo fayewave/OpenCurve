@@ -32,6 +32,11 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 - **Flip and invert** — One click turns an ease-in into the matching ease-out, or swaps time and value for the inverse ease
 - **Load a baked curve back** — Baked properties remember their curve, even after reopening the project, so you can pick it up again and tweak it
 - **Keyframe spacing** — Bake a keyframe every frame for an exact match, or every 2 or 4 frames for a lighter timeline
+- **Starter presets** — Ease, Cubic, Quint, Expo, Back and Bounce come ready to use, and presets export/import as a file so a team can share a pack
+- **Overshoot and bounce** — Handles can leave the 0–1 box, so anticipation, overshoot and bounce eases bake like any other
+- **Numeric entry** — Type the handle coordinates, or paste a `cubic-bezier()` value, straight into the curve
+- **Keyboard** — Enter presses Go, 1–9 pick presets, arrows nudge a handle, F/I flip and invert, P previews the pair, and Space / J K L play and shuttle without leaving the panel
+- **Preview** — Press P (or turn on Preview after Go) to run the playhead through the eased pair; hover the mini timeline to read a property's value at any frame
 - **Undo and redo** — Supports Premiere's history system for full undo/redo support (`.ccx` version only)
 - **Customization** — List/grid view, change the grid size, and custom themes
 - **Free forever** — No bloat, no logins. Made by an actual video editor for the editing community

@@ -897,6 +897,7 @@ function initGraphEditor(svg) {
     }
     svg.setPointerCapture(e.pointerId);
     dragging    = hit;
+    _lastHandle = hit; // arrow keys nudge this one
     liveCurve   = _cloneCurve(getState().curve);
     dragRect    = svg.getBoundingClientRect();
     _isDragging = true;
@@ -1176,9 +1177,155 @@ function _nearestJumpParam(s) {
   return best;
 }
 
+// ─── Host hooks for the preview engine and the value readout (CEP) ────────
+// The bridge runs these through ExtendScript; QE plays for real (ocTransport),
+// so the engine is only used for the pair preview.
+function _hostSeqInfo() { return _bridge && _bridge.seqInfo ? _bridge.seqInfo() : Promise.resolve(null); }
+function _hostSetPlayhead(sec) { return _bridge && _bridge.setPlayhead ? _bridge.setPlayhead(sec) : Promise.reject(new Error('No bridge')); }
+function _hostTransport(cmd) { return _bridge && _bridge.transport ? _bridge.transport(cmd) : Promise.resolve(false); }
+function _tlValueAt(p, mediaSec) { return _bridge && _bridge.valueAt ? _bridge.valueAt(p.key, mediaSec) : Promise.resolve(null); }
+// After a successful Go (the bridge calls it): Settings > Preview after Go
+function _onBakeDone(keys) { if (_previewAfterGo) setTimeout(function() { _previewPair(keys); }, 150); }
+
 function _jumpToParam(p) {
   if (!p || typeof p.jumpSec !== 'number') return;
+  _pvStop();
   if (_bridge && _bridge.onJump) _bridge.onJump(p.jumpSec);
+}
+
+// ─── Panel shortcuts ─────────────────────────────────────────────────────
+// Keys reach the panel through #oc-key-sink (see initPanel). Space play/stop ·
+// J K L shuttle · P preview the pair · 1-9 the first presets · arrows nudge
+// the last-touched handle (Shift: a grid step) · F flip · I invert · A A-curve
+// · G ghost · N numeric entry · U undo the last bake · Esc stops a preview or
+// leaves full screen. Enter (Go) is handled by the caller.
+var _lastHandle = { k: 'p1' }; // last handle pressed on the graph, for the arrow keys
+function _panelShortcut(e) {
+  var k = e.key || '', code = e.code || '';
+  var lk = k.length === 1 ? k.toLowerCase() : k;
+  if (k === ' ' || code === 'Space') { _transport('toggle'); return true; }
+  if (lk === 'j') { _transport('rev');  return true; }
+  if (lk === 'k') { _transport('stop'); return true; }
+  if (lk === 'l') { _transport('fwd');  return true; }
+  if (lk === 'p') { if (_pv && _pv.back) _pvStop(); else _previewPair(); return true; }
+  if (k.length === 1 && k >= '1' && k <= '9') { _pressPreset(parseInt(k, 10) - 1); return true; }
+  if (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'ArrowUp' || k === 'ArrowDown') {
+    var st = e.shiftKey ? 1 / _gridSize : 0.01;
+    _nudgeHandle(k === 'ArrowLeft' ? -st : k === 'ArrowRight' ? st : 0,
+                 k === 'ArrowUp'   ?  st : k === 'ArrowDown'  ? -st : 0);
+    return true;
+  }
+  if (e.repeat) return false;
+  if (lk === 'f') { _applyCurveOp(_flipCurve);   return true; }
+  if (lk === 'i') { _applyCurveOp(_invertCurve); return true; }
+  if (lk === 'a') { _setPeakMode(!_peakMode);    return true; }
+  if (lk === 'g') { _setDragGhost(!_dragGhost);  return true; }
+  if (lk === 'n') { _showNumericPanel();         return true; }
+  if (lk === 'u') {
+    var ub = document.getElementById('undo-btn');
+    if (ub && !ub.classList.contains('btn-dim')) ub.click(); else _showCopyToast('Nothing to undo');
+    return true;
+  }
+  if (k === 'Escape') {
+    if (_pv) { _pvStop(); return true; }
+    if (_graphFull) { _setGraphFull(false); return true; }
+  }
+  return false;
+}
+function _pressPreset(i) {
+  var list = document.getElementById('all-presets-list');
+  if (!list) return;
+  var tiles = Array.prototype.filter.call(list.querySelectorAll('.preset-btn'), function(b) {
+    return b.id !== 'new-preset-btn' && b.id !== '_update-notif';
+  });
+  if (tiles[i]) tiles[i].click();
+}
+function _nudgeHandle(dx, dy) {
+  var c = _cloneCurve(getState().curve), d = _lastHandle;
+  if (d.k !== 'p1' && d.k !== 'p2' && !(c.pts && c.pts[d.i])) d = _lastHandle = { k: 'p1' };
+  var hp = _handlePos(c, d);
+  _setHandle(c, d, Math.max(0, Math.min(1, hp.x + dx)), hp.y + dy, false, false);
+  _commitCurve(c);
+}
+
+// ─── Preview engine ──────────────────────────────────────────────────────
+// Steps the playhead at the sequence's frame rate through the host's
+// set-position call. Premiere's UXP API has no play command, so in the CCX
+// build Space / J / K / L run through here (no audio); the CEP build plays for
+// real through QE (_hostTransport) and only uses this for the pair preview.
+// Wall-clock paced: a slow host call drops frames rather than slowing the
+// preview. _hostSeqInfo / _hostSetPlayhead / _hostTransport are per edition.
+var _pv = null; // { rate, back, fps, from, to, t0, last, busy, timer, info }
+function _pvStart(rate, opts) {
+  opts = opts || {};
+  _pvStop();
+  var st = { rate: rate, back: !!opts.back, busy: true, last: null, timer: null, t0: 0 };
+  _pv = st;
+  _hostSeqInfo().then(function(info) {
+    if (_pv !== st) return;
+    if (!info) { _pv = null; return; }
+    st.info = info;
+    st.fps  = info.fps > 0 ? info.fps : 25;
+    st.from = typeof opts.from === 'number' ? opts.from : info.pos;
+    st.to   = typeof opts.to   === 'number' ? opts.to   : (rate > 0 ? info.end : 0);
+    st.t0   = Date.now();
+    st.busy = false;
+    st.timer = setInterval(function() { _pvTick(st); }, Math.max(15, Math.round(500 / st.fps)));
+    _pvTick(st);
+  }, function(e) { console.log('[OC] preview: no sequence info', e); if (_pv === st) _pv = null; });
+}
+function _pvTick(st) {
+  if (_pv !== st || st.busy) return;
+  var sec  = st.from + (Date.now() - st.t0) / 1000 * st.rate;
+  var done = st.rate > 0 ? sec >= st.to : sec <= st.to;
+  if (done) sec = st.to;
+  var frame = Math.round(sec * st.fps);
+  if (frame === st.last && !done) return;
+  st.last = frame;
+  st.busy = true;
+  _hostSetPlayhead(frame / st.fps, st.info).then(function() {
+    st.busy = false;
+    if (done) _pvStop(true);
+  }, function(e) { console.log('[OC] preview: set playhead failed', e); st.busy = false; _pvStop(); });
+}
+function _pvStop(finished) {
+  var st = _pv;
+  if (!st) return;
+  _pv = null;
+  if (st.timer) clearInterval(st.timer);
+  if (finished && st.back && st.info) _hostSetPlayhead(st.from, st.info).then(null, function() {}); // pair preview: back to its start
+}
+// Transport keys. The host plays for real when it can; otherwise the engine does it.
+function _transport(cmd) {
+  if (_pv && _pv.back) { _pvStop(); if (cmd === 'toggle' || cmd === 'stop') return; }
+  _hostTransport(cmd).then(function(handled) {
+    if (handled) return;
+    var run  = _pv && !_pv.back ? _pv : null;
+    var rate = run ? run.rate : 0;
+    var next = cmd === 'toggle' ? (run ? 0 : 1)
+             : cmd === 'stop'   ? 0
+             : cmd === 'fwd'    ? (rate > 0 ? Math.min(8, rate * 2) : 1)
+             : cmd === 'rev'    ? (rate < 0 ? Math.max(-8, rate * 2) : -1) : 0;
+    if (next === 0) { _pvStop(); return; }
+    var o = {};
+    if (run && run.info) o.from = run.from + (Date.now() - run.t0) / 1000 * run.rate; // keep the position, change the speed
+    _pvStart(next, o);
+  }, function(e) { console.log('[OC] transport failed', e); });
+}
+// Preview the pair: run the playhead once through the keyframe pair of the
+// given rows (else the selected rows, else any row with a pair) and return to
+// its start. P key, and after Go with Settings > Preview after Go.
+function _previewPair(keys) {
+  var s = getState(), avail = s.availableParams || [];
+  var use = (keys && keys.length) ? keys : (s.selectedParamKeys || []);
+  function hasPair(p) { return !p.tlOut && typeof p.tlKf0 === 'number' && typeof p.tlKf1 === 'number'; }
+  var rows = avail.filter(function(p) { return use.indexOf(p.key) >= 0 && hasPair(p); });
+  if (!rows.length) rows = avail.filter(hasPair);
+  if (!rows.length) { _showCopyToast('Move the playhead between keyframes to preview'); return; }
+  var from = Infinity, to = -Infinity;
+  rows.forEach(function(p) { if (p.tlKf0 < from) from = p.tlKf0; if (p.tlKf1 > to) to = p.tlKf1; });
+  if (!(to > from)) return;
+  _pvStart(1, { from: from, to: to, back: true });
 }
 
 // ─── Mini timeline ────────────────────────────────────────────────────────
@@ -1520,16 +1667,65 @@ function _tlRowHover(key) {
 
 // Property name and clip-relative time under the pointer, shown in the status
 // strip in place of its message (renderUI swaps it in while _tlHoverText is set)
+var _tlHoverInfo = null; // { t, lane } under the pointer, for the value readout
+var _tlValText   = '';   // the property's value at the hovered time, once the host has answered
+var _tlValReq    = 0;    // request counter: an answer for an older position is dropped
+var _tlValBusy   = false, _tlValNext = null;
 function _tlShowReadout(t, lane) {
-  var text = '';
-  if (t && lane) {
+  var info = (t && lane) ? { t: t, lane: lane } : null;
+  var moved = !_tlHoverInfo || !info || _tlHoverInfo.lane.key !== info.lane.key || _tlHoverInfo.t.sec !== info.t.sec;
+  _tlHoverInfo = info;
+  if (!info) { _tlValText = ''; _tlValNext = null; _tlValReq++; }
+  else if (moved) _tlRequestValue(info);
+  _tlComposeReadout();
+}
+function _tlComposeReadout() {
+  var text = '', h = _tlHoverInfo;
+  if (h) {
     var s = getState(), fps = (s.tl && s.tl.fps) || 25;
-    var rel = t.sec - (s.tl ? s.tl.clipStart : 0);
-    text = lane.name + (t.kf ? ' · keyframe' : '') + ' · ' + rel.toFixed(2) + 's · frame ' + Math.round(rel * fps);
+    var rel = h.t.sec - (s.tl ? s.tl.clipStart : 0);
+    text = h.lane.name + (h.t.kf ? ' · keyframe' : '') + ' · ' + rel.toFixed(2) + 's · frame ' + Math.round(rel * fps)
+         + (_tlValText ? ' · ' + _tlValText : '');
   }
   if (text === _tlHoverText) return;
   _tlHoverText = text;
   renderUI(getState());
+}
+// The property's value under the pointer (what Premiere interpolates there, so
+// it reflects the baked keyframes). One host read in flight at a time; the
+// latest position waits its turn. _tlValueAt is per edition.
+function _tlRequestValue(info) {
+  if (_tlValBusy) { _tlValNext = info; return; }
+  var s = getState();
+  var p = (s.availableParams || []).filter(function(a) { return a.key === info.lane.key; })[0];
+  if (!p) return;
+  var mediaSec = info.t.sec - (s.tl ? (s.tl.clipStart - s.tl.clipIn) : 0);
+  var id = ++_tlValReq;
+  _tlValBusy = true;
+  function done(v) {
+    _tlValBusy = false;
+    if (id === _tlValReq && _tlHoverInfo) {
+      var txt = _fmtParamValue(v, info.lane.name);
+      if (txt !== _tlValText) { _tlValText = txt; _tlComposeReadout(); }
+    }
+    if (_tlValNext) { var n = _tlValNext; _tlValNext = null; if (_tlHoverInfo) _tlRequestValue(n); }
+  }
+  try {
+    _tlValueAt(p, mediaSec).then(done, function() { done(null); });
+  } catch(e) { done(null); }
+}
+function _fmtParamValue(v, name) {
+  function num(n) {
+    var s = Math.abs(n) >= 100 ? n.toFixed(1) : n.toFixed(2);
+    if (s.indexOf('.') >= 0) s = s.replace(/0+$/, '').replace(/[.]$/, '');
+    return s === '-0' ? '0' : s;
+  }
+  if (typeof v === 'number' && isFinite(v)) {
+    var unit = /opacity|scale/i.test(name || '') ? '%' : /rotation|skew/i.test(name || '') ? '\u00b0' : '';
+    return num(v) + unit;
+  }
+  if (Array.isArray(v) && v.length >= 2 && typeof v[0] === 'number' && typeof v[1] === 'number') return num(v[0]) + ', ' + num(v[1]);
+  return '';
 }
 
 // Right after a bake: give each baked row's lane its green bar now instead of
@@ -2184,22 +2380,32 @@ function initPanel() {
     // Nothing should ever be typed into it
     keySink.addEventListener('input', function() { keySink.value = ''; });
   }
-  function _enterGo(e) {
-    var isEnter = e.key === 'Enter' || e.keyCode === 13 || e.which === 13 || e.code === 'Enter' || e.code === 'NumpadEnter';
-    if (!isEnter || e.repeat || e._ocEnter) return;
-    e._ocEnter = true; // the sink's own listener and the document one both see it
+  // Enter presses Go; everything else goes through _panelShortcut. Real fields
+  // keep their keys, nothing fires while a modal is open, and chords with
+  // Ctrl/Cmd/Alt are left to Premiere.
+  function _onPanelKey(e) {
+    if (e._ocSeen) return;
+    e._ocSeen = true; // the sink's own listener and the document one both see it
     if (_isField(e.target)) return;
-    if (document.getElementById('settings-modal') || document.getElementById('oc-confirm') || document.getElementById('oc-numeric')) return;
-    var go = document.getElementById('go-btn');
-    if (!go || go.classList.contains('btn-disabled')) { console.log('[OC] Enter: Go is disabled'); return; }
-    e.preventDefault();
-    console.log('[OC] Enter: pressing Go');
-    go.click();
+    var modal = !!(document.getElementById('settings-modal') || document.getElementById('oc-confirm')
+                || document.getElementById('oc-numeric') || document.getElementById('_paste-box'));
+    var isEnter = e.key === 'Enter' || e.keyCode === 13 || e.which === 13 || e.code === 'Enter' || e.code === 'NumpadEnter';
+    if (isEnter) {
+      if (e.repeat || modal) return;
+      var go = document.getElementById('go-btn');
+      if (!go || go.classList.contains('btn-disabled')) { console.log('[OC] Enter: Go is disabled'); return; }
+      e.preventDefault();
+      console.log('[OC] Enter: pressing Go');
+      go.click();
+      return;
+    }
+    if (modal || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (_panelShortcut(e)) e.preventDefault();
   }
   if (keySink) {
-    keySink.addEventListener('keydown', _enterGo);
+    keySink.addEventListener('keydown', _onPanelKey);
   }
-  document.addEventListener('keydown', _enterGo, true);
+  document.addEventListener('keydown', _onPanelKey, true);
 
   // Full screen: the graph column takes the whole panel until pressed again
   var fullBtn = document.getElementById('graph-full');
@@ -3278,6 +3484,7 @@ function initPanel() {
       var bakedKeys = (s.selectedParamKeys || [])
         .filter(function(k){ return (s.validParamKeys || []).indexOf(k) >= 0 && s.paramContexts && s.paramContexts[k]; });
       if (s.status !== 'valid' || s.isBaking || bakedKeys.length === 0) return;
+      _pvStop();
 
       // Delegate to platform bridge
       if (_bridge && _bridge.onGo) {
@@ -3319,6 +3526,8 @@ var _DENSITY_KEY        = 'opencurve-bake-density';
 // trades a little accuracy for a lighter keyframe track (the host reads it
 // from the bake args, see bakeKeyframes in host.jsx).
 var _bakeDensity        = parseInt(localStorage.getItem(_DENSITY_KEY), 10) || 1;
+var _PREVIEW_KEY        = 'opencurve-preview-after-go';
+var _previewAfterGo     = localStorage.getItem(_PREVIEW_KEY) === 'on'; // run the playhead through the pair after Go (P key does it any time)
 if ([1, 2, 4].indexOf(_bakeDensity) < 0) _bakeDensity = 1;
 var _isDragging         = false;
 
@@ -4336,6 +4545,35 @@ function _showSettingsModal() {
   densRow.appendChild(densBtns);
   rowsCol.appendChild(densRow);
 
+  // Preview after Go toggle row
+  var pvRow = document.createElement('div');
+  pvRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid #080808;cursor:pointer;';
+  _attachTooltip(pvRow, 'After Go, run the playhead once through the baked pair so the motion shows in the Program Monitor. P does the same at any time');
+  var pvIcon = document.createElement('span');
+  pvIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
+  pvIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 2.5v11l9-5.5z" fill="none" stroke="#b0b0b0" stroke-width="1.7" stroke-linejoin="round"/></svg>';
+  var pvLabel = document.createElement('span');
+  pvLabel.style.cssText = 'font-size:14px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d4d4d4;';
+  var pvCheck = document.createElement('span');
+  pvCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
+  function _updatePvCheck() {
+    pvCheck.innerHTML = _previewAfterGo ? _svgCheck : _svgCross;
+    pvLabel.textContent = 'Preview after Go ' + (_previewAfterGo ? 'On' : 'Off');
+    pvRow.style.background = _previewAfterGo ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)';
+  }
+  _updatePvCheck();
+  pvRow.appendChild(pvIcon);
+  pvRow.appendChild(pvLabel);
+  pvRow.appendChild(pvCheck);
+  pvRow.addEventListener('mouseenter', function() { pvRow.style.background = _previewAfterGo ? 'rgba(61,220,132,0.15)' : 'rgba(255,144,144,0.15)'; });
+  pvRow.addEventListener('mouseleave', function() { pvRow.style.background = _previewAfterGo ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)'; });
+  pvRow.addEventListener('click', function() {
+    _previewAfterGo = !_previewAfterGo;
+    localStorage.setItem(_PREVIEW_KEY, _previewAfterGo ? 'on' : 'off');
+    _updatePvCheck();
+  });
+  rowsCol.appendChild(pvRow);
+
   // Preset layout row
   var layoutRow = document.createElement('div');
   layoutRow.style.cssText = 'display:flex;align-items:center;padding:0 0 0 12px;height:36px;border-bottom:1px solid rgba(0,0,0,0.4);';
@@ -4525,6 +4763,7 @@ return {
   // Keep Go's label clear of the floating Undo button (bridge calls it when toggling Undo)
   fitGoForUndo: _fitGoForUndo,
   tlSpansAfterBake: _tlSpansAfterBake,
+  onBakeDone: _onBakeDone,
 };
 
 })();
