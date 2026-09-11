@@ -1184,8 +1184,6 @@ function _hostSeqInfo() { return _bridge && _bridge.seqInfo ? _bridge.seqInfo() 
 function _hostSetPlayhead(sec) { return _bridge && _bridge.setPlayhead ? _bridge.setPlayhead(sec) : Promise.reject(new Error('No bridge')); }
 function _hostTransport(cmd) { return _bridge && _bridge.transport ? _bridge.transport(cmd) : Promise.resolve(false); }
 function _tlValueAt(p, mediaSec) { return _bridge && _bridge.valueAt ? _bridge.valueAt(p.key, mediaSec) : Promise.resolve(null); }
-// After a successful Go (the bridge calls it): Settings > Preview after Go
-function _onBakeDone(keys) { if (_previewAfterGo) setTimeout(function() { _previewPair(keys); }, 150); }
 
 function _jumpToParam(p) {
   if (!p || typeof p.jumpSec !== 'number') return;
@@ -1330,7 +1328,7 @@ function _transport(cmd) {
 }
 // Preview the pair: run the playhead once through the keyframe pair of the
 // given rows (else the selected rows, else any row with a pair) and return to
-// its start. P key, and after Go with Settings > Preview after Go.
+// its start. The P key.
 function _previewPair(keys) {
   var s = getState(), avail = s.availableParams || [];
   var use = (keys && keys.length) ? keys : (s.selectedParamKeys || []);
@@ -3240,18 +3238,6 @@ function initPanel() {
     }
     _miniItem('Open Settings', _icSettings, function() { _showSettingsModal(); });
 
-    if (showLayout !== false) {
-      _miniItem(
-        _presetLayout === 'list' ? 'Grid View' : 'List View',
-        _presetLayout === 'list' ? _icGrid : _icList,
-        function() {
-          _presetLayout = _presetLayout === 'list' ? 'grid' : 'list';
-          localStorage.setItem(_LAYOUT_KEY, _presetLayout);
-          _applyPresetLayout(true);
-        }
-      );
-    }
-
     if (showPaste) {
       _miniItem('Paste Preset', _icPaste, function() { _pasteCoordinates(); });
       _miniItem('Add Starter Presets', _icStar, function() { _addStarterPresets(); });
@@ -3357,51 +3343,26 @@ function initPanel() {
     var list = document.getElementById('all-presets-list');
     if (!list) return;
 
-    function _buildNewPresetBtn() {
-      var newBtn = document.createElement('div');
-      newBtn.id = 'new-preset-btn';
-      newBtn.className = 'preset-btn new-preset-btn';
-      _attachTooltip(newBtn, 'Save the current curve as a preset');
-
-      var thumb = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      thumb.setAttribute('class', 'preset-thumb');
-      thumb.setAttribute('width', '28'); thumb.setAttribute('height', '28'); thumb.setAttribute('viewBox', '0 0 28 28');
-      var l1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      l1.setAttribute('x1', '14'); l1.setAttribute('y1', '7');
-      l1.setAttribute('x2', '14'); l1.setAttribute('y2', '21');
-      l1.setAttribute('stroke', 'currentColor'); l1.setAttribute('stroke-width', '2'); l1.setAttribute('stroke-linecap', 'round');
-      var l2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      l2.setAttribute('x1', '7');  l2.setAttribute('y1', '14');
-      l2.setAttribute('x2', '21'); l2.setAttribute('y2', '14');
-      l2.setAttribute('stroke', 'currentColor'); l2.setAttribute('stroke-width', '2'); l2.setAttribute('stroke-linecap', 'round');
-      thumb.appendChild(l1); thumb.appendChild(l2);
-      newBtn.appendChild(thumb);
-
-      var nameSpan = document.createElement('span');
-      nameSpan.className = 'preset-name';
-      nameSpan.textContent = 'New';
-      newBtn.appendChild(nameSpan);
-
-      newBtn.addEventListener('click', function() {
-        var c = getState().curve;
+    // New Preset: the toolbar button at the left of the preset bar (#preset-new)
+    // saves the current curve as a preset and opens its name for editing
+    var newTool = document.getElementById('preset-new');
+    if (newTool) {
+      _attachTooltip(newTool, 'New Preset: save the current curve as a preset');
+      newTool.addEventListener('click', function() {
         var preset = {
           id: 'c' + Date.now(),
           name: 'Custom ' + (_presetList.filter(function(p){ return !p.builtIn; }).length + 1),
-          curve: _cloneCurve(c),
+          curve: _cloneCurve(getState().curve),
         };
         _presetList.push(preset);
         _savePresetList(_presetList);
         var btn = _buildPresetBtn(preset);
-        list.insertBefore(btn, newBtn);
+        list.appendChild(btn);
         _applyPresetLayout(true);
         var ns = btn.querySelector('.preset-name');
         if (ns) ns.dispatchEvent(new Event('dblclick'));
       });
-
-      return newBtn;
     }
-
-    list.appendChild(_buildNewPresetBtn());
   }());
 
   // Resize handle
@@ -3549,13 +3510,12 @@ var _GRAPH_KEY          = 'opencurve-graph-visible';
 // Defaults to On — only hidden when the user has explicitly disabled the graph.
 var _graphVisible       = localStorage.getItem(_GRAPH_KEY) !== 'off';
 var _DENSITY_KEY        = 'opencurve-bake-density';
+try { localStorage.removeItem('opencurve-preview-after-go'); } catch(_) {} // a setting that existed briefly during 2.0 development
 // Keyframe spacing when baking, in frames: 1 (every frame, exact), 2 or 4.
 // Premiere draws straight lines between the baked keyframes, so wider spacing
 // trades a little accuracy for a lighter keyframe track (the host reads it
 // from the bake args, see bakeKeyframes in host.jsx).
 var _bakeDensity        = parseInt(localStorage.getItem(_DENSITY_KEY), 10) || 1;
-var _PREVIEW_KEY        = 'opencurve-preview-after-go';
-var _previewAfterGo     = localStorage.getItem(_PREVIEW_KEY) === 'on'; // run the playhead through the pair after Go (P key does it any time)
 if ([1, 2, 4].indexOf(_bakeDensity) < 0) _bakeDensity = 1;
 var _isDragging         = false;
 
@@ -4583,35 +4543,6 @@ function _showSettingsModal() {
   densRow.appendChild(densBtns);
   rowsCol.appendChild(densRow);
 
-  // Preview after Go toggle row
-  var pvRow = document.createElement('div');
-  pvRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid #080808;cursor:pointer;';
-  _attachTooltip(pvRow, 'After Go, run the playhead once through the baked pair so the motion shows in the Program Monitor. P does the same at any time');
-  var pvIcon = document.createElement('span');
-  pvIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
-  pvIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 2.5v11l9-5.5z" fill="none" stroke="#b0b0b0" stroke-width="1.7" stroke-linejoin="round"/></svg>';
-  var pvLabel = document.createElement('span');
-  pvLabel.style.cssText = 'font-size:14px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d4d4d4;';
-  var pvCheck = document.createElement('span');
-  pvCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
-  function _updatePvCheck() {
-    pvCheck.innerHTML = _previewAfterGo ? _svgCheck : _svgCross;
-    pvLabel.textContent = 'Preview after Go ' + (_previewAfterGo ? 'On' : 'Off');
-    pvRow.style.background = _previewAfterGo ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)';
-  }
-  _updatePvCheck();
-  pvRow.appendChild(pvIcon);
-  pvRow.appendChild(pvLabel);
-  pvRow.appendChild(pvCheck);
-  pvRow.addEventListener('mouseenter', function() { pvRow.style.background = _previewAfterGo ? 'rgba(61,220,132,0.15)' : 'rgba(255,144,144,0.15)'; });
-  pvRow.addEventListener('mouseleave', function() { pvRow.style.background = _previewAfterGo ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)'; });
-  pvRow.addEventListener('click', function() {
-    _previewAfterGo = !_previewAfterGo;
-    localStorage.setItem(_PREVIEW_KEY, _previewAfterGo ? 'on' : 'off');
-    _updatePvCheck();
-  });
-  rowsCol.appendChild(pvRow);
-
   // Preset layout row
   var layoutRow = document.createElement('div');
   layoutRow.style.cssText = 'display:flex;align-items:center;padding:0 0 0 12px;height:36px;border-bottom:1px solid rgba(0,0,0,0.4);';
@@ -4801,7 +4732,6 @@ return {
   // Keep Go's label clear of the floating Undo button (bridge calls it when toggling Undo)
   fitGoForUndo: _fitGoForUndo,
   tlSpansAfterBake: _tlSpansAfterBake,
-  onBakeDone: _onBakeDone,
 };
 
 })();

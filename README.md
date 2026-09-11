@@ -36,7 +36,7 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 - **Overshoot and bounce** — Handles can leave the 0–1 box, so anticipation, overshoot and bounce eases bake like any other
 - **Numeric entry** — Type the handle coordinates, or paste a `cubic-bezier()` value, straight into the curve
 - **Keyboard** — Enter presses Go, 1–9 pick presets, arrows nudge a handle, F/I flip and invert, P previews the pair, and Space / J K L play and shuttle without leaving the panel
-- **Preview** — Press P (or turn on Preview after Go) to run the playhead through the eased pair; hover the mini timeline to read a property's value at any frame
+- **Preview** — Press P to run the playhead through the eased pair; hover the mini timeline to read a property's value at any frame
 - **Undo and redo** — Supports Premiere's history system for full undo/redo support (`.ccx` version only)
 - **Customization** — List/grid view, change the grid size, and custom themes
 - **Free forever** — No bloat, no logins. Made by an actual video editor for the editing community

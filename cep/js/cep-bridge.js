@@ -77,7 +77,6 @@
             // Show undo button
             _showUndoBtn(true);
             _saveBakeRecords();
-            if (OpenCurve.onBakeDone) OpenCurve.onBakeDone(bakedKeys);
             setTimeout(function() {
               _lastStatus = '';
               OpenCurve.setState({ status: 'idle' });

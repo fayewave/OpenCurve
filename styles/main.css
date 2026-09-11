@@ -364,6 +364,11 @@ html, body {
 #preset-toolbar {
   justify-content: flex-end;
 }
+/* New Preset is the one tool at the left of the preset bar */
+#preset-new {
+  margin-left: 0;
+  margin-right: auto;
+}
 
 .tool-btn:hover {
   background: rgba(255,255,255,0.16);
