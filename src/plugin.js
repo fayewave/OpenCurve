@@ -3880,25 +3880,26 @@ function _centerIcons() {
   });
 }
 
-// ─── Post-scroll pointer freeze: diagnostic (UXP) ─────────────────────────
+// ─── Post-scroll pointer freeze: diagnostic + experiments (UXP) ───────────
 // CCX build, seen 2026-09-11: after wheel-scrolling a list (presets, the
-// lanes + rows box, Settings), that list gets no hover and no clicks for
-// roughly 0.5-1s while the rest of the panel answers at once. Ruled out so
-// far (see CLAUDE.md "Post-scroll pointer freeze"): the smooth-wheel writes,
-// the ResizeObservers (none fires after a scroll), the poll render, the tile
-// hover animation, and DOM reads/writes after the scroll.
-// Flyout > Poll Timing (Debug) arms this as well. For 1.5s after each scroll
-// event of a watched scroller it logs
-//   [OC-SCROLL] ptr <type> +<ms> -> <target>   every pointer event that reaches
-//                                             the document (capture phase)
-//   [OC-SCROLL] probe +<ms>: under pointer …   document.elementFromPoint at
-//                                             the last pointer position, every 100ms
-// which separates "nothing is delivered" (probe finds the tile, no ptr lines)
-// from "delivered to the wrong element" (ptr lines whose target is outside the
-// scroller while the pointer is over it) from "stale hit-testing" (the probe
-// finds the column or body under the pointer).
+// lanes + rows box, Settings), that list shows no hover and seems to take no
+// clicks for roughly 0.5-1s while the rest of the panel answers at once.
+// First run of this diagnostic (2026-09-11 night): pointer events DO reach
+// the tiles with the right targets inside that window, and UXP's own :hover
+// chain is set on the hovered tile, so input delivery is not what freezes;
+// the suspicion is that UXP does not repaint the scrolled container until
+// its scroll settles. document.elementFromPoint always returns null in UXP.
+// Flyout > Poll Timing (Debug) arms the logging. For 1.5s after each scroll
+// event of a watched scroller:
+//   [OC-SCROLL] +<ms>: last 100ms N moves, N overs, N downs, N clicks | :hover on <tile>
+//   [OC-SCROLL] first pointer event >=60ms after the last scroll event: ...
+//   [OC-SCROLL] pointerdown/click +<ms> -> <target>
+// and the status strip mirrors what the list receives ("hover <tile> +ms",
+// "CLICK <tile> +ms"), so a tile that gets hover events but no highlight is
+// visible without the console.
 var _SINK_FOCUS_ON = true; // false = never focus #oc-key-sink (Enter-to-Go and the shortcuts stop); A/B for the freeze
-var _sd = { last: 0, name: '', el: null, x: -1, y: -1, timer: null, n: 0, mv: 0, first: false };
+var _SCROLL_KICK   = 0;    // experiment, 60ms after a scroll burst: 1 = toggle a transform on the scroller, 2 = re-create its scroll view (overflow off/on, scrollTop kept)
+var _sd = { last: 0, name: '', el: null, x: -1, y: -1, timer: null, n: 0, burst0: 0, cnt: {}, late: false, kickTimer: null };
 function _sdDesc(el) {
   if (!el) return 'null';
   var d = el.id ? '#' + el.id : (typeof el.className === 'string' && el.className ? '.' + el.className.split(' ')[0] : el.nodeName);
@@ -3914,31 +3915,43 @@ function _sdWatch(el, name) {
   if (!el || el._sdWatched) return;
   el._sdWatched = true;
   el.addEventListener('scroll', function() {
-    if (!_debugTiming) return;
+    if (el._sdKicking) return;
     var now = Date.now();
+    if (_SCROLL_KICK) {
+      if (_sd.kickTimer) clearTimeout(_sd.kickTimer);
+      _sd.kickTimer = setTimeout(function() { _sdKick(el); }, 60);
+    }
+    if (!_debugTiming) return;
     if (now - _sd.last > 300) {
-      _sd.n = 0; _sd.mv = 0;
+      _sd.n = 0; _sd.burst0 = now;
       console.log('[OC-SCROLL] ' + name + ': scroll burst starts at top=' + el.scrollTop + ', pointer over it: ' + (_sd.x >= 0 && _sdInside(el, _sd.x, _sd.y)));
     }
-    _sd.n++; _sd.last = now; _sd.name = name; _sd.el = el; _sd.first = true;
+    _sd.n++; _sd.last = now; _sd.name = name; _sd.el = el; _sd.late = false; _sd.cnt = {};
     if (_sd.timer) clearTimeout(_sd.timer);
-    _sd.timer = setTimeout(_sdProbe, 100); // first probe 100ms after the last scroll event of the burst
+    _sd.timer = setTimeout(_sdProbe, 100);
   });
+}
+function _sdKick(el) {
+  _sd.kickTimer = null;
+  el._sdKicking = true;
+  try {
+    if (_SCROLL_KICK === 1) { el.style.transform = 'translateZ(0)'; void el.offsetHeight; el.style.transform = ''; }
+    else if (_SCROLL_KICK === 2) { var top = el.scrollTop; el.style.overflowY = 'hidden'; void el.offsetHeight; el.style.overflowY = 'auto'; el.scrollTop = top; }
+  } catch(_) {}
+  setTimeout(function() { el._sdKicking = false; }, 50);
+  if (_debugTiming) console.log('[OC-SCROLL] kick ' + _SCROLL_KICK + ' applied to ' + (el.id || el.nodeName));
 }
 function _sdProbe() {
   _sd.timer = null;
   if (!_debugTiming || !_sd.el) return;
   var dt = Date.now() - _sd.last;
-  if (dt > 1500) { console.log('[OC-SCROLL] ' + _sd.name + ': window closed (' + _sd.n + ' scroll events in the burst)'); return; }
-  if (_sd.x >= 0) {
-    var under = null, hov = '?';
-    try { under = document.elementFromPoint(_sd.x, _sd.y); } catch(_) {}
-    try { hov = String(document.querySelectorAll(':hover').length); } catch(_) {}
-    var ae = document.activeElement;
-    console.log('[OC-SCROLL] probe +' + dt + 'ms: under pointer ' + _sdDesc(under)
-      + (under && _sd.el.contains(under) ? ' (inside ' + _sd.name + ')' : ' (NOT inside ' + _sd.name + ')')
-      + ', :hover chain ' + hov + ', focus ' + (ae ? (ae.id || ae.tagName) : 'none'));
-  }
+  if (dt > 1500) { console.log('[OC-SCROLL] ' + _sd.name + ': window closed (' + _sd.n + ' scroll events over ' + (_sd.last - _sd.burst0) + 'ms)'); return; }
+  var c = _sd.cnt; _sd.cnt = {};
+  var chain = '?', hovTile = null;
+  try { chain = String(document.querySelectorAll(':hover').length); } catch(_) {}
+  try { var hs = document.querySelectorAll('.preset-btn:hover, .prop-btn:hover'); hovTile = hs.length ? hs[hs.length - 1] : null; } catch(_) {}
+  console.log('[OC-SCROLL] +' + dt + 'ms: last 100ms ' + (c.pointermove || 0) + ' moves, ' + (c.pointerover || 0) + ' overs, '
+    + (c.pointerdown || 0) + ' downs, ' + (c.click || 0) + ' clicks | :hover on ' + (hovTile ? _sdDesc(hovTile) : 'no tile') + ' (chain ' + chain + ')');
   _sd.timer = setTimeout(_sdProbe, 100);
 }
 function _sdInit() {
@@ -3948,11 +3961,17 @@ function _sdInit() {
       if (!_debugTiming || !_sd.el) return;
       var dt = Date.now() - _sd.last;
       if (dt > 1500) return;
-      if (type === 'pointermove' && !_sd.first && (_sd.mv++ % 5)) return; // every 5th move
-      if (_sd.first) { _sd.first = false; console.log('[OC-SCROLL] first pointer event after that scroll: ' + type + ' +' + dt + 'ms'); }
+      _sd.cnt[type] = (_sd.cnt[type] || 0) + 1;
       var over = _sdInside(_sd.el, e.clientX, e.clientY), hit = _sd.el.contains(e.target);
-      console.log('[OC-SCROLL] ptr ' + type + ' +' + dt + 'ms -> ' + _sdDesc(e.target)
-        + (over ? (hit ? ' [in ' + _sd.name + ']' : ' [OVER ' + _sd.name + ' BUT TARGET OUTSIDE IT]') : ' [outside ' + _sd.name + ']'));
+      var where = over ? (hit ? '' : ' [OVER ' + _sd.name + ' BUT TARGET OUTSIDE IT]') : ' [outside ' + _sd.name + ']';
+      if (!_sd.late && dt >= 60) { _sd.late = true; console.log('[OC-SCROLL] first pointer event >=60ms after the last scroll event: ' + type + ' +' + dt + 'ms -> ' + _sdDesc(e.target) + where); }
+      else if (type === 'pointerdown' || type === 'click' || where) console.log('[OC-SCROLL] ' + type + ' +' + dt + 'ms -> ' + _sdDesc(e.target) + where);
+      // Visual mirror outside the scroller: the strip shows what the list is receiving
+      if (hit && (type === 'pointerover' || type === 'click')) {
+        var tile = e.target.closest ? (e.target.closest('.preset-btn') || e.target.closest('.prop-btn')) : null;
+        var st = document.getElementById('status-text');
+        if (st && tile) st.textContent = (type === 'click' ? 'CLICK ' : 'hover ') + (tile.textContent || '').trim().slice(0, 18) + ' +' + dt + 'ms';
+      }
     }, true);
   });
 }
