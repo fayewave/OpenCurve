@@ -2081,6 +2081,13 @@ function initPanel() {
   }
   _styleGhostBtn();
 
+  // Numeric entry: type the handle coordinates (see _showNumericPanel)
+  var numBtn = document.getElementById('numeric-entry');
+  if (numBtn) {
+    _attachTooltip(numBtn, 'Numeric Entry: type the handle coordinates');
+    numBtn.addEventListener('click', function() { _showNumericPanel(); });
+  }
+
   // Preset toolbar (top of the preset column): List/Grid toggle and Paste Preset,
   // the same actions as the preset list's context menu
   var layoutBtn = document.getElementById('preset-layout');
@@ -2131,7 +2138,7 @@ function initPanel() {
     if (!isEnter || e.repeat || e._ocEnter) return;
     e._ocEnter = true; // the sink's own listener and the document one both see it
     if (_isField(e.target)) return;
-    if (document.getElementById('settings-modal') || document.getElementById('oc-confirm')) return;
+    if (document.getElementById('settings-modal') || document.getElementById('oc-confirm') || document.getElementById('oc-numeric')) return;
     var go = document.getElementById('go-btn');
     if (!go || go.classList.contains('btn-disabled')) { console.log('[OC] Enter: Go is disabled'); return; }
     e.preventDefault();
@@ -2201,8 +2208,8 @@ function initPanel() {
   // air so they never touch before collapsing.
   var toolbar  = document.getElementById('graph-toolbar');
   var menuBtn  = document.getElementById('graph-tools-menu');
-  var _tbTools = [peakBtn, addPtBtn, flipBtn, invertBtn, ghostBtn, zoomOut, zoomIn];
-  var _TB_NEED = (5 * 26 + 4 * 5) + (3 * 26 + 2 * 5) + 10 + 8;
+  var _tbTools = [peakBtn, addPtBtn, flipBtn, invertBtn, ghostBtn, numBtn, zoomOut, zoomIn];
+  var _TB_NEED = (6 * 26 + 5 * 5) + (3 * 26 + 2 * 5) + 10 + 8;
   var _tbCollapsed = null;
   var _tbDismiss   = null;
   function _hideToolsMenu() {
@@ -2257,6 +2264,7 @@ function initPanel() {
     item('Flip',      flipBtn,   function() { _applyCurveOp(_flipCurve); });
     item('Invert',    invertBtn, function() { _applyCurveOp(_invertCurve); });
     item(_dragGhost ? 'Ghost: On' : 'Ghost', ghostBtn, function() { _setDragGhost(!_dragGhost); }, { active: _dragGhost });
+    item('Numeric Entry', numBtn, function() { _showNumericPanel(); });
     item('Zoom In',   zoomIn,    function() { applyZoom(0.1); },  { keepOpen: true });
     item('Zoom Out',  zoomOut,   function() { applyZoom(-0.1); }, { keepOpen: true });
     menu.style.left = '0px';
@@ -3649,6 +3657,169 @@ function _confirmReset() {
     _showCopyToast('Reset all settings');
     try { location.reload(); } catch(e) {}
   });
+}
+
+// ─── Numeric entry ───────────────────────────────────────────────────────
+// Toolbar #numeric-entry: type the handle coordinates instead of dragging
+// them. The four fields (the (0,0) handle and the (1,1) handle) update the
+// graph as they are typed; the text field below carries the curve's copy/paste
+// form (cubic-bezier() or opencurve()), the only way to type a curve that has
+// added points. Enter applies, Esc or Cancel puts the starting curve back.
+function _numStr(v) { return String(Math.round(v * 1000) / 1000); }
+function _showNumericPanel() {
+  var oldBox = document.getElementById('oc-numeric');
+  if (oldBox && oldBox.parentNode) oldBox.parentNode.removeChild(oldBox);
+  var oldOv = document.getElementById('oc-numeric-overlay');
+  if (oldOv && oldOv.parentNode) oldOv.parentNode.removeChild(oldOv);
+
+  var overlay = document.createElement('div');
+  overlay.id = 'oc-numeric-overlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:9997;';
+  document.body.appendChild(overlay);
+
+  var boxW = 272;
+  var vw = document.documentElement.clientWidth  || document.body.clientWidth;
+  var vh = document.documentElement.clientHeight || document.body.clientHeight;
+  var box = document.createElement('div');
+  box.id = 'oc-numeric';
+  box.style.cssText = 'position:fixed;top:-9999px;left:' + Math.round((vw - boxW) / 2) + 'px;width:' + boxW + 'px;visibility:hidden;background:#1c1c1c;border:1px solid rgba(255,255,255,0.18);z-index:9998;padding:16px;font-family:system-ui,sans-serif;box-sizing:border-box;';
+  document.body.appendChild(box);
+
+  var start = _cloneCurve(getState().curve);
+  var activeBtn = document.querySelector('.preset-btn.active');
+  var startPreset = activeBtn ? activeBtn.dataset.id : null;
+
+  function close() {
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    if (box.parentNode) box.parentNode.removeChild(box);
+  }
+  function cancel() {
+    setState({ curve: start });
+    if (startPreset) setPresetActive(startPreset); else clearPresetActive();
+    if (_svgW > 0 && _svgH > 0) updateDynamicSVG(getState().curve, _svgW, _svgH);
+    close();
+  }
+  overlay.addEventListener('click', cancel);
+
+  var title = document.createElement('div');
+  title.textContent = 'Numeric Entry';
+  title.style.cssText = 'color:#e4e4e4;font-size:14px;font-weight:600;margin-bottom:10px;';
+  box.appendChild(title);
+
+  var grid = document.createElement('div');
+  grid.style.cssText = 'display:flex;flex-wrap:wrap;margin:0 -4px;';
+  box.appendChild(grid);
+  var fields = {};
+  function field(name, label, val) {
+    var wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;flex-direction:column;width:50%;box-sizing:border-box;padding:0 4px 8px;';
+    var lb = document.createElement('div');
+    lb.textContent = label;
+    lb.style.cssText = 'color:#888;font-size:11px;margin-bottom:3px;';
+    var inp = document.createElement('input');
+    inp.type = 'text';
+    inp.value = _numStr(val);
+    inp.style.cssText = 'width:100%;background:#111111;border:1px solid rgba(255,255,255,0.12);color:#e4e4e4;font-size:13px;padding:5px 8px;outline:none;box-sizing:border-box;font-family:inherit;';
+    wrap.appendChild(lb); wrap.appendChild(inp);
+    grid.appendChild(wrap);
+    fields[name] = inp;
+    inp.addEventListener('input', applyFields);
+    inp.addEventListener('keydown', onKey);
+    return inp;
+  }
+  field('p1x', 'Handle 1 X', start.p1x);
+  field('p1y', 'Handle 1 Y', start.p1y);
+  field('p2x', 'Handle 2 X', start.p2x);
+  field('p2y', 'Handle 2 Y', start.p2y);
+
+  var textLabel = document.createElement('div');
+  textLabel.textContent = 'As text';
+  textLabel.style.cssText = 'color:#888;font-size:11px;margin:2px 0 3px;';
+  box.appendChild(textLabel);
+  var textInp = document.createElement('input');
+  textInp.type = 'text';
+  textInp.style.cssText = 'width:100%;background:#111111;border:1px solid rgba(255,255,255,0.12);color:#e4e4e4;font-size:12px;padding:5px 8px;outline:none;box-sizing:border-box;font-family:inherit;';
+  box.appendChild(textInp);
+  textInp.addEventListener('keydown', onKey);
+  _attachTooltip(textInp, 'The curve as cubic-bezier() or opencurve() text. Edit it and press Enter or Apply; this is also where a curve with added points is typed');
+
+  var err = document.createElement('div');
+  err.style.cssText = 'color:#ff9090;font-size:12px;min-height:16px;margin:4px 0 8px;';
+  box.appendChild(err);
+
+  function syncFrom(c) {
+    fields.p1x.value = _numStr(c.p1x); fields.p1y.value = _numStr(c.p1y);
+    fields.p2x.value = _numStr(c.p2x); fields.p2y.value = _numStr(c.p2y);
+    textInp.value = _curveToText(c);
+  }
+  syncFrom(start);
+
+  function readFields() {
+    var v = {}, names = ['p1x', 'p1y', 'p2x', 'p2y'];
+    for (var i = 0; i < names.length; i++) {
+      var n = parseFloat(fields[names[i]].value);
+      if (!isFinite(n)) return { error: 'Enter a number in every field' };
+      var isX = names[i].charAt(2) === 'x';
+      if (isX && (n < 0 || n > 1)) return { error: 'X values must be between 0 and 1' };
+      if (!isX && (n < Y_CLAMP_MIN || n > Y_CLAMP_MAX)) return { error: 'Y values must be between ' + Y_CLAMP_MIN + ' and ' + Y_CLAMP_MAX };
+      v[names[i]] = n;
+    }
+    return v;
+  }
+  // The four fields go straight to the graph as they are typed
+  function applyFields() {
+    var v = readFields();
+    if (v.error) { err.textContent = v.error; return false; }
+    err.textContent = '';
+    var c = _cloneCurve(getState().curve);
+    c.p1x = v.p1x; c.p1y = v.p1y; c.p2x = v.p2x; c.p2y = v.p2y;
+    _commitCurve(c);
+    textInp.value = _curveToText(getState().curve);
+    return true;
+  }
+  // The text field is applied on Enter / Apply (typing half a value would otherwise flatten the curve)
+  function applyText() {
+    var t = textInp.value.trim();
+    if (!t || t === _curveToText(getState().curve)) return true;
+    var c = _curveFromText(t);
+    if (!c) { err.textContent = 'Expected cubic-bezier(x1, y1, x2, y2) or an opencurve(...) value'; return false; }
+    err.textContent = '';
+    _commitCurve(c);
+    syncFrom(getState().curve);
+    return true;
+  }
+  function apply() {
+    var ok = (document.activeElement === textInp) ? applyText() : (applyFields() && applyText());
+    if (ok) close();
+  }
+  function onKey(ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); apply(); }
+    else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); cancel(); }
+  }
+
+  var btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;justify-content:flex-start;';
+  function mkBtn(label, onClick) {
+    var b = document.createElement('div');
+    b.textContent = label;
+    b.style.cssText = 'color:#4a9eff;font-size:13px;font-weight:600;cursor:pointer;padding:5px 12px;border:2px solid rgba(74,158,255,0.4);margin-right:10px;';
+    b.addEventListener('mouseenter', function() { b.style.color = '#7dc4ff'; b.style.borderColor = 'rgba(74,158,255,0.8)'; });
+    b.addEventListener('mouseleave', function() { b.style.color = '#4a9eff'; b.style.borderColor = 'rgba(74,158,255,0.4)'; });
+    b.addEventListener('click', onClick);
+    btnRow.appendChild(b);
+    return b;
+  }
+  mkBtn('Apply', apply);
+  var cancelBtn = mkBtn('Cancel', cancel);
+  cancelBtn.style.color = '#888'; cancelBtn.style.borderColor = 'rgba(255,255,255,0.15)';
+  cancelBtn.addEventListener('mouseenter', function() { cancelBtn.style.color = '#e4e4e4'; cancelBtn.style.borderColor = 'rgba(255,255,255,0.35)'; });
+  cancelBtn.addEventListener('mouseleave', function() { cancelBtn.style.color = '#888'; cancelBtn.style.borderColor = 'rgba(255,255,255,0.15)'; });
+  box.appendChild(btnRow);
+
+  void box.offsetHeight;
+  box.style.top = Math.max(8, Math.round((vh - box.offsetHeight) / 2)) + 'px';
+  box.style.visibility = 'visible';
+  setTimeout(function() { fields.p1x.focus(); fields.p1x.select(); }, 0);
 }
 
 function _showSettingsModal() {
