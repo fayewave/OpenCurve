@@ -3884,11 +3884,13 @@ function _centerIcons() {
 // CCX build, seen 2026-09-11: after wheel-scrolling a list (presets, the
 // lanes + rows box, Settings), that list shows no hover and seems to take no
 // clicks for roughly 0.5-1s while the rest of the panel answers at once.
-// First run of this diagnostic (2026-09-11 night): pointer events DO reach
-// the tiles with the right targets inside that window, and UXP's own :hover
-// chain is set on the hovered tile, so input delivery is not what freezes;
-// the suspicion is that UXP does not repaint the scrolled container until
-// its scroll settles. document.elementFromPoint always returns null in UXP.
+// Measured 2026-09-11 (second run, mouse kept moving after one notch): the
+// OS delivers NO pointer events to the scrolled container for ~500ms after
+// its last scroll change (first real event at +508..+571ms in every burst;
+// a press made before that is dropped, it never reaches JS). Events seen
+// earlier than that are synthesized by content moving under the pointer.
+// Nothing in the plugin runs in that window: it is host/UXP input routing.
+// document.elementFromPoint always returns null in UXP.
 // Flyout > Poll Timing (Debug) arms the logging. For 1.5s after each scroll
 // event of a watched scroller:
 //   [OC-SCROLL] +<ms>: last 100ms N moves, N overs, N downs, N clicks | :hover on <tile>
@@ -3897,7 +3899,7 @@ function _centerIcons() {
 // and the status strip mirrors what the list receives ("hover <tile> +ms",
 // "CLICK <tile> +ms"), so a tile that gets hover events but no highlight is
 // visible without the console.
-var _SINK_FOCUS_ON = true; // false = never focus #oc-key-sink (Enter-to-Go and the shortcuts stop); A/B for the freeze
+var _SINK_FOCUS_ON = false; // TEST BUILD: off. true = focus #oc-key-sink after every press (Enter-to-Go, shortcuts); a focused text field is the one plugin-side thing that can change host input routing
 var _SCROLL_KICK   = 0;    // experiment, 60ms after a scroll burst: 1 = toggle a transform on the scroller, 2 = re-create its scroll view (overflow off/on, scrollTop kept)
 var _sd = { last: 0, name: '', el: null, x: -1, y: -1, timer: null, n: 0, burst0: 0, cnt: {}, late: false, kickTimer: null };
 function _sdDesc(el) {
