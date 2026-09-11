@@ -889,8 +889,9 @@ function _styleLayoutBtn() {
   var btn = document.getElementById('preset-layout');
   if (!btn) return;
   var g = btn.querySelector('.ic-grid'), l = btn.querySelector('.ic-list');
-  if (g) g.style.display = _presetLayout === 'list' ? '' : 'none';
-  if (l) l.style.display = _presetLayout === 'list' ? 'none' : '';
+  var gd = _presetLayout === 'list' ? '' : 'none', ld = _presetLayout === 'list' ? 'none' : '';
+  if (g && g.style.display !== gd) g.style.display = gd; // write only on change: UXP relayouts on every style write
+  if (l && l.style.display !== ld) l.style.display = ld;
 }
 function _setDragGhost(on) {
   _dragGhost = !!on;
@@ -5529,7 +5530,6 @@ function _fitGoForUndo() {
 }
 
 function _applyPresetLayout(force) {
-  _styleLayoutBtn();
   var list = document.getElementById('all-presets-list');
   if (!list) return;
   var isGrid = _presetLayout === 'grid';
@@ -5543,6 +5543,11 @@ function _applyPresetLayout(force) {
   var cacheKey = (isGrid ? 'g' : 'l') + cols + '_' + btnCount;
   if (!force && _applyPresetLayout._lastKey === cacheKey) return;
   _applyPresetLayout._lastKey = cacheKey;
+  // Only past the cache check: UXP fires the list's ResizeObserver on every
+  // scroll, and any style write here (even to the same value) makes it
+  // relayout the panel, which left the list unresponsive after scrolling
+  // (the v1.2.0 "smoother scrolling" bug, back when the toolbar button arrived)
+  _styleLayoutBtn();
   var itemW = multi ? (100/cols).toFixed(3) + '%' : '100%';
   var thumbSz = isGrid ? (cols >= 3 ? 30 : 32) : 28;
 
@@ -5691,7 +5696,15 @@ function _applyPresetLayout(force) {
 var _gridColsTimer = null;
 var _LIST_2COL_W = 340; // list view splits into two columns from this width
 var _presetCols = 1;    // columns the last _applyPresetLayout laid out
-function _updateGridCols() {
+var _gridColsSize = '';
+function _updateGridCols(entries) {
+  // UXP fires this on scroll as well as on a real resize; a scroll never
+  // changes the list's box, so ignore callbacks where the size is the same
+  if (entries && entries[0] && entries[0].contentRect) {
+    var r = entries[0].contentRect, sz = Math.round(r.width) + 'x' + Math.round(r.height);
+    if (sz === _gridColsSize) return;
+    _gridColsSize = sz;
+  }
   if (_gridColsTimer) clearTimeout(_gridColsTimer);
   _gridColsTimer = setTimeout(_applyPresetLayout, 60);
 }
