@@ -5840,16 +5840,15 @@ function _showNumericPanel() {
 
   var overlay = document.createElement('div');
   overlay.id = 'oc-numeric-overlay';
-  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:9997;';
+  // The overlay is a full-panel flex box that centres the modal itself: UXP
+  // can't be trusted to report the box's height for a measured placement
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:9997;display:flex;align-items:center;justify-content:center;';
   document.body.appendChild(overlay);
 
-  var boxW = 272;
-  var vw = document.documentElement.clientWidth  || document.body.clientWidth;
-  var vh = document.documentElement.clientHeight || document.body.clientHeight;
   var box = document.createElement('div');
   box.id = 'oc-numeric';
-  box.style.cssText = 'position:fixed;top:-9999px;left:' + Math.round((vw - boxW) / 2) + 'px;width:' + boxW + 'px;visibility:hidden;background:#1c1c1c;border:1px solid rgba(255,255,255,0.18);z-index:9998;padding:16px;font-family:system-ui,sans-serif;box-sizing:border-box;';
-  document.body.appendChild(box);
+  box.style.cssText = 'width:272px;max-width:96%;flex-shrink:0;background:#1c1c1c;border:1px solid rgba(255,255,255,0.18);padding:16px;font-family:system-ui,sans-serif;box-sizing:border-box;';
+  overlay.appendChild(box);
 
   var start = _cloneCurve(getState().curve);
   var activeBtn = document.querySelector('.preset-btn.active');
@@ -5857,7 +5856,6 @@ function _showNumericPanel() {
 
   function close() {
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
-    if (box.parentNode) box.parentNode.removeChild(box);
   }
   function cancel() {
     setState({ curve: start });
@@ -5865,7 +5863,7 @@ function _showNumericPanel() {
     if (_svgW > 0 && _svgH > 0) updateDynamicSVG(getState().curve, _svgW, _svgH);
     close();
   }
-  overlay.addEventListener('click', cancel);
+  overlay.addEventListener('click', function(ev) { if (ev.target === overlay) cancel(); });
 
   var title = document.createElement('div');
   title.textContent = 'Numeric Entry';
@@ -5982,18 +5980,7 @@ function _showNumericPanel() {
   cancelBtn.addEventListener('mouseleave', function() { cancelBtn.style.color = '#888'; cancelBtn.style.borderColor = 'rgba(255,255,255,0.15)'; });
   box.appendChild(btnRow);
 
-  // Centre once the box has been laid out: UXP reports no height until the
-  // next tick (the paste panel measures the same way)
-  setTimeout(function() {
-    var bh = box.offsetHeight || 300;
-    var bw = box.offsetWidth  || boxW;
-    var vw2 = document.documentElement.clientWidth  || document.body.clientWidth  || vw;
-    var vh2 = document.documentElement.clientHeight || document.body.clientHeight || vh;
-    box.style.left = Math.max(0, Math.round((vw2 - bw) / 2)) + 'px';
-    box.style.top  = Math.max(0, Math.round((vh2 - bh) / 2)) + 'px';
-    box.style.visibility = 'visible';
-    fields.p1x.focus(); fields.p1x.select();
-  }, 0);
+  setTimeout(function() { fields.p1x.focus(); fields.p1x.select(); }, 0);
 }
 
 // Preset files (Export / Import Presets in the preset list's context menu).
