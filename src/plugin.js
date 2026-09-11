@@ -126,7 +126,7 @@ function _animateToCurve(target, onUpdate) {
   var duration = 150;
   var start = null;
   function easeInOut(t) { return t < 0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
-  function step(ts) {
+  function step() {
     if (!start) start = ts;
     var p = Math.min((ts - start) / duration, 1);
     var e = easeInOut(p);
@@ -3890,21 +3890,26 @@ function _centerIcons() {
 // dragged, a programmatic jump) cancels the easing and is left alone.
 var _UXP_NOTCH  = 9;
 var _WHEEL_STEP = 90;
+var _WHEEL_MS   = 110; // ease duration; kept short because UXP ignores presses while scrollTop is being written
 function _smoothWheel(el) {
   if (!el || el._ocWheel) return;
   el._ocWheel = true;
-  var target = null, raf = 0, lastTop = el.scrollTop, wrote = null;
+  var target = null, raf = 0, lastTop = el.scrollTop, wrote = null, from = 0, t0 = 0;
+  function write(v) { wrote = v; lastTop = v; el.scrollTop = v; }
+  function finish() {
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    if (target !== null && el.scrollTop !== target) write(target);
+    target = null;
+  }
   function step() {
     raf = 0;
     if (target === null) return;
-    var cur = el.scrollTop, diff = target - cur;
-    var next = Math.abs(diff) < 0.6 ? target : cur + diff * 0.3;
-    next = Math.round(next);
-    if (next === cur) next = target; // a sub-pixel ease would never arrive
-    if (next === target) target = null;
-    wrote = next; lastTop = next;
-    el.scrollTop = next;
-    if (target !== null) raf = requestAnimationFrame(step);
+    var p = Math.min(1, (Date.now() - t0) / _WHEEL_MS);
+    var e = 1 - Math.pow(1 - p, 3); // ease-out: fast at first, settles quickly
+    var next = Math.round(from + (target - from) * e);
+    if (p >= 1) { finish(); return; }
+    if (next !== el.scrollTop) write(next);
+    raf = requestAnimationFrame(step);
   }
   el.addEventListener('scroll', function() {
     var top = el.scrollTop;
@@ -3916,14 +3921,18 @@ function _smoothWheel(el) {
     var max = el.scrollHeight - el.clientHeight;
     if (notches !== Math.round(notches) || Math.abs(notches) > 3) {
       // scrollbar drag or a jump: not the wheel, stop easing and follow it
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
       target = null;
       return;
     }
-    var from = target === null ? top - d : target;
-    target = Math.max(0, Math.min(max, Math.round(from + notches * _WHEEL_STEP)));
+    var base = target === null ? top - d : target;
+    target = Math.max(0, Math.min(max, Math.round(base + notches * _WHEEL_STEP)));
     if (target === top) { target = null; return; }
+    from = top; t0 = Date.now();
     if (!raf) raf = requestAnimationFrame(step);
   });
+  // A press while easing: land now so the click hits what the user sees
+  el.addEventListener('pointerdown', finish, true);
 }
 
 // ─── Panel init ───────────────────────────────────────────────────────────
