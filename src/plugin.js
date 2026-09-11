@@ -3934,7 +3934,9 @@ var _POLL_ON        = false; // false = the host is never polled after startup (
 var _THUMBS_ON      = false; // false = preset tiles are built without their SVG thumbnail
 var _TRANSITIONS_ON = false; // false = a style rule kills every CSS transition/animation at init
 var _CONTAIN_ON     = false; // false = contain:none on #all-presets-list at init
-var _SCROLL_KICK    = 0;     // 60ms after a burst: 1 = toggle a transform on the scroller, 2 = re-create its scroll view (overflow off/on, scrollTop kept)
+var _SCROLL_KICK    = 3;     // after a scroll: 1 = toggle a transform on the scroller, 2 = re-create its scroll view (overflow off/on, scrollTop kept), 3 = pointer-events:none for one frame (a native pointer leave/enter, since leaving the list by hand ends the dead state at once)
+var _SCROLL_KICK_MS = 40;    // delay after the last scroll event of a burst
+var _SCROLL_TESTLIST = true; // a bare plain scroller (40 rows) floated over the graph, watched as 'bare list', never kicked: tells the list's structure from any scroll view in this panel
 var _DEBUG_SCROLL_KEY = 'opencurve-debug-scroll';
 var _debugScroll = localStorage.getItem(_DEBUG_SCROLL_KEY) === 'on';
 function _toggleDebugScroll() {
@@ -3943,7 +3945,7 @@ function _toggleDebugScroll() {
   if (_debugScroll) {
     console.log('[OC-SCROLL] ON. Switches: sink ' + _SINK_FOCUS_ON + ', tooltips ' + _TOOLTIPS_ON + ', pressState ' + _PRESS_STATE_ON
       + ', poll ' + _POLL_ON + ', wheel ' + _WHEEL_ON + '/' + _WHEEL_MS + 'ms, kick ' + _SCROLL_KICK
-      + ', thumbs ' + _THUMBS_ON + ', transitions ' + _TRANSITIONS_ON + ', contain ' + _CONTAIN_ON
+      + ', thumbs ' + _THUMBS_ON + ', transitions ' + _TRANSITIONS_ON + ', contain ' + _CONTAIN_ON + ', bare list ' + _SCROLL_TESTLIST
       + ', dropped listener types [' + _EVT_SKIP.join(', ') + ']');
   }
   _showCopyToast('Scroll debug ' + (_debugScroll ? 'ON: scroll a list, keep the mouse moving, then click' : 'OFF'));
@@ -3960,15 +3962,15 @@ function _sdInside(el, x, y) {
   var r = el.getBoundingClientRect();
   return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
 }
-function _sdWatch(el, name) {
+function _sdWatch(el, name, noKick) {
   if (!el || el._sdWatched) return;
   el._sdWatched = true;
   el.addEventListener('scroll', function() {
     if (el._sdKicking) return;
     var now = Date.now();
-    if (_SCROLL_KICK) {
+    if (_SCROLL_KICK && !noKick) {
       if (_sd.kickTimer) clearTimeout(_sd.kickTimer);
-      _sd.kickTimer = setTimeout(function() { _sdKick(el); }, 60);
+      _sd.kickTimer = setTimeout(function() { _sdKick(el); }, _SCROLL_KICK_MS);
     }
     if (!_debugScroll) return;
     if (now - _sd.last > 300) {
@@ -3986,6 +3988,7 @@ function _sdKick(el) {
   try {
     if (_SCROLL_KICK === 1) { el.style.transform = 'translateZ(0)'; void el.offsetHeight; el.style.transform = ''; }
     else if (_SCROLL_KICK === 2) { var top = el.scrollTop; el.style.overflowY = 'hidden'; void el.offsetHeight; el.style.overflowY = 'auto'; el.scrollTop = top; }
+    else if (_SCROLL_KICK === 3) { el.style.pointerEvents = 'none'; void el.offsetHeight; setTimeout(function() { el.style.pointerEvents = ''; }, 16); }
   } catch(_) {}
   setTimeout(function() { el._sdKicking = false; }, 50);
   if (_debugScroll) console.log('[OC-SCROLL] kick ' + _SCROLL_KICK + ' applied to ' + (el.id || el.nodeName));
@@ -4102,6 +4105,19 @@ function initPanel() {
   _smoothWheel(document.getElementById('all-presets-list')); // UXP: proper wheel steps with easing
   _smoothWheel(document.getElementById('tl-scroll'));
   _sdInit(); // post-scroll freeze diagnostic (logs only while Flyout > Scroll Debug is on)
+  if (_SCROLL_TESTLIST) {
+    var _bare = document.createElement('div');
+    _bare.id = 'oc-bare-list';
+    _bare.style.cssText = 'position:fixed;left:8px;bottom:70px;width:150px;height:110px;overflow-y:auto;background:#222;border:1px solid #666;z-index:5000;font-size:12px;color:#ccc;';
+    for (var bi = 1; bi <= 40; bi++) {
+      var br = document.createElement('div');
+      br.textContent = 'bare row ' + bi;
+      br.style.cssText = 'padding:3px 6px;border-bottom:1px solid #333;';
+      _bare.appendChild(br);
+    }
+    document.body.appendChild(_bare);
+    _sdWatch(_bare, 'bare list', true);
+  }
   _sdWatch(document.getElementById('all-presets-list'), 'preset list');
   _sdWatch(document.getElementById('tl-scroll'), 'timeline box');
   _centerIcons(); // UXP: pin the button icons at their centres (see _centerIcons)
