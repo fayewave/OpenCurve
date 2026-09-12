@@ -96,7 +96,7 @@ html, body {
 .right-col {
   display: flex;
   flex-direction: column;
-  width: 180px;
+  width: 180px;       /* only until _sidebarSavedW measures the row: half of it by default */
   min-width: 120px;   /* max is set by the drag: panel width minus 100px for the graph column */
   flex-shrink: 0;
   min-height: 0;
@@ -199,9 +199,9 @@ html, body {
 /* ─── Mini timeline ─────────────────────────────────────────── */
 /* The timeline row: #tl-scroll holding the keyframe lanes (plugin.js
    _tlRender), a column-resize handle and the property rows at the right. Each lane is one row tall (32px) so the lanes line up with the rows
-   beside them. Height: the rows' own (never below one row) until #tl-resize
-   has been dragged, then the saved height (inline) and the lanes + rows
-   scroll together inside #tl-scroll. */
+   beside them. Height: the rows' own but never under _TL_DEF_H (four rows,
+   set inline as a min-height) until #tl-resize has been dragged, then the saved
+   height (inline) and the lanes + rows scroll together inside #tl-scroll. */
 .oc-timeline {
   display: flex;
   flex-direction: row;
@@ -593,7 +593,7 @@ html, body {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  width: 180px;
+  width: 180px;       /* only until _tlSavedPropsWidth measures the row: 40% of it by default */
   min-width: 100px;   /* max is set by the drag: panel width minus 100px for the lanes */
 }
 
