@@ -4628,7 +4628,12 @@ function initPanel() {
       var ic = document.createElement('span');
       ic.style.cssText = 'display:flex;align-items:center;justify-content:center;flex-shrink:0;opacity:0.7;margin-right:10px;width:16px;';
       var svg = srcBtn && srcBtn.querySelector('svg');
-      if (svg) ic.appendChild(svg.cloneNode(true)); // the tool's own icon
+      if (svg) {
+        var cl = svg.cloneNode(true); // the tool's own icon
+        cl.removeAttribute('style');  // drop _centerIcons' absolute placement, it would pin the clone to the menu's corner
+        cl._ocCentered = true;
+        ic.appendChild(cl);
+      }
       it.appendChild(ic);
       var lb = document.createElement('span');
       lb.textContent = label;
@@ -4728,7 +4733,12 @@ function initPanel() {
       it.style.alignItems = 'center';
       var ic = document.createElement('span');
       ic.style.cssText = 'display:flex;align-items:center;justify-content:center;flex-shrink:0;opacity:0.7;margin-right:10px;width:16px;';
-      if (svg) { var c = svg.cloneNode(true); c.style.display = ''; ic.appendChild(c); } // the tool's own icon
+      if (svg) {
+        var cl = svg.cloneNode(true); // the tool's own icon
+        cl.removeAttribute('style');  // drop _centerIcons' absolute placement, it would pin the clone to the menu's corner
+        cl._ocCentered = true;
+        ic.appendChild(cl);
+      }
       it.appendChild(ic);
       var lb = document.createElement('span');
       lb.textContent = label;

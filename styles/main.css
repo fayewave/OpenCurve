@@ -364,10 +364,8 @@ html, body {
   position: relative;
 }
 
-/* First tool on the left sits flush with the toolbar padding (the collapsed
-   menu button and A-curve are never shown together, so both are "first") */
-#graph-tools-menu,
-#peak-mode {
+/* The menu button, always first on the left, sits flush with the toolbar padding */
+#graph-tools-menu {
   margin-left: 0;
 }
 
