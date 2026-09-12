@@ -3559,11 +3559,12 @@ function initPanel() {
     });
   })();
 
-  // Right-click on the mini timeline's lanes: zoom toggle + Open Settings.
+  // Right-click on the mini timeline's lanes or the property rows: zoom toggle + Open Settings.
   // Bound to the SVG and its wrapper both; _showMiniCtxMenu stops propagation,
   // so the wrapper only ever handles the strip of area outside the SVG.
   (function() {
-    var targets = [document.getElementById('tl-svg'), document.querySelector('.tl-canvas-wrap')];
+    // The property rows (#prop-btns, in the same row) open it too
+    var targets = [document.getElementById('tl-svg'), document.querySelector('.tl-canvas-wrap'), document.getElementById('prop-btns')];
     targets.forEach(function(el) {
       if (!el) return;
       el.addEventListener('contextmenu', function(e) { _showMiniCtxMenu(e, false, false, false, null, true); });
