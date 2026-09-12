@@ -148,10 +148,13 @@ function setState(updates) {
 // ─── Curve animation ─────────────────────────────────────────────────────
 var _curveAnimRaf = null;
 function _animateToCurve(target, onUpdate) {
-  // Multi-point curves don't tween (the point counts differ), they just switch
-  if (!_animationsOn || _hasPts(target) || _hasPts(getState().curve)) { setState({ curve: target }); onUpdate(getState().curve); return; }
+  if (!_animationsOn) { setState({ curve: target }); onUpdate(getState().curve); return; }
   if (_curveAnimRaf) { cancelAnimationFrame(_curveAnimRaf); _curveAnimRaf = null; }
-  var from = _cloneCurve(getState().curve);
+  // Multi-point curves tween too: _matchCurves pads both sides with shape-neutral
+  // splits until they share the same anchors, so every coordinate can be lerped.
+  // The last frame sets the real target, so the padding never outlives the tween.
+  var pair = _matchCurves(getState().curve, target);
+  var from = pair[0], to = pair[1];
   var duration = 150;
   var start = null;
   function easeInOut(t) { return t < 0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
@@ -159,16 +162,11 @@ function _animateToCurve(target, onUpdate) {
     if (!start) start = ts;
     var p = Math.min((ts - start) / duration, 1);
     var e = easeInOut(p);
-    var cur = {
-      p1x: from.p1x + (target.p1x - from.p1x) * e,
-      p1y: from.p1y + (target.p1y - from.p1y) * e,
-      p2x: from.p2x + (target.p2x - from.p2x) * e,
-      p2y: from.p2y + (target.p2y - from.p2y) * e,
-    };
+    var cur = _lerpCurve(from, to, e);
     setState({ curve: cur });
     onUpdate(cur);
     if (p < 1) { _curveAnimRaf = requestAnimationFrame(step); }
-    else { setState({ curve: Object.assign({}, target) }); onUpdate(target); _curveAnimRaf = null; }
+    else { setState({ curve: _cloneCurve(target) }); onUpdate(getState().curve); _curveAnimRaf = null; }
   }
   _curveAnimRaf = requestAnimationFrame(step);
 }
@@ -409,12 +407,22 @@ function _commitCurve(c) {
 // Add Point: split the widest segment at its middle (de Casteljau), so the shape
 // is unchanged until the new point is dragged
 function _addPoint() {
-  var c = _cloneCurve(getState().curve);
+  var c = getState().curve;
   var segs = _segsOf(c), si = 0;
   for (var i = 1; i < segs.length; i++) if (segs[i].x3 - segs[i].x0 > segs[si].x3 - segs[si].x0) si = i;
   var s = segs[si];
   if (s.x3 - s.x0 < PT_MIN_GAP * 3) return;
-  var t = _segTForX((s.x0 + s.x3) / 2, s);
+  _commitCurve(_splitCurveAt(c, (s.x0 + s.x3) / 2));
+}
+
+// Split the segment containing x at x (de Casteljau): a new smooth anchor whose
+// handles leave the shape exactly as it was. Returns a changed clone.
+function _splitCurveAt(c, x) {
+  c = _cloneCurve(c);
+  var segs = _segsOf(c), si = 0;
+  for (var i = 1; i < segs.length; i++) if (x >= segs[i].x0) si = i;
+  var s = segs[si];
+  var t = _segTForX(x, s);
   function lerp(a, b) { return a + (b - a) * t; }
   var q0x = lerp(s.x0, s.c1x),  q0y = lerp(s.y0, s.c1y);
   var q1x = lerp(s.c1x, s.c2x), q1y = lerp(s.c1y, s.c2y);
@@ -427,7 +435,49 @@ function _addPoint() {
   if (si === segs.length - 1) { c.p2x = q2x; c.p2y = q2y; } else { pts[si].ix = q2x; pts[si].iy = q2y; }
   pts.splice(si, 0, { x: mx, y: my, ix: r0x, iy: r0y, ox: r1x, oy: r1y, smooth: true });
   c.pts = pts;
-  _commitCurve(c);
+  return c;
+}
+
+// Give two curves the same anchors so _animateToCurve can tween between them:
+// every anchor x one side has and the other lacks is added there as a
+// shape-neutral split, so anchor i sits at the same x on both and only y and
+// the handles move. Plain curves come back unchanged. (Should the counts still
+// differ, the shorter side is padded at its widest segments.)
+function _matchCurves(a, b) {
+  a = _cloneCurve(a); b = _cloneCurve(b);
+  if (!_hasPts(a) && !_hasPts(b)) return [a, b];
+  function xs(c) { return (c.pts || []).map(function(p) { return p.x; }); }
+  function near(list, x) { for (var i = 0; i < list.length; i++) if (Math.abs(list[i] - x) < PT_MIN_GAP) return true; return false; }
+  var xa = xs(a), xb = xs(b);
+  for (var i = 0; i < xb.length; i++) if (!near(xs(a), xb[i])) a = _splitCurveAt(a, xb[i]);
+  for (var j = 0; j < xa.length; j++) if (!near(xs(b), xa[j])) b = _splitCurveAt(b, xa[j]);
+  function widest(c) {
+    var segs = _segsOf(c), si = 0;
+    for (var k = 1; k < segs.length; k++) if (segs[k].x3 - segs[k].x0 > segs[si].x3 - segs[si].x0) si = k;
+    return (segs[si].x0 + segs[si].x3) / 2;
+  }
+  var guard = 0;
+  while ((a.pts || []).length < (b.pts || []).length && guard++ < 64) a = _splitCurveAt(a, widest(a));
+  while ((b.pts || []).length < (a.pts || []).length && guard++ < 64) b = _splitCurveAt(b, widest(b));
+  return [a, b];
+}
+
+// Coordinate-wise blend of two matched curves (e = 0 gives a, 1 gives b). Both
+// are sorted by x with handles inside their segments, so the blend is too. A
+// point draws as a corner once past halfway if it ends as one.
+function _lerpCurve(a, b, e) {
+  function L(u, v) { return u + (v - u) * e; }
+  var c = { p1x: L(a.p1x, b.p1x), p1y: L(a.p1y, b.p1y), p2x: L(a.p2x, b.p2x), p2y: L(a.p2y, b.p2y) };
+  var pa = a.pts || [], pb = b.pts || [], n = Math.min(pa.length, pb.length);
+  if (n) {
+    c.pts = [];
+    for (var i = 0; i < n; i++) {
+      var p = pa[i], q = pb[i];
+      c.pts.push({ x: L(p.x, q.x), y: L(p.y, q.y), ix: L(p.ix, q.ix), iy: L(p.iy, q.iy),
+                   ox: L(p.ox, q.ox), oy: L(p.oy, q.oy), smooth: (e < 0.5 ? p : q).smooth !== false });
+    }
+  }
+  return c;
 }
 
 function _removePoint(i) {
@@ -2959,7 +3009,7 @@ var _tlVisible    = localStorage.getItem(_TL_KEY) !== 'off';
 var _TL_ZOOM_KEY  = 'opencurve-timeline-zoom';
 var _tlZoomKeys   = localStorage.getItem(_TL_ZOOM_KEY) === 'keys'; // zoom to the keyframes instead of the whole clip
 var _TL_H_KEY     = 'opencurve-timeline-height';
-var _tlUserH      = parseInt(localStorage.getItem(_TL_H_KEY), 10) || null; // dragged height of the lanes + rows area (px); null = fit the rows
+var _tlUserH      = parseInt(localStorage.getItem(_TL_H_KEY), 10) || null; // dragged height of the lanes + rows area (px); null = _TL_DEF_H, growing with the rows
 var _TL_MAIN_MIN  = 100;  // the graph / preset area keeps at least this much height while dragging
 var _TL_NS        = 'http://www.w3.org/2000/svg';
 var _TL_PAD_X     = 6;
@@ -2967,6 +3017,8 @@ var _TL_ROW_H     = 32;   // lane height = .prop-btn height, so lane i sits besi
 var _TL_MIN_H     = 32;   // the empty strip (no rows) keeps one row's height
 var _TL_PROPS_KEY = 'opencurve-props-width';
 var _TL_PROPS_MIN = 100, _TL_PROPS_MAX = 320, _TL_PROPS_DEF = 180; // property column width (px), dragged at #tl-prop-handle
+var _TL_PROPS_FRAC = 0.4;          // nothing dragged: the rows take this much of the row, the lanes the rest (60/40)
+var _TL_DEF_H     = _TL_ROW_H * 4; // undragged height of the lanes + rows area: four rows, taller once there are more
 // Drag limits scale with the panel, like the timeline height: a resizable column
 // may take everything but _OC_OTHER_MIN px of its row, so the other side (the
 // graph column, or the lanes) never vanishes. _TL_PROPS_MAX / 320 are only the
@@ -2979,10 +3031,18 @@ function _ocMaxColW(sel, minW, fallback) {
 }
 function _tlMaxPropsW()  { return _ocMaxColW('#oc-timeline', _TL_PROPS_MIN, _TL_PROPS_MAX); }
 function _sidebarMaxW()  { return _ocMaxColW('.main-row', 120, 320); }
-// Saved preset-column width, clamped to the panel; 0 = use the CSS default
+// Preset-column width: the saved one clamped to the panel, else half the row
+// so the graph and the presets open 50/50. 0 = the row can't be measured yet
+// (the CSS width stands in until the column ResizeObserver re-applies this).
+function _sidebarDefaultW() {
+  var row = document.querySelector('.main-row');
+  var w   = row ? row.clientWidth : 0;
+  if (w <= 0) return 0;
+  return Math.max(120, Math.min(Math.round(w / 2), _sidebarMaxW()));
+}
 function _sidebarSavedW() {
   var w = parseInt(localStorage.getItem('opencurve-sidebar-width'), 10);
-  return w >= 120 ? Math.min(w, _sidebarMaxW()) : 0;
+  return w >= 120 ? Math.min(w, _sidebarMaxW()) : _sidebarDefaultW();
 }
 var _TL_SNAP_PX   = 5;    // a press this close to a keyframe lands exactly on it
 var _TL_DBL_MS    = 400;  // two presses on a lane this close together toggle the property
@@ -3072,9 +3132,11 @@ function _tlRender(s, force) {
   var range  = _tlRange(s);
   var n      = range ? params.length : 0;
   var laneH  = _tlLaneH(n);
-  // One lane per row; with a dragged height the SVG also fills the box, so the
-  // playhead line runs the whole visible height when there are few rows
-  var boxH   = (_tlUserH && _tlEls.scroll) ? _tlEls.scroll.clientHeight : 0;
+  // One lane per row; the SVG also fills the box, so the playhead line runs the
+  // whole visible height when there are few rows. Without a dragged height the
+  // box is _TL_DEF_H, which is known without measuring (reading a box that sizes
+  // to its own content back into the SVG height would make it sticky).
+  var boxH   = _tlUserH ? (_tlEls.scroll ? _tlEls.scroll.clientHeight : 0) : _TL_DEF_H;
   var H      = Math.max(_TL_MIN_H, params.length * laneH, boxH);
   var W      = _tlW;
   var sel    = s.selectedParamKeys || [], valid = s.validParamKeys || [], baked = s.bakedParamKeys || [];
@@ -3394,19 +3456,30 @@ function _applyTimelineVisibility() {
   var div = bottom ? bottom.querySelector('.bottom-divider') : null;
   if (div) div.style.display = _tlVisible ? '' : 'none';
   _tlApplyPropsWidth();
+  _tlApplyHeightStyle(); // the undragged floor belongs to the lanes, not the bare rows
   if (_tlVisible) { _tlSig = ''; _tlRender(getState(), true); }
 }
-// Height of the lanes + rows area: the saved drag height, else whatever the rows
-// need. With a fixed height the inner flex row is kept at least the box tall so
-// the column handle spans it, and the lanes + rows scroll together beyond it.
+// Height of the lanes + rows area: the dragged height, else the rows' own but
+// never under _TL_DEF_H, so a fresh panel opens with a usable strip instead of
+// one row. The floor is only there while the lanes show; with the timeline off
+// the rows size themselves. With a fixed height the inner flex row is kept at
+// least the box tall so the column handle spans it, and the lanes + rows scroll
+// together beyond it.
+function _tlApplyHeightStyle() {
+  var els = _tlEls;
+  if (!els) return;
+  var floorH = (!_tlUserH && _tlVisible) ? _TL_DEF_H + 'px' : '';
+  els.root.style.height    = _tlUserH ? _tlUserH + 'px' : '';
+  els.root.style.minHeight = floorH;
+  if (els.inner) els.inner.style.minHeight = _tlUserH ? (els.scroll ? els.scroll.clientHeight + 'px' : '') : floorH;
+}
 // `live` = mid-drag: only the box height changes, so just stretch the SVG and
 // the playhead line. A full lane rebuild plus a localStorage write per pointer
 // move made the drag crawl in UXP; those happen once on release.
 function _tlApplyHeight(live) {
   var els = _tlEls;
   if (!els) return;
-  els.root.style.height = _tlUserH ? _tlUserH + 'px' : '';
-  if (els.inner) els.inner.style.minHeight = (_tlUserH && els.scroll) ? els.scroll.clientHeight + 'px' : '';
+  _tlApplyHeightStyle();
   if (live) {
     if (_tlGeo) {
       var H = Math.max(_TL_MIN_H, _tlGeo.n * _TL_ROW_H, els.scroll ? els.scroll.clientHeight : 0);
@@ -3424,9 +3497,16 @@ function _tlApplyHeight(live) {
 // Saved on its own key so it is independent of the preset column's width. The Go
 // button in the bottom row is kept the same width, so it sits under the rows and
 // the status strip runs under the lanes; the same divider sizes both.
+// Nothing saved: _TL_PROPS_FRAC of the row, so the lanes and the rows open 60/40.
+function _tlDefaultPropsWidth() {
+  var row = document.getElementById('oc-timeline');
+  var w   = row ? row.clientWidth : 0;
+  if (w <= 0) return _TL_PROPS_DEF;
+  return Math.max(_TL_PROPS_MIN, Math.round(w * _TL_PROPS_FRAC));
+}
 function _tlSavedPropsWidth() {
   var w = parseInt(localStorage.getItem(_TL_PROPS_KEY), 10);
-  return Math.min(w >= _TL_PROPS_MIN ? w : _TL_PROPS_DEF, _tlMaxPropsW());
+  return Math.min(w >= _TL_PROPS_MIN ? w : _tlDefaultPropsWidth(), _tlMaxPropsW());
 }
 // Go is as wide as the property column plus whatever a vertical scrollbar in
 // #tl-scroll takes: the scrollbar narrows the rows' column, so without this Go's
@@ -3598,7 +3678,7 @@ function _tlInit() {
     handle.addEventListener('pointercancel', _endResize);
   }
   // Handle above the area drags its height (up = taller; the graph / preset
-  // area keeps _TL_MAIN_MIN). A double press goes back to fitting the rows.
+  // area keeps _TL_MAIN_MIN). A double press goes back to the default height.
   var vhandle = document.getElementById('tl-resize');
   if (vhandle) {
     var _vy = 0, _vh = 0, _vresizing = false, _vLastUp = 0;
@@ -3630,7 +3710,7 @@ function _tlInit() {
       if (!_vresizing) return;
       _vresizing = false;
       var now = Date.now();
-      if (now - _vLastUp < _TL_DBL_MS) { _vLastUp = 0; _tlUserH = null; _tlApplyHeight(); return; } // double press: fit the rows again
+      if (now - _vLastUp < _TL_DBL_MS) { _vLastUp = 0; _tlUserH = null; _tlApplyHeight(); return; } // double press: back to the default height
       _vLastUp = now;
       _tlApplyHeight();
     }
