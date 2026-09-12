@@ -15,8 +15,8 @@
       "label": { "default": "OpenCurve 2" },
       "minimumSize":           { "width": 380, "height": 440 },
       "maximumSize":           { "width": 840, "height": 900 },
-      "preferredDockedSize":   { "width": 420, "height": 500 },
-      "preferredFloatingSize": { "width": 440, "height": 540 }
+      "preferredDockedSize":   { "width": 600, "height": 500 },
+      "preferredFloatingSize": { "width": 600, "height": 540 }
     }
   ],
   "requiredPermissions": {
