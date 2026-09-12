@@ -148,7 +148,6 @@ function setState(updates) {
 // ─── Curve animation ─────────────────────────────────────────────────────
 var _curveAnimRaf = null;
 function _animateToCurve(target, onUpdate) {
-  if (!_animationsOn) { setState({ curve: target }); onUpdate(getState().curve); return; }
   if (_curveAnimRaf) { cancelAnimationFrame(_curveAnimRaf); _curveAnimRaf = null; }
   // Multi-point curves tween too: _matchCurves pads both sides with shape-neutral
   // splits until they share the same anchors, so every coordinate can be lerped.
@@ -4936,7 +4935,7 @@ function initPanel() {
   // Ease preview: while a tile is hovered a dot runs along its thumbnail with x
   // as time and y as the eased value (the bell's height in A-curve mode), so
   // the pace of the ease can be read without applying it. One tile at a time;
-  // follows the Animations setting.
+  // follows the Hover Preview setting (_animationsOn, key opencurve-animations).
   var _tileAnim = null; // { raf, dot, thumb }
   function _tileAnimStop() {
     if (!_tileAnim) return;
@@ -6892,12 +6891,12 @@ function _showSettingsModal() {
   animRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid #080808;cursor:pointer;';
   var animLabel = document.createElement('span');
   animLabel.style.cssText = 'font-size:14px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d4d4d4;';
-  animLabel.textContent = 'Animations';
+  animLabel.textContent = 'Hover Preview';
   var animCheck = document.createElement('span');
   animCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
   function _updateAnimCheck() {
     animCheck.innerHTML = _animationsOn ? _svgCheck : _svgCross;
-    animLabel.textContent = 'Animations ' + (_animationsOn ? 'On' : 'Off');
+    animLabel.textContent = 'Hover Preview ' + (_animationsOn ? 'On' : 'Off');
     animRow.style.background = _animationsOn ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)';
   }
   var animIcon = document.createElement('span');
