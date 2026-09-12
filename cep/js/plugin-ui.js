@@ -2705,7 +2705,7 @@ function initPanel() {
       item('Flip',      flipBtn,   function() { _applyCurveOp(_flipCurve); });
       item('Invert',    invertBtn, function() { _applyCurveOp(_invertCurve); });
     }
-    item(_dragGhost ? 'Ghost: On' : 'Ghost', ghostBtn, function() { _setDragGhost(!_dragGhost); }, { active: _dragGhost });
+    item(_dragGhost ? 'Ghost On' : 'Ghost Off', ghostBtn, function() { _setDragGhost(!_dragGhost); }, { active: _dragGhost });
     item('Numeric Entry', numBtn, function() { _showNumericPanel(); });
     if (_tbCollapsed) {
       item('Zoom In',   zoomIn,    function() { applyZoom(0.1); },  { keepOpen: true });
@@ -3617,9 +3617,10 @@ function initPanel() {
   })();
 
   // New Preset button
+  // New Preset button (the list is looked up at click time, as in the UXP
+  // edition, whose scroller refresh replaces the element)
   (function() {
-    var list = document.getElementById('all-presets-list');
-    if (!list) return;
+    if (!document.getElementById('all-presets-list')) return;
 
     // New Preset: the toolbar button at the left of the preset bar (#preset-new)
     // saves the current curve as a preset and opens its name for editing
@@ -3635,7 +3636,8 @@ function initPanel() {
         _presetList.push(preset);
         _savePresetList(_presetList);
         var btn = _buildPresetBtn(preset);
-        list.appendChild(btn);
+        var list = document.getElementById('all-presets-list');
+        if (list) list.appendChild(btn);
         _applyPresetLayout(true);
         var ns = btn.querySelector('.preset-name');
         if (ns) ns.dispatchEvent(new Event('dblclick'));
