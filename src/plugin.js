@@ -4512,7 +4512,8 @@ function initPanel() {
     e._ocSeen = true; // the sink's own listener and the document one both see it
     if (_isField(e.target)) return;
     var modal = !!(document.getElementById('settings-modal') || document.getElementById('oc-confirm')
-                || document.getElementById('oc-numeric') || document.getElementById('_paste-box'));
+                || document.getElementById('oc-numeric') || document.getElementById('_paste-box')
+                || document.getElementById('oc-rename'));
     var isEnter = e.key === 'Enter' || e.keyCode === 13 || e.which === 13 || e.code === 'Enter' || e.code === 'NumpadEnter';
     if (isEnter) {
       if (e.repeat || modal) return;
@@ -5042,32 +5043,15 @@ function initPanel() {
       });
     });
 
-    // Rename: dblclick or right-click
+    // Rename: right-click > Rename Preset opens a modal (an inline field lost
+    // focus to the key sink's deferred grab and committed unchanged; no dblclick)
     function startRename() {
-      var input = document.createElement('input');
-      input.type = 'text'; input.value = preset.name;
-      input.className = 'preset-rename-input';
-      if (_presetLayout === 'grid') {
-        input.style.width = '100%';
-        input.style.maxWidth = '100%';
-        input.style.textAlign = 'center';
-        input.style.boxSizing = 'border-box';
-      }
-      btn.replaceChild(input, nameSpan);
-      input.focus(); input.select();
-      function commit() {
-        var v = input.value.trim() || preset.name;
+      _renamePresetDialog(preset.name, function(v) {
         preset.name = v; nameSpan.textContent = v;
-        if (input.parentNode === btn) btn.replaceChild(nameSpan, input);
         _savePresetList(_presetList);
-      }
-      input.addEventListener('blur', commit);
-      input.addEventListener('keydown', function(ev) {
-        if (ev.key === 'Enter')  { input.blur(); }
-        if (ev.key === 'Escape') { input.value = preset.name; input.blur(); }
       });
     }
-    nameSpan.addEventListener('dblclick', function(e) { e.stopPropagation(); startRename(); });
+    btn._ocRename = startRename; // New Preset / Paste open it for the fresh tile
     btn.addEventListener('contextmenu', function(e) { e.preventDefault(); _showCtxMenu(preset, btn, startRename, e); });
 
     return btn;
@@ -5258,8 +5242,7 @@ function initPanel() {
     var newPBtn = document.getElementById('new-preset-btn');
     if (newPBtn) list.insertBefore(btn, newPBtn); else list.appendChild(btn);
     _applyPresetLayout(true);
-    var ns = btn.querySelector('.preset-name');
-    if (ns) ns.dispatchEvent(new Event('dblclick'));
+    if (btn._ocRename) btn._ocRename();
   }
 
   // Show paste-coordinates input panel
@@ -5592,8 +5575,7 @@ function initPanel() {
         var list = document.getElementById('all-presets-list');
         if (list) list.appendChild(btn);
         _applyPresetLayout(true);
-        var ns = btn.querySelector('.preset-name');
-        if (ns) ns.dispatchEvent(new Event('dblclick'));
+        if (btn._ocRename) btn._ocRename();
       });
     }
   }());
@@ -6496,6 +6478,72 @@ function _confirmDialog(titleText, msgText, okLabel, onOk) {
   box.appendChild(btns);
   overlay.appendChild(box);
   document.body.appendChild(overlay);
+}
+
+// Modal rename: title, a text field with the current name selected, OK and
+// Cancel. Enter is OK, Esc and a click on the overlay cancel. onOk(name) runs
+// after the dialog has closed with the trimmed name (unchanged if left empty).
+function _renamePresetDialog(current, onOk) {
+  var old = document.getElementById('oc-rename');
+  if (old && old.parentNode) old.parentNode.removeChild(old);
+  var overlay = document.createElement('div');
+  overlay.id = 'oc-rename';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.65);z-index:99998;display:flex;align-items:center;justify-content:center;';
+
+  var box = document.createElement('div');
+  box.style.cssText = 'background:#1c1c1c;border:1px solid rgba(255,255,255,0.18);padding:20px;width:260px;font-family:system-ui,sans-serif;';
+
+  var title = document.createElement('div');
+  title.textContent = 'Rename Preset';
+  title.style.cssText = 'color:#e4e4e4;font-size:14px;font-weight:600;margin-bottom:10px;';
+
+  var input = document.createElement('input');
+  input.type = 'text';
+  input.value = current;
+  input.style.cssText = 'display:block;width:100%;box-sizing:border-box;background:#111;border:1px solid rgba(255,255,255,0.18);color:#e4e4e4;font-size:13px;padding:5px 8px;margin-bottom:16px;outline:none;font-family:system-ui,sans-serif;';
+
+  var btns = document.createElement('div');
+  btns.style.cssText = 'display:flex;justify-content:flex-end;'; // no flex gap: UXP ignores it, the OK button carries a margin
+
+  function close() { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); }
+  function ok() {
+    var v = input.value.trim() || current;
+    close();
+    onOk(v);
+  }
+
+  var cancelBtn = document.createElement('div');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.style.cssText = 'background:transparent;border:1px solid rgba(255,255,255,0.12);color:#888;font-size:13px;padding:5px 12px;cursor:pointer;';
+  cancelBtn.addEventListener('mouseenter', function() { cancelBtn.style.color='#e4e4e4'; cancelBtn.style.borderColor='rgba(255,255,255,0.25)'; });
+  cancelBtn.addEventListener('mouseleave', function() { cancelBtn.style.color='#888'; cancelBtn.style.borderColor='rgba(255,255,255,0.12)'; });
+  cancelBtn.addEventListener('click', close);
+
+  var okBtn = document.createElement('div');
+  okBtn.textContent = 'Rename';
+  okBtn.style.cssText = 'background:#4a9eff;border:none;color:#fff;font-size:13px;padding:5px 12px;cursor:pointer;font-weight:600;margin-left:8px;';
+  okBtn.addEventListener('mouseenter', function() { okBtn.style.background='#6bb0ff'; });
+  okBtn.addEventListener('mouseleave', function() { okBtn.style.background='#4a9eff'; });
+  okBtn.addEventListener('click', ok);
+
+  input.addEventListener('keydown', function(ev) {
+    if (ev.key === 'Enter' || ev.keyCode === 13) { ev.preventDefault(); ev.stopPropagation(); ok(); }
+    else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(); }
+  });
+  // A press that starts and ends on the overlay itself cancels; presses inside the box don't
+  var downOnOverlay = false;
+  overlay.addEventListener('pointerdown', function(ev) { downOnOverlay = ev.target === overlay; });
+  overlay.addEventListener('click', function(ev) { if (ev.target === overlay && downOnOverlay) close(); });
+
+  btns.appendChild(cancelBtn);
+  btns.appendChild(okBtn);
+  box.appendChild(title);
+  box.appendChild(input);
+  box.appendChild(btns);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  // After the key sink's deferred focus grab from the click that opened the menu item
+  setTimeout(function() { try { input.focus(); input.select(); } catch(_) {} }, 30);
 }
 
 function _confirmReset() {
