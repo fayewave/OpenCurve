@@ -44,8 +44,14 @@ function _animateToCurve(target, onUpdate) {
   // Multi-point curves tween too: _matchCurves pads both sides with shape-neutral
   // splits until they share the same anchors, so every coordinate can be lerped.
   // The last frame sets the real target, so the padding never outlives the tween.
-  var pair = _matchCurves(getState().curve, target);
+  var real = getState().curve;
+  var pair = _matchCurves(real, target);
   var from = pair[0], to = pair[1];
+  // A split shortens the handles beside it, so the padded curves' handles are
+  // not where the user sees them. The path is drawn from the padded blend and
+  // the handles from a second blend that starts and ends at the real ones
+  // (_animVis, read by updateDynamicSVG), so nothing jumps at either end.
+  var vFrom = _visOf(from, real), vTo = _visOf(to, target);
   var duration = 150;
   var start = null;
   function easeInOut(t) { return t < 0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
@@ -54,13 +60,15 @@ function _animateToCurve(target, onUpdate) {
     var p = Math.min((ts - start) / duration, 1);
     var e = easeInOut(p);
     var cur = _lerpCurve(from, to, e);
-    setState({ curve: cur });
-    onUpdate(cur);
+    _animVis = _lerpCurve(vFrom, vTo, e);
+    try { setState({ curve: cur }); onUpdate(cur); } finally { _animVis = null; }
     if (p < 1) { _curveAnimRaf = requestAnimationFrame(step); }
     else { setState({ curve: _cloneCurve(target) }); onUpdate(getState().curve); _curveAnimRaf = null; }
   }
   _curveAnimRaf = requestAnimationFrame(step);
 }
+// Handle-drawing override while a tween runs (see _animateToCurve)
+var _animVis = null;
 
 // ─── Bezier math (CSS cubic-bezier) ──────────────────────────────────────
 function _bx(t, p1x, p2x) {
@@ -368,6 +376,26 @@ function _lerpCurve(a, b, e) {
     }
   }
   return c;
+}
+
+// The visual twin of a padded curve: the same anchors, but every handle the
+// real curve has is put back (a split only touches the handles beside it and
+// never moves an existing anchor, so anchors match by x). Its handles are where
+// the user sees them; only the padded ones drive the path.
+function _visOf(padded, real) {
+  var v = _cloneCurve(padded);
+  v.p1x = real.p1x; v.p1y = real.p1y; v.p2x = real.p2x; v.p2y = real.p2y;
+  var rp = real.pts || [], vp = v.pts || [];
+  for (var i = 0; i < vp.length; i++) {
+    for (var j = 0; j < rp.length; j++) {
+      if (Math.abs(vp[i].x - rp[j].x) < PT_MIN_GAP) {
+        var r = rp[j];
+        vp[i] = { x: r.x, y: r.y, ix: r.ix, iy: r.iy, ox: r.ox, oy: r.oy, smooth: r.smooth !== false };
+        break;
+      }
+    }
+  }
+  return v;
 }
 
 function _removePoint(i) {
@@ -886,9 +914,10 @@ function _setTimelineVisible(on) {
 
 function updateDynamicSVG(curve, W, H) {
   if (_peakMode) { _updatePeakSVG(curve, W, H); return; }
+  var hc = _animVis || curve; // handles and points; the path always follows curve
   var p0 = normToSVG(0, 0, W, H);
-  var p1 = normToSVG(curve.p1x, curve.p1y, W, H);
-  var p2 = normToSVG(curve.p2x, curve.p2y, W, H);
+  var p1 = normToSVG(hc.p1x, hc.p1y, W, H);
+  var p2 = normToSVG(hc.p2x, hc.p2y, W, H);
   var p3 = normToSVG(1, 1, W, H);
   _setLine('sg-tan1', p0.cx, p0.cy, p1.cx, p1.cy);
   _setLine('sg-tan2', p3.cx, p3.cy, p2.cx, p2.cy);
@@ -898,7 +927,7 @@ function updateDynamicSVG(curve, W, H) {
   if (h1) h1.setAttribute('transform', 'translate('+p1.cx+','+p1.cy+')');
   var h2 = document.getElementById('sg-h2');
   if (h2) h2.setAttribute('transform', 'translate('+p2.cx+','+p2.cy+')');
-  _updatePtsSVG(curve, W, H);
+  _updatePtsSVG(hc, W, H);
 }
 
 function initGraphEditor(svg) {
