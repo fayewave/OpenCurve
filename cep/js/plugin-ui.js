@@ -2941,29 +2941,10 @@ function initPanel() {
   _ctxItem('Open Settings', false, function() {
     _showSettingsModal();
   }, _icSettingsCtx);
-  // List/Grid toggle at the bottom, same action as the empty-space menu.
-  // Label and icon are refreshed each time the menu opens.
-  var _icGridCtx = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="1.5" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="8" y="1.5" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="1.5" y="8" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="8" y="8" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>';
-  var _icListCtx = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><line x1="1.5" y1="3.5" x2="12.5" y2="3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="1.5" y1="7" x2="12.5" y2="7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="1.5" y1="10.5" x2="12.5" y2="10.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
-  var _layoutCtxItem = _ctxItem('Grid View', false, function() {
-    _presetLayout = _presetLayout === 'list' ? 'grid' : 'list';
-    localStorage.setItem(_LAYOUT_KEY, _presetLayout);
-    _applyPresetLayout(true);
-  }, _icGridCtx);
-  function _syncLayoutCtxItem() {
-    // Children are [iconSpan, labelSpan]; no expando properties (UXP may drop them)
-    var kids = _layoutCtxItem.children;
-    var lbl  = kids[kids.length - 1];
-    var ic   = kids.length > 1 ? kids[0] : null;
-    if (lbl) lbl.textContent = _presetLayout === 'list' ? 'Grid View' : 'List View';
-    if (ic)  ic.innerHTML    = _presetLayout === 'list' ? _icGridCtx : _icListCtx;
-  }
-
   function _showCtxMenu(preset, btn, startRename, e) {
     var existingMini = document.getElementById('_mini-ctx');
     if (existingMini && existingMini.parentNode) existingMini.parentNode.removeChild(existingMini);
     _ctxTarget = { preset: preset, btn: btn, startRename: startRename };
-    _syncLayoutCtxItem();
     _ctxMenu.style.left = '0px';
     _ctxMenu.style.top = '0px';
     _ctxMenu.style.display = 'block';
