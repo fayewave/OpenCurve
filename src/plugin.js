@@ -830,12 +830,13 @@ function _stylePeakBtn() {
   btn.style.background = _peakMode ? 'rgba(61,220,132,0.18)' : '';
   btn.style.color      = _peakMode ? '#3ddc84' : '';
   btn.style.opacity    = _peakMode ? '1' : '';
-  // The collapsed toolbar's menu button carries the same tint, so the mode
-  // stays visible while the A-curve button itself is hidden
+  // While the bar is collapsed the menu button carries the same tint, so the
+  // mode stays visible while the A-curve button itself is hidden
   var mb = document.getElementById('graph-tools-menu');
   if (mb) {
-    mb.style.background = _peakMode ? 'rgba(61,220,132,0.18)' : '';
-    mb.style.color      = _peakMode ? '#3ddc84' : '';
+    var tint = _peakMode && btn.style.display === 'none';
+    mb.style.background = tint ? 'rgba(61,220,132,0.18)' : '';
+    mb.style.color      = tint ? '#3ddc84' : '';
   }
 }
 
@@ -4588,8 +4589,11 @@ function initPanel() {
   // air so they never touch before collapsing.
   var toolbar  = document.getElementById('graph-toolbar');
   var menuBtn  = document.getElementById('graph-tools-menu');
-  var _tbTools = [peakBtn, addPtBtn, flipBtn, invertBtn, ghostBtn, numBtn, zoomOut, zoomIn];
-  var _TB_NEED = (6 * 26 + 5 * 5) + (3 * 26 + 2 * 5) + 10 + 8;
+  // The menu button is always shown: Ghost and Numeric Entry live only in its
+  // dropdown (their toolbar buttons stay in the HTML, hidden, as icon sources and
+  // for _setDragGhost). The other tools join the dropdown once the bar is narrow.
+  var _tbTools = [peakBtn, addPtBtn, flipBtn, invertBtn, zoomOut, zoomIn];
+  var _TB_NEED = (5 * 26 + 4 * 5) + (3 * 26 + 2 * 5) + 10 + 8;
   var _tbCollapsed = null;
   var _tbDismiss   = null;
   function _hideToolsMenu() {
@@ -4606,8 +4610,8 @@ function initPanel() {
     _tbCollapsed = collapse;
     // inline display: UXP ignores class-driven display changes
     _tbTools.forEach(function(b) { if (b) b.style.display = collapse ? 'none' : ''; });
-    menuBtn.style.display = collapse ? '' : 'none';
-    if (!collapse) _hideToolsMenu();
+    _hideToolsMenu();
+    _stylePeakBtn(); // the menu button only carries the A-curve tint while collapsed
   }
   function _showToolsMenu() {
     _hideToolsMenu();
@@ -4639,14 +4643,18 @@ function initPanel() {
       });
       menu.appendChild(it);
     }
-    item(_peakMode ? 'A-curve Mode: On' : 'A-curve Mode', peakBtn, function() { _setPeakMode(!_peakMode); }, { active: _peakMode });
-    item('Add Point', addPtBtn, function() { if (_peakMode) _setPeakMode(false); _addPoint(); });
-    item('Flip',      flipBtn,   function() { _applyCurveOp(_flipCurve); });
-    item('Invert',    invertBtn, function() { _applyCurveOp(_invertCurve); });
+    if (_tbCollapsed) {
+      item(_peakMode ? 'A-curve Mode: On' : 'A-curve Mode', peakBtn, function() { _setPeakMode(!_peakMode); }, { active: _peakMode });
+      item('Add Point', addPtBtn, function() { if (_peakMode) _setPeakMode(false); _addPoint(); });
+      item('Flip',      flipBtn,   function() { _applyCurveOp(_flipCurve); });
+      item('Invert',    invertBtn, function() { _applyCurveOp(_invertCurve); });
+    }
     item(_dragGhost ? 'Ghost: On' : 'Ghost', ghostBtn, function() { _setDragGhost(!_dragGhost); }, { active: _dragGhost });
     item('Numeric Entry', numBtn, function() { _showNumericPanel(); });
-    item('Zoom In',   zoomIn,    function() { applyZoom(0.1); },  { keepOpen: true });
-    item('Zoom Out',  zoomOut,   function() { applyZoom(-0.1); }, { keepOpen: true });
+    if (_tbCollapsed) {
+      item('Zoom In',   zoomIn,    function() { applyZoom(0.1); },  { keepOpen: true });
+      item('Zoom Out',  zoomOut,   function() { applyZoom(-0.1); }, { keepOpen: true });
+    }
     menu.style.left = '0px';
     menu.style.top  = '0px';
     document.body.appendChild(menu);
