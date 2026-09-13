@@ -4054,14 +4054,21 @@ function _applyPresetLayout(force) {
 
   list.querySelectorAll('.preset-name').forEach(function(n) {
     if (isGrid) {
-      n.style.whiteSpace = 'normal';
-      n.style.overflow = 'visible';
-      n.style.textOverflow = 'clip';
+      // One line, cut with an ellipsis. The name spans the tile's whole content
+      // box, so the cut lands exactly where the text used to wrap onto a second
+      // line (the update tile's <br> still breaks it on purpose)
+      n.style.whiteSpace = 'nowrap';
+      n.style.overflow = 'hidden';
+      n.style.textOverflow = 'ellipsis';
+      n.style.width = '100%';
+      n.style.maxWidth = '100%';
       n.style.marginTop = '4px';
     } else {
       n.style.whiteSpace = '';
       n.style.overflow = '';
       n.style.textOverflow = '';
+      n.style.width = '';
+      n.style.maxWidth = '';
       n.style.marginTop = '';
     }
   });
