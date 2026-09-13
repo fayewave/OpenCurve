@@ -218,7 +218,7 @@
     var btn = document.getElementById('undo-btn');
     if (btn) {
       btn.classList.toggle('btn-dim', !show);
-      btn.style.background = show ? '' : 'rgba(255,255,255,0.06)';
+      btn.style.backgroundColor = show ? '' : 'rgba(255,255,255,0.06)';
       btn.style.color      = show ? '' : '#666';
       btn.style.cursor     = show ? '' : 'default';
     }

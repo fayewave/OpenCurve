@@ -717,7 +717,8 @@ function _applyPeakVisibility() {
 function _stylePeakBtn() {
   var btn = document.getElementById('peak-mode');
   if (!btn) return;
-  btn.style.background = _peakMode ? 'rgba(61,220,132,0.18)' : '';
+  // backgroundColor, not background: the shorthand would drop the stylesheet's sheen gradient
+  btn.style.backgroundColor = _peakMode ? 'rgba(61,220,132,0.18)' : '';
   btn.style.color      = _peakMode ? '#3ddc84' : '';
   btn.style.opacity    = _peakMode ? '1' : '';
   // While the bar is collapsed the menu button carries the same tint, so the
@@ -725,7 +726,7 @@ function _stylePeakBtn() {
   var mb = document.getElementById('graph-tools-menu');
   if (mb) {
     var tint = _peakMode && btn.style.display === 'none';
-    mb.style.background = tint ? 'rgba(61,220,132,0.18)' : '';
+    mb.style.backgroundColor = tint ? 'rgba(61,220,132,0.18)' : '';
     mb.style.color      = tint ? '#3ddc84' : '';
   }
 }
@@ -878,7 +879,7 @@ function _hideDragGhost() { _svgShow('sg-drag-ghost', false); }
 function _styleGhostBtn() {
   var btn = document.getElementById('drag-ghost');
   if (!btn) return;
-  btn.style.background = _dragGhost ? 'rgba(61,220,132,0.18)' : '';
+  btn.style.backgroundColor = _dragGhost ? 'rgba(61,220,132,0.18)' : '';
   btn.style.color      = _dragGhost ? '#3ddc84' : '';
   btn.style.opacity    = _dragGhost ? '1' : '';
 }
@@ -904,7 +905,9 @@ function _styleViewBtns() {
     if (!btn) return;
     // Green while the region is shown, red while it is hidden (the Settings rows use the same pair)
     var bg = pair[1] ? 'rgba(61,220,132,0.18)' : 'rgba(255,144,144,0.18)', col = pair[1] ? '#3ddc84' : '#ff9090', op = '1';
-    if (btn.style.background !== bg) btn.style.background = bg; // write only on change: UXP relayouts on every style write
+    // write only on change: UXP relayouts on every style write. Compared with the last
+    // write, not a read-back (a host may hand the colour back reformatted)
+    if (btn._ocBg !== bg) { btn._ocBg = bg; btn.style.backgroundColor = bg; }
     if (btn.style.color !== col) btn.style.color = col;
     if (btn.style.opacity !== op) btn.style.opacity = op;
   });
@@ -1671,6 +1674,14 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
   var d    = Math.max(3, Math.min(9, laneH - 3)); // diamond size
   var barH = Math.max(2, Math.min(14, laneH - 4));
   var sel  = s.selectedParamKeys || [], valid = s.validParamKeys || [], baked = s.bakedParamKeys || [];
+  // Sheen like the property rows': brighter at the top of each lane, fading down into
+  // its tint (the UXP edition uses an HTML div for this, having no SVG gradients)
+  var sheen = _tlMk('linearGradient', { id: 'tl-sheen', x1: 0, y1: 0, x2: 0, y2: 1 });
+  sheen.appendChild(_tlMk('stop', { offset: 0, 'stop-color': '#ffffff', 'stop-opacity': 0.045 }));
+  sheen.appendChild(_tlMk('stop', { offset: 1, 'stop-color': '#ffffff', 'stop-opacity': 0 }));
+  var defs = _tlMk('defs', {});
+  defs.appendChild(sheen);
+  els.svg.appendChild(defs);
   params.forEach(function(p, i) {
     var top = g.y0 + i * laneH, cy = top + laneH / 2;
     // Same state logic as the row: green beats selection, selected is blue when the
@@ -1679,6 +1690,7 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
     var c = _TL_COLORS[isBaked ? 'baked' : isSel ? (isValid ? 'active' : 'pending') : isValid ? 'ready' : 'none'];
     var bg = _tlMk('rect', { x: 0, y: top, width: W, height: laneH, fill: c.bg });
     els.svg.appendChild(bg);
+    els.svg.appendChild(_tlMk('rect', { x: 0, y: top, width: W, height: laneH - 1, fill: 'url(#tl-sheen)' }));
     // Divider like the property rows': theirs reads as a dark 1px line under each
     // row's tint, so this is a dark strip too (a filled rect, not a stroked line,
     // so it can't depend on how the host handles strokes). A light line here
@@ -2616,14 +2628,14 @@ function initPanel() {
     clearTimeout(_zoomTimer);
     clearInterval(_zoomInterval);
     _zoomTimer = null; _zoomInterval = null;
-    if (btn) { btn.style.background = ''; btn.style.color = ''; }
+    if (btn) { btn.style.backgroundColor = ''; btn.style.color = ''; }
   }
   function addHoldZoom(btn, delta) {
     if (!btn) return;
     btn.addEventListener('pointerdown', function(e) {
       e.preventDefault();
       _stopZoom(zoomIn === btn ? zoomOut : zoomIn);
-      btn.style.background = 'rgba(255,255,255,0.22)';
+      btn.style.backgroundColor = 'rgba(255,255,255,0.22)';
       btn.style.color = '#ffffff';
       applyZoom(delta);
       _zoomTimer = setTimeout(function() {
@@ -3844,7 +3856,7 @@ function _applyGraphFull() {
     var ex = btn.querySelector('.ic-expand'), co = btn.querySelector('.ic-collapse');
     if (ex) ex.style.display = _graphFull ? 'none' : '';
     if (co) co.style.display = _graphFull ? '' : 'none';
-    btn.style.background = _graphFull ? 'rgba(74,158,255,0.18)' : '';
+    btn.style.backgroundColor = _graphFull ? 'rgba(74,158,255,0.18)' : '';
     btn.style.color      = _graphFull ? '#6cb8ff' : '';
   }
 }
@@ -4091,7 +4103,7 @@ function _refreshUpdateNotification() {
   notif.id = '_update-notif';
   notif.className = 'preset-btn';
   notif.style.color = '#e6b800';
-  notif.style.background = 'rgba(240,180,0,0.08)';
+  notif.style.backgroundColor = 'rgba(240,180,0,0.08)';
   notif.style.position = 'relative';
 
   var iconWrap = document.createElement('span');
@@ -4109,8 +4121,8 @@ function _refreshUpdateNotification() {
   delBtn.className = 'preset-delete';
   delBtn.innerHTML = '<svg width="10" height="10" viewBox="0 0 10 10" fill="none"><line x1="1" y1="1" x2="9" y2="9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="9" y1="1" x2="1" y2="9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
   delBtn.style.cssText = 'opacity:0;width:22px;height:22px;display:flex;align-items:center;justify-content:center;';
-  notif.addEventListener('mouseenter', function() { delBtn.style.opacity = '1'; notif.style.background = 'rgba(240,180,0,0.15)'; });
-  notif.addEventListener('mouseleave', function() { delBtn.style.opacity = '0'; delBtn.style.background = 'transparent'; notif.style.background = 'rgba(240,180,0,0.08)'; });
+  notif.addEventListener('mouseenter', function() { delBtn.style.opacity = '1'; notif.style.backgroundColor = 'rgba(240,180,0,0.15)'; });
+  notif.addEventListener('mouseleave', function() { delBtn.style.opacity = '0'; delBtn.style.background = 'transparent'; notif.style.backgroundColor = 'rgba(240,180,0,0.08)'; });
   delBtn.addEventListener('mouseenter', function() { delBtn.style.background = 'rgba(255,144,144,0.25)'; });
   delBtn.addEventListener('mouseleave', function() { delBtn.style.background = 'transparent'; });
   notif.addEventListener('click', function(e) {
@@ -4137,7 +4149,7 @@ function _applyUpdateBtnState(btn, label) {
   leftIcon.className = '_update-left-icon';
   leftIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
   if (_updateAvailable) {
-    btn.style.background = 'rgba(240,180,0,0.08)';
+    btn.style.backgroundColor = 'rgba(240,180,0,0.08)';
     label.textContent = 'Update Available';
     label.style.color = '#e6b800';
     leftIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill="none" d="M13.5 8a5.5 5.5 0 11-1.5-3.8" stroke="#e6b800" stroke-width="1.6" stroke-linecap="round"/><polyline fill="none" points="12,2 12,5.5 8.5,5.5" stroke="#e6b800" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -4147,7 +4159,7 @@ function _applyUpdateBtnState(btn, label) {
     icon.innerHTML = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M7 2L13 12H1L7 2Z" stroke="#e6b800" stroke-width="1.5" stroke-linejoin="round"/><line x1="7" y1="6" x2="7" y2="9" stroke="#e6b800" stroke-width="1.5" stroke-linecap="round"/><circle cx="7" cy="10.5" r="0.75" fill="#e6b800"/></svg>';
     btn.appendChild(icon);
   } else {
-    btn.style.background = 'rgba(230,184,0,0.08)';
+    btn.style.backgroundColor = 'rgba(230,184,0,0.08)';
     label.textContent = 'Check for Updates';
     label.style.color = '#d4d4d4';
     leftIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill="none" d="M13.5 8a5.5 5.5 0 11-1.5-3.8" stroke="#e6b800" stroke-width="1.6" stroke-linecap="round"/><polyline fill="none" points="12,2 12,5.5 8.5,5.5" stroke="#e6b800" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';

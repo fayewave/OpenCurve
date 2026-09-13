@@ -306,10 +306,10 @@ html, body {
 }
 
 /* Row lit up because its lane in the timeline is hovered (same look as :hover) */
-.prop-btn.tl-hover                { background: rgba(255,255,255,0.10); color: #ffffff; }
-.prop-btn.active.tl-hover         { background: rgba(74,158,255,0.26);  color: #8fd0ff; }
-.prop-btn.active.pending.tl-hover { background: rgba(240,160,48,0.22);  color: #f7b95a; }
-.prop-btn.baked.tl-hover          { background: rgba(61,220,132,0.25);  color: #6cf0a6; }
+.prop-btn.tl-hover                { background-color: rgba(255,255,255,0.10); background-image: linear-gradient(to bottom, rgba(255,255,255,0.07), rgba(255,255,255,0)); color: #ffffff; }
+.prop-btn.active.tl-hover         { background-color: rgba(74,158,255,0.26);  color: #8fd0ff; }
+.prop-btn.active.pending.tl-hover { background-color: rgba(240,160,48,0.22);  color: #f7b95a; }
+.prop-btn.baked.tl-hover          { background-color: rgba(61,220,132,0.25);  color: #6cf0a6; }
 
 /* ─── Graph toolbar ─────────────────────────────────────────── */
 /* Its own row above the graph (never overlaps the canvas). Tools go left;
@@ -344,7 +344,8 @@ html, body {
   height: 26px;
   margin-left: 5px;
   border-radius: 3px;
-  background: rgba(255,255,255,0.08);
+  background-color: rgba(255,255,255,0.08);
+  background-image: linear-gradient(to bottom, rgba(255,255,255,0.06), rgba(255,255,255,0));
   color: #d4d4d4;
   /* no resting opacity: UXP ignores it, so with one the CEP build looks dimmer than the CCX */
   cursor: pointer;
@@ -384,13 +385,15 @@ html, body {
 }
 
 .tool-btn:hover {
-  background: rgba(255,255,255,0.16);
+  background-color: rgba(255,255,255,0.16);
+  background-image: linear-gradient(to bottom, rgba(255,255,255,0.09), rgba(255,255,255,0));
   color: #ffffff;
   opacity: 1;
 }
 
 .tool-btn:active {
-  background: rgba(255,255,255,0.26);
+  background-color: rgba(255,255,255,0.26);
+  background-image: linear-gradient(to bottom, rgba(255,255,255,0.09), rgba(255,255,255,0));
   color: #ffffff;
   opacity: 1;
 }
@@ -591,6 +594,11 @@ html, body {
 }
 
 /* ─── Property buttons ──────────────────────────────────────── */
+/* Sheen: rows and buttons are a little brighter at the top, fading down into
+   their colour (a white background-image over the state's background-color).
+   State rules set only background-color, never the background shorthand, which
+   would drop the gradient; plugin.js tints buttons with style.backgroundColor
+   for the same reason. The lanes get theirs in _tlBuild. */
 /* Property rows, at the right end of the timeline row. Width is inline
    (_tlApplyPropsWidth: the saved value, or the full row with the timeline off). */
 .prop-btns {
@@ -608,7 +616,8 @@ html, body {
   height: 32px;
   padding: 0 4px 0 8px; /* 4px right: the pin sits close to the edge */
   box-sizing: border-box;
-  background: rgba(255,255,255,0.05);
+  background-color: rgba(255,255,255,0.05);
+  background-image: linear-gradient(to bottom, rgba(255,255,255,0.045), rgba(255,255,255,0));
   border: none;
   border-bottom: 1px solid #080808; /* opaque: translucent 1px lines render soft in UXP */
   border-radius: 0;
@@ -678,101 +687,105 @@ html, body {
   margin-left: 6px;
   border-radius: 3px;
   /* Amber at rest: the playhead isn't over this property's keyframes yet, so the pin is the thing to press */
-  background: rgba(240,160,48,0.22);
+  background-color: rgba(240,160,48,0.22);
+  background-image: linear-gradient(to bottom, rgba(255,255,255,0.06), rgba(255,255,255,0));
   color: #f7b95a;
   /* no resting opacity: UXP ignores it, so the CEP build looked dimmer than the CCX */
   cursor: pointer;
   transition: background 0.12s, color 0.12s, opacity 0.12s;
 }
 .prop-pin:hover, .prop-pin.hover {
-  background: rgba(240,160,48,0.45);
+  background-color: rgba(240,160,48,0.45);
+  background-image: linear-gradient(to bottom, rgba(255,255,255,0.09), rgba(255,255,255,0));
   color: #ffffff;
   opacity: 1;
 }
 /* Pressed (held): a step brighter than hover. UXP's :active is unreliable, so
    plugin.js also toggles .pressed on pointer down/up (_addPressState). */
 .prop-pin:active, .prop-pin.pressed {
-  background: rgba(240,160,48,0.65);
+  background-color: rgba(240,160,48,0.65);
+  background-image: linear-gradient(to bottom, rgba(255,255,255,0.09), rgba(255,255,255,0));
   color: #ffffff;
   opacity: 1;
 }
 
 /* Playhead over the pair (pin-ready) or row selected (pin-active): blue */
 .prop-pin.pin-ready, .prop-pin.pin-active {
-  background: rgba(74,158,255,0.22);
+  background-color: rgba(74,158,255,0.22);
   color: #7dc4ff;
 }
 .prop-pin.pin-ready:hover, .prop-pin.pin-ready.hover, .prop-pin.pin-active:hover, .prop-pin.pin-active.hover {
-  background: rgba(74,158,255,0.42);
+  background-color: rgba(74,158,255,0.42);
   color: #ffffff;
 }
 .prop-pin.pin-ready:active, .prop-pin.pin-ready.pressed, .prop-pin.pin-active:active, .prop-pin.pin-active.pressed {
-  background: rgba(74,158,255,0.62);
+  background-color: rgba(74,158,255,0.62);
   color: #ffffff;
 }
 
 /* Selected but the playhead isn't over the pair yet: amber like the row */
 .prop-pin.pin-pending {
-  background: rgba(240,160,48,0.22);
+  background-color: rgba(240,160,48,0.22);
   color: #f7b95a;
 }
 .prop-pin.pin-pending:hover, .prop-pin.pin-pending.hover {
-  background: rgba(240,160,48,0.45);
+  background-color: rgba(240,160,48,0.45);
   color: #ffffff;
 }
 .prop-pin.pin-pending:active, .prop-pin.pin-pending.pressed {
-  background: rgba(240,160,48,0.65);
+  background-color: rgba(240,160,48,0.65);
   color: #ffffff;
 }
 
 /* Baked (green) row */
 .prop-pin.pin-baked {
-  background: rgba(61,220,132,0.18);
+  background-color: rgba(61,220,132,0.18);
   color: #7ddc9a;
 }
 .prop-pin.pin-baked:hover, .prop-pin.pin-baked.hover {
-  background: rgba(61,220,132,0.42);
+  background-color: rgba(61,220,132,0.42);
   color: #ffffff;
 }
 .prop-pin.pin-baked:active, .prop-pin.pin-baked.pressed {
-  background: rgba(61,220,132,0.62);
+  background-color: rgba(61,220,132,0.62);
   color: #ffffff;
 }
 
 
 .prop-btn:hover {
-  background: rgba(255,255,255,0.10);
+  background-color: rgba(255,255,255,0.10);
+  background-image: linear-gradient(to bottom, rgba(255,255,255,0.07), rgba(255,255,255,0));
   color: #ffffff;
 }
 
 .prop-btn.baked {
   color: var(--green);
-  background: var(--green-dim);
+  background-color: var(--green-dim);
 }
 /* Green rows aren't selectable (use the undo button); just a gentle hover */
 .prop-btn.baked:hover {
-  background: rgba(61,220,132,0.25);
+  background-color: rgba(61,220,132,0.25);
   color: #6cf0a6;
   cursor: default;
 }
 
 .prop-btn.active {
   color: #7dc4ff;
-  background: var(--accent-dim);
+  background-color: var(--accent-dim);
 }
 .prop-btn.active:hover {
-  background: rgba(74,158,255,0.26);
+  background-color: rgba(74,158,255,0.26);
   color: #8fd0ff;
 }
 
 /* Selected but the playhead isn't over its keyframes yet: orange, turns blue when it is */
 .prop-btn.active.pending {
   color: var(--amber);
-  background: var(--amber-dim);
+  background-color: var(--amber-dim);
 }
 
 .prop-btn.active.pending:hover {
-  background: rgba(240,160,48,0.22);
+  background-color: rgba(240,160,48,0.22);
   color: #f7b95a;
 }
 
@@ -788,19 +801,22 @@ html, body {
   height: 22px;
   margin-left: 6px;
   border-radius: 3px;
-  background: rgba(61,220,132,0.18);
+  background-color: rgba(61,220,132,0.18);
+  background-image: linear-gradient(to bottom, rgba(255,255,255,0.06), rgba(255,255,255,0));
   color: #7ddc9a;
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
 
 .prop-undo:hover {
-  background: rgba(61,220,132,0.42);
+  background-color: rgba(61,220,132,0.42);
+  background-image: linear-gradient(to bottom, rgba(255,255,255,0.09), rgba(255,255,255,0));
   color: #ffffff;
 }
 
 .prop-undo:active, .prop-undo.pressed {
-  background: rgba(61,220,132,0.62);
+  background-color: rgba(61,220,132,0.62);
+  background-image: linear-gradient(to bottom, rgba(255,255,255,0.09), rgba(255,255,255,0));
   color: #ffffff;
 }
 
@@ -814,19 +830,22 @@ html, body {
   height: 22px;
   margin-left: 6px;
   border-radius: 3px;
-  background: rgba(61,220,132,0.18);
+  background-color: rgba(61,220,132,0.18);
+  background-image: linear-gradient(to bottom, rgba(255,255,255,0.06), rgba(255,255,255,0));
   color: #7ddc9a;
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
 
 .prop-curve:hover {
-  background: rgba(61,220,132,0.42);
+  background-color: rgba(61,220,132,0.42);
+  background-image: linear-gradient(to bottom, rgba(255,255,255,0.09), rgba(255,255,255,0));
   color: #ffffff;
 }
 
 .prop-curve:active, .prop-curve.pressed {
-  background: rgba(61,220,132,0.62);
+  background-color: rgba(61,220,132,0.62);
+  background-image: linear-gradient(to bottom, rgba(255,255,255,0.09), rgba(255,255,255,0));
   color: #ffffff;
 }
 
@@ -1016,19 +1035,21 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(61,220,132,0.18);
+  background-color: rgba(61,220,132,0.18);
+  background-image: linear-gradient(to bottom, rgba(255,255,255,0.06), rgba(255,255,255,0));
   color: #7ddc9a;
   cursor: pointer;
   transition: color 0.15s, background 0.15s;
 }
 .btn-undo:not(.btn-dim):hover {
-  background: rgba(61,220,132,0.42);
+  background-color: rgba(61,220,132,0.42);
+  background-image: linear-gradient(to bottom, rgba(255,255,255,0.09), rgba(255,255,255,0));
   color: #ffffff;
 }
 /* Nothing to undo: stays in place, grey and inert (colours are also set inline
    by _showUndoBtn so UXP repaints the icon) */
 .btn-undo.btn-dim {
-  background: rgba(255,255,255,0.06);
+  background-color: rgba(255,255,255,0.06);
   color: #666;
   cursor: default;
 }
@@ -1039,18 +1060,21 @@ html, body {
   flex: 1;
   height: 32px;
   padding: 0 10px;
+  background-image: linear-gradient(to bottom, rgba(255,255,255,0.06), rgba(255,255,255,0));
 }
 #go-btn:not(.btn-disabled) {
   color: var(--green);
-  background: var(--green-dim);
+  background-color: var(--green-dim);
 }
 #go-btn:not(.btn-disabled):hover {
-  background: rgba(61,220,132,0.28);
+  background-color: rgba(61,220,132,0.28);
+  background-image: linear-gradient(to bottom, rgba(255,255,255,0.09), rgba(255,255,255,0));
   color: #5ce89a;
 }
 #go-btn.btn-disabled {
   color: #b4b4b4;
-  background: rgba(255,255,255,0.05);
+  background-color: rgba(255,255,255,0.05);
+  background-image: linear-gradient(to bottom, rgba(255,255,255,0.045), rgba(255,255,255,0));
   opacity: 1;
 }
 
