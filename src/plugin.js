@@ -4804,6 +4804,7 @@ function initPanel() {
   var _icStar   = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M7 1.6l1.6 3.4 3.7.5-2.7 2.6.7 3.7L7 10l-3.3 1.8.7-3.7L1.7 5.5l3.7-.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>';
   var _icExport = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2 9.5v2.5h10V9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 9V1.5M4.2 4.3L7 1.5l2.8 2.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   var _icImport = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2 9.5v2.5h10V9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 1.5V9M4.2 6.2L7 9l2.8-2.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var _icHover  = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M1.5 12.5C7 12.5 7 1.5 12.5 1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-opacity="0.55"/><circle cx="7" cy="7" r="2.2" fill="currentColor"/></svg>'; // a curve with the dot that runs along it (Hover Preview)
 
   // Preset toolbar menu (#preset-tools-menu, the hamburger at the left): always
   // shown, its dropdown lists Paste Preset, Add Starter Presets and Export /
@@ -4876,6 +4877,12 @@ function initPanel() {
     item('Add Starter Presets', _icStar, function() { _addStarterPresets(); });
     item('Export Presets\u2026', _icExport, function() { _exportPresetsToFile(); });
     item('Import Presets\u2026', _icImport, function() { _importPresetsFromFile(); });
+    // Hover Preview (the dot that runs along a tile's thumbnail): green while on and
+    // plain while off, like Ghost in the graph menu (active:false would tint it red)
+    item(_animationsOn ? 'Hover Preview On' : 'Hover Preview Off', _icHover, function() {
+      _animationsOn = !_animationsOn;
+      localStorage.setItem(_ANIM_KEY, _animationsOn ? 'on' : 'off');
+    }, _animationsOn ? { active: true } : null);
     if (_ptbCollapsed) {
       // The hidden tools, after a divider
       var sep = document.createElement('div');
@@ -5062,7 +5069,7 @@ function initPanel() {
   // Ease preview: while a tile is hovered a dot runs along its thumbnail with x
   // as time and y as the eased value (the bell's height in A-curve mode), so
   // the pace of the ease can be read without applying it. One tile at a time;
-  // follows the Hover Preview setting (_animationsOn, key opencurve-animations).
+  // follows Hover Preview in the preset bar's menu (_animationsOn, key opencurve-animations).
   var _tileAnim = null; // { raf, dot, thumb }
   function _tileAnimStop() {
     if (!_tileAnim) return;
@@ -7070,34 +7077,6 @@ function _showSettingsModal() {
     _refreshUpdateNotification();
   });
   rowsCol.appendChild(notifRow);
-
-  var animRow = document.createElement('div');
-  animRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid #080808;cursor:pointer;';
-  var animLabel = document.createElement('span');
-  animLabel.style.cssText = 'font-size:14px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d4d4d4;';
-  animLabel.textContent = 'Hover Preview';
-  var animCheck = document.createElement('span');
-  animCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
-  function _updateAnimCheck() {
-    animCheck.innerHTML = _animationsOn ? _svgCheck : _svgCross;
-    animLabel.textContent = 'Hover Preview ' + (_animationsOn ? 'On' : 'Off');
-    animRow.style.background = _animationsOn ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)';
-  }
-  var animIcon = document.createElement('span');
-  animIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
-  animIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill="none" d="M8 2l1.2 3L13 6l-2.5 2.5.6 3.5L8 10.5 4.9 12l.6-3.5L3 6l3.8-1z" stroke="#b0b0b0" stroke-width="1.7" stroke-linejoin="round"/></svg>';
-  _updateAnimCheck();
-  animRow.appendChild(animIcon);
-  animRow.appendChild(animLabel);
-  animRow.appendChild(animCheck);
-  animRow.addEventListener('mouseenter', function() { animRow.style.background = _animationsOn ? 'rgba(61,220,132,0.15)' : 'rgba(255,144,144,0.15)'; });
-  animRow.addEventListener('mouseleave', function() { animRow.style.background = _animationsOn ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)'; });
-  animRow.addEventListener('click', function() {
-    _animationsOn = !_animationsOn;
-    localStorage.setItem(_ANIM_KEY, _animationsOn ? 'on' : 'off');
-    _updateAnimCheck();
-  });
-  rowsCol.appendChild(animRow);
 
   // Graph visibility toggle row
   var graphRow = document.createElement('div');
