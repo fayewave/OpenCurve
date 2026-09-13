@@ -3278,6 +3278,14 @@ function _tlUpdateFade() {
   }
 }
 
+// UXP only: the second lines' fades come out lighter here than the same colours
+// drawn by CEP (the two editions side by side, 2026-09-13), so the top of each
+// line's gradient is multiplied by this to look the same. Tune by eye.
+var _TL_SEC_UXP_GAIN = 1.6;
+function _tlSecAlpha(col, k) { // col with its alpha multiplied by k (capped at 1)
+  return col.replace(/,\s*([0-9.]+)\)$/, function(m0, a) { return ',' + Math.min(1, parseFloat(a) * k).toFixed(3) + ')'; });
+}
+
 function _tlBuild(s, params, range, n, laneH, H, W) {
   var els = _tlEls;
   els.svg.setAttribute('width', W);
@@ -3307,7 +3315,7 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
   // edge, transparent at its bottom, stopping above the divider row.
   _tlSecondRows(params, sel, valid, baked, laneH, g.y0, function(y, h, col, st, xs) {
     if (!els.wrap) return;
-    var fade = 'linear-gradient(to bottom, ' + col + ', ' + _tlTransparent(col) + ')';
+    var fade = 'linear-gradient(to bottom, ' + _tlSecAlpha(col, _TL_SEC_UXP_GAIN) + ', ' + _tlTransparent(col) + ')';
     xs.forEach(function(x) {
       var sl = document.createElement('div');
       sl.className = 'tl-lane-div'; // cleared with the dividers on the next rebuild
