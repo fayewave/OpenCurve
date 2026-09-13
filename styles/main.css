@@ -373,17 +373,13 @@ html, body {
 #preset-toolbar {
   justify-content: flex-end;
 }
-/* New Preset, List/Grid and Paste sit at the left of the preset bar; the
-   Graph/Timeline toggles and Settings at the right */
-#preset-new {
-  margin-left: 0;
-}
-#preset-paste {
-  margin-right: auto;
-}
-/* Collapsed preset bar: the menu button takes the left spot, Settings keeps the right */
+/* The menu button, New Preset and List/Grid sit at the left of the preset bar;
+   the Graph/Timeline toggles and Settings at the right. Collapsed, only the
+   menu button is left of the gap */
 #preset-tools-menu {
   margin-left: 0;
+}
+#preset-layout {
   margin-right: auto;
 }
 

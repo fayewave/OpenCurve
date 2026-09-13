@@ -2490,8 +2490,8 @@ function initPanel() {
     numBtn.addEventListener('click', function() { _showNumericPanel(); });
   }
 
-  // Preset toolbar (top of the preset column): List/Grid toggle and Paste Preset,
-  // the same actions as the preset list's context menu
+  // Preset toolbar (top of the preset column): List/Grid toggle, the same
+  // action as Settings; the file/paste actions live in the bar's menu button
   var layoutBtn = document.getElementById('preset-layout');
   if (layoutBtn) {
     _attachTooltip(layoutBtn, function() {
@@ -2504,11 +2504,6 @@ function initPanel() {
     });
   }
   _styleLayoutBtn();
-  var pasteBtn = document.getElementById('preset-paste');
-  if (pasteBtn) {
-    _attachTooltip(pasteBtn, 'Paste Preset: add a preset from cubic-bezier() or opencurve() text');
-    pasteBtn.addEventListener('click', function() { _pasteCoordinates(); });
-  }
   // Graph / Timeline toggles: the same switches as Settings (see _setGraphVisible)
   var graphTog = document.getElementById('toggle-graph');
   if (graphTog) {
@@ -2743,14 +2738,21 @@ function initPanel() {
   if (toolbar && typeof ResizeObserver !== 'undefined') new ResizeObserver(_tbLayout).observe(toolbar);
   _tbLayout();
 
-  // Collapsed preset toolbar, the same way as the graph bar: once the bar is too
-  // narrow for the New/List/Paste group and the Graph/Timeline/Settings group to
-  // sit apart, every tool but Settings hides and one menu button takes the
-  // left spot; its dropdown lists all of them. Elements are looked up by id at
-  // use time (the toolbar itself is never swapped, but this keeps it simple).
+  // Icons shared by the preset list's context menu and the preset bar's menu
+  var _icPaste = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><rect x="3" y="2" width="8" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path fill="none" d="M5.5 2V1.5a1 1 0 011-1h1a1 1 0 011 1V2" stroke="currentColor" stroke-width="1.3"/><line x1="5.5" y1="6" x2="8.5" y2="6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="5.5" y1="8.5" x2="8.5" y2="8.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+  var _icStar   = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M7 1.6l1.6 3.4 3.7.5-2.7 2.6.7 3.7L7 10l-3.3 1.8.7-3.7L1.7 5.5l3.7-.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>';
+  var _icExport = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2 9.5v2.5h10V9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 9V1.5M4.2 4.3L7 1.5l2.8 2.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var _icImport = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2 9.5v2.5h10V9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 1.5V9M4.2 6.2L7 9l2.8-2.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  // Preset toolbar menu (#preset-tools-menu, the hamburger at the left): always
+  // shown, its dropdown lists Paste Preset, Add Starter Presets and Export /
+  // Import Presets. Once the bar is too narrow for the Menu/New/List group and
+  // the Graph/Timeline/Settings group to sit apart, every other tool but
+  // Settings hides and the dropdown lists them too, like the graph bar's menu.
+  // Elements are looked up by id at use time.
   var ptb      = document.getElementById('preset-toolbar');
   var pMenuBtn = document.getElementById('preset-tools-menu');
-  var _PTB_IDS = ['preset-new', 'preset-layout', 'preset-paste', 'toggle-graph', 'toggle-timeline'];
+  var _PTB_IDS = ['preset-new', 'preset-layout', 'toggle-graph', 'toggle-timeline'];
   var _PTB_NEED = (3 * 26 + 2 * 5) + (3 * 26 + 2 * 5) + 10 + 8;
   var _ptbCollapsed = null;
   var _ptbDismiss   = null;
@@ -2768,8 +2770,7 @@ function initPanel() {
     _ptbCollapsed = collapse;
     // inline display: UXP ignores class-driven display changes
     _PTB_IDS.forEach(function(id) { var b = document.getElementById(id); if (b) b.style.display = collapse ? 'none' : ''; });
-    pMenuBtn.style.display = collapse ? '' : 'none';
-    if (!collapse) _hidePresetMenu();
+    _hidePresetMenu();
   }
   function _showPresetMenu() {
     _hidePresetMenu();
@@ -2785,7 +2786,9 @@ function initPanel() {
       it.style.alignItems = 'center';
       var ic = document.createElement('span');
       ic.style.cssText = 'display:flex;align-items:center;justify-content:center;flex-shrink:0;opacity:0.7;margin-right:10px;width:16px;';
-      if (svg) {
+      if (typeof svg === 'string') {
+        ic.innerHTML = svg;           // an icon of its own (the file/paste items)
+      } else if (svg) {
         var cl = svg.cloneNode(true); // the tool's own icon
         cl.removeAttribute('style');  // drop _centerIcons' absolute placement, it would pin the clone to the menu's corner
         cl._ocCentered = true;
@@ -2805,14 +2808,23 @@ function initPanel() {
       menu.appendChild(it);
     }
     function svgOf(id, sel) { var b = document.getElementById(id); return b ? b.querySelector(sel || 'svg') : null; }
-    var newBtn = document.getElementById('preset-new');
-    item('New Preset', svgOf('preset-new'), function() { if (newBtn) newBtn.click(); });
-    item(_presetLayout === 'list' ? 'Grid View' : 'List View',
-         svgOf('preset-layout', _presetLayout === 'list' ? '.ic-grid' : '.ic-list'),
-         function() { _presetLayout = _presetLayout === 'list' ? 'grid' : 'list'; localStorage.setItem(_LAYOUT_KEY, _presetLayout); _applyPresetLayout(true); });
-    item('Paste Preset', svgOf('preset-paste'), function() { _pasteCoordinates(); });
-    item(_graphVisible ? 'Graph: On' : 'Graph: Off', svgOf('toggle-graph'), function() { _setGraphVisible(!_graphVisible); }, { active: _graphVisible });
-    item(_tlVisible ? 'Timeline: On' : 'Timeline: Off', svgOf('toggle-timeline'), function() { _setTimelineVisible(!_tlVisible); }, { active: _tlVisible });
+    item('Paste Preset', _icPaste, function() { _pasteCoordinates(); });
+    item('Add Starter Presets', _icStar, function() { _addStarterPresets(); });
+    item('Export Presets\u2026', _icExport, function() { _exportPresetsToFile(); });
+    item('Import Presets\u2026', _icImport, function() { _importPresetsFromFile(); });
+    if (_ptbCollapsed) {
+      // The hidden tools, after a divider
+      var sep = document.createElement('div');
+      sep.style.cssText = 'border-top:1px solid rgba(255,255,255,0.07);margin:3px 0;';
+      menu.appendChild(sep);
+      var newBtn = document.getElementById('preset-new');
+      item('New Preset', svgOf('preset-new'), function() { if (newBtn) newBtn.click(); });
+      item(_presetLayout === 'list' ? 'Grid View' : 'List View',
+           svgOf('preset-layout', _presetLayout === 'list' ? '.ic-grid' : '.ic-list'),
+           function() { _presetLayout = _presetLayout === 'list' ? 'grid' : 'list'; localStorage.setItem(_LAYOUT_KEY, _presetLayout); _applyPresetLayout(true); });
+      item(_graphVisible ? 'Graph: On' : 'Graph: Off', svgOf('toggle-graph'), function() { _setGraphVisible(!_graphVisible); }, { active: _graphVisible });
+      item(_tlVisible ? 'Timeline: On' : 'Timeline: Off', svgOf('toggle-timeline'), function() { _setTimelineVisible(!_tlVisible); }, { active: _tlVisible });
+    }
     menu.style.left = '0px';
     menu.style.top  = '0px';
     document.body.appendChild(menu);
@@ -2836,7 +2848,7 @@ function initPanel() {
     setTimeout(function() { if (_ptbDismiss === pd) window.addEventListener('pointerdown', pd); }, 0);
   }
   if (pMenuBtn) {
-    _attachTooltip(pMenuBtn, 'Preset tools');
+    _attachTooltip(pMenuBtn, 'Preset menu: paste, starter presets, export and import');
     pMenuBtn.addEventListener('click', function() {
       if (document.getElementById('_preset-tools-menu')) _hidePresetMenu(); else _showPresetMenu();
     });
@@ -3436,11 +3448,7 @@ function initPanel() {
     var _icList = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><line x1="1.5" y1="3.5" x2="12.5" y2="3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="1.5" y1="7" x2="12.5" y2="7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="1.5" y1="10.5" x2="12.5" y2="10.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
     var _icTlKeys = '<svg width="16" height="16" viewBox="0 0 12 12" fill="none"><path d="M3.2 1.5H1.5v9h1.7M8.8 1.5h1.7v9H8.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><polygon points="6,3.4 8.6,6 6,8.6 3.4,6" fill="currentColor"/></svg>';
     var _icTlClip = '<svg width="16" height="16" viewBox="0 0 12 12" fill="none"><rect x="0.9" y="2.6" width="10.2" height="6.8" rx="1" fill="none" stroke="currentColor" stroke-width="1.6"/><polygon points="6,4.2 7.6,6 6,7.8 4.4,6" fill="currentColor"/></svg>';
-    var _icPaste = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><rect x="3" y="2" width="8" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path fill="none" d="M5.5 2V1.5a1 1 0 011-1h1a1 1 0 011 1V2" stroke="currentColor" stroke-width="1.3"/><line x1="5.5" y1="6" x2="8.5" y2="6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="5.5" y1="8.5" x2="8.5" y2="8.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 
-    var _icStar   = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M7 1.6l1.6 3.4 3.7.5-2.7 2.6.7 3.7L7 10l-3.3 1.8.7-3.7L1.7 5.5l3.7-.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>';
-    var _icExport = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2 9.5v2.5h10V9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 9V1.5M4.2 4.3L7 1.5l2.8 2.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    var _icImport = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2 9.5v2.5h10V9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 1.5V9M4.2 6.2L7 9l2.8-2.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
     function _miniItem(label, icon, onClick) {
       var item = document.createElement('div');
