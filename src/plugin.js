@@ -3105,13 +3105,22 @@ var _tlPropsW    = 0;   // current property column width (saved value, or live w
 // CSS), not the graph theme colour. bg/hover: lane tint, matching the row's own
 // background and hover for a plain row; bar: the playhead's pair; dot: keyframes;
 // pairDot: the pair's two keyframes.
-var _TL_COLORS = {
-  none:    { bg: 'rgba(255,255,255,0.05)', hover: 'rgba(255,255,255,0.10)', bar: 'rgba(74,158,255,0.15)', dot: '#8c8c8c', pairDot: '#7dc4ff' },
-  ready:   { bg: 'rgba(255,255,255,0.05)', hover: 'rgba(255,255,255,0.10)', bar: 'rgba(74,158,255,0.15)', dot: '#8c8c8c', pairDot: '#7dc4ff' },
-  active:  { bg: 'rgba(74,158,255,0.12)',  hover: 'rgba(74,158,255,0.19)',  bar: 'rgba(74,158,255,0.34)', dot: '#8c8c8c', pairDot: '#7dc4ff' },
-  pending: { bg: 'rgba(240,160,48,0.10)',  hover: 'rgba(240,160,48,0.17)',  bar: 'rgba(240,160,48,0.28)', dot: '#f7b95a', pairDot: '#f7b95a' },
-  baked:   { bg: 'rgba(61,220,132,0.10)',  hover: 'rgba(61,220,132,0.17)',  bar: 'rgba(61,220,132,0.30)', dot: '#8c8c8c', pairDot: '#4ce890' },
+var _TL_COLORS = { // sec: the lane's second lines (_tlSecondXs), tinted like the lane
+  none:    { bg: 'rgba(255,255,255,0.05)', hover: 'rgba(255,255,255,0.10)', bar: 'rgba(74,158,255,0.15)', dot: '#8c8c8c', pairDot: '#7dc4ff', sec: 'rgba(255,255,255,0.03)' },
+  ready:   { bg: 'rgba(255,255,255,0.05)', hover: 'rgba(255,255,255,0.10)', bar: 'rgba(74,158,255,0.15)', dot: '#8c8c8c', pairDot: '#7dc4ff', sec: 'rgba(255,255,255,0.03)' },
+  active:  { bg: 'rgba(74,158,255,0.12)',  hover: 'rgba(74,158,255,0.19)',  bar: 'rgba(74,158,255,0.34)', dot: '#8c8c8c', pairDot: '#7dc4ff', sec: 'rgba(74,158,255,0.055)' },
+  pending: { bg: 'rgba(240,160,48,0.10)',  hover: 'rgba(240,160,48,0.17)',  bar: 'rgba(240,160,48,0.28)', dot: '#f7b95a', pairDot: '#f7b95a', sec: 'rgba(240,160,48,0.045)' },
+  baked:   { bg: 'rgba(61,220,132,0.10)',  hover: 'rgba(61,220,132,0.17)',  bar: 'rgba(61,220,132,0.30)', dot: '#8c8c8c', pairDot: '#4ce890', sec: 'rgba(61,220,132,0.05)' },
 };
+
+// Which _TL_COLORS entry a lane uses, the same logic as its row: green beats
+// selection, selected is blue when the playhead is over the pair and amber
+// until it is, unselected-but-ready gets a blue pair on a plain lane
+function _tlLaneState(key, sel, valid, baked) {
+  var isSel = sel.indexOf(key) >= 0, isValid = valid.indexOf(key) >= 0;
+  if (baked.indexOf(key) >= 0 && !isSel) return 'baked';
+  return isSel ? (isValid ? 'active' : 'pending') : isValid ? 'ready' : 'none';
+}
 
 function _tlMk(tag, attrs) {
   var e = document.createElementNS(_TL_NS, tag);
@@ -3148,7 +3157,6 @@ function _tlSec(x, g) { return g.a + (x - _TL_PAD_X) / (g.W - 2 * _TL_PAD_X) * (
 // stay on the seconds at any zoom. Returns those x columns.
 var _TL_SEC_GAP   = 10;
 var _TL_SEC_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
-var _TL_SEC_COLOR = 'rgba(255,255,255,0.03)';
 function _tlSecondXs(g, origin) {
   var span = g.b - g.a, inner = g.W - 2 * _TL_PAD_X;
   if (!(span > 0) || !(inner > 0) || typeof origin !== 'number') return [];
@@ -3164,6 +3172,20 @@ function _tlSecondXs(g, origin) {
     if (x >= 0 && x < g.W) xs.push(x);
   }
   return xs;
+}
+
+// Groups neighbouring lanes whose second lines share a colour and calls
+// draw(y, height, colour, xs) once per group: the group's top, its height less
+// the last lane's 1px divider row, and the lanes' _TL_COLORS sec tint
+function _tlSecondRuns(params, sel, valid, baked, laneH, y0, draw, xs) {
+  if (!xs.length) return;
+  var i = 0;
+  while (i < params.length) {
+    var col = _TL_COLORS[_tlLaneState(params[i].key, sel, valid, baked)].sec, j = i + 1;
+    while (j < params.length && _TL_COLORS[_tlLaneState(params[j].key, sel, valid, baked)].sec === col) j++;
+    draw(y0 + i * laneH, (j - i) * laneH - 1, col, xs);
+    i = j;
+  }
 }
 
 // Every lane is one property row tall, so the lanes line up with the rows beside them
@@ -3280,19 +3302,24 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
   // Second lines (_tlSecondXs): 1px HTML divs under the SVG like the lane dividers,
   // since HTML edges snap to device pixels where thin SVG lines came out soft.
   // Added before the lanes, so the dividers paint over them and stay unbroken.
-  // They span the lanes only, not the empty space below the last one.
-  if (els.wrap) _tlSecondXs(g, tl.clipStart).forEach(function(x) {
-    var sl = document.createElement('div');
-    sl.className = 'tl-lane-div'; // cleared with the dividers on the next rebuild
-    sl.style.cssText = 'position:absolute;top:0;left:' + x + 'px;width:1px;height:' + (params.length * laneH) + 'px;background:' + _TL_SEC_COLOR + ';pointer-events:none;';
-    els.wrap.insertBefore(sl, els.svg);
-  });
+  // Tinted per lane (_TL_COLORS sec); neighbouring lanes in the same state share
+  // one segment per line, ending above the run's last divider, so they span the
+  // lanes only and the element count stays low.
+  _tlSecondRuns(params, sel, valid, baked, laneH, g.y0, function(y, h, col, xs) {
+    if (!els.wrap) return;
+    xs.forEach(function(x) {
+      var sl = document.createElement('div');
+      sl.className = 'tl-lane-div'; // cleared with the dividers on the next rebuild
+      sl.style.cssText = 'position:absolute;top:' + y + 'px;left:' + x + 'px;width:1px;height:' + h + 'px;background:' + col + ';pointer-events:none;';
+      els.wrap.insertBefore(sl, els.svg);
+    });
+  }, _tlSecondXs(g, tl.clipStart));
   params.forEach(function(p, i) {
     var top = g.y0 + i * laneH, cy = top + laneH / 2;
     // Same state logic as the row: green beats selection, selected is blue when the
     // playhead is over the pair and amber until it is, unselected-but-ready gets a blue pair
-    var isSel = sel.indexOf(p.key) >= 0, isValid = valid.indexOf(p.key) >= 0, isBaked = baked.indexOf(p.key) >= 0 && !isSel;
-    var c = _TL_COLORS[isBaked ? 'baked' : isSel ? (isValid ? 'active' : 'pending') : isValid ? 'ready' : 'none'];
+    var isSel = sel.indexOf(p.key) >= 0, isValid = valid.indexOf(p.key) >= 0;
+    var c = _TL_COLORS[_tlLaneState(p.key, sel, valid, baked)];
     var bg = _tlMk('rect', { x: 0, y: top, width: W, height: laneH - 1, fill: c.bg }); // leaves the divider row clear
     els.svg.appendChild(bg);
     // Divider like the property rows': a dark 1px line at the bottom of the lane
