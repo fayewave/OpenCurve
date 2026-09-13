@@ -864,6 +864,7 @@ var Y_CLAMP_MAX         =  2.0; // max Y value for control point dragging
 // ─── SVG graph editor ─────────────────────────────────────────────────────
 var PAD = 16, HANDLE_R = 5;
 var _zoom = 1.0;
+var _zoomPopHide = null; // set by initPanel: closes the zoom slider, true if it was open (Esc)
 
 // Normalised [0,1] curve coords ↔ SVG pixel coords (always at zoom=1 logical space)
 // The 0..1 range box is always square (1:1), the largest that fits inside the
@@ -2921,6 +2922,7 @@ function _panelShortcut(e) {
     return true;
   }
   if (k === 'Escape') {
+    if (_zoomPopHide && _zoomPopHide()) return true;
     if (_pv) { _pvStop(); return true; }
     if (_graphFull) { _setGraphFull(false); return true; }
   }
@@ -4561,41 +4563,128 @@ function initPanel() {
     settingsBtn.addEventListener('click', function() { _showSettingsModal(); });
   }
 
-  var zoomIn  = document.getElementById('zoom-in');
-  var zoomOut = document.getElementById('zoom-out');
-  _attachTooltip(zoomIn,  'Zoom in');
-  _attachTooltip(zoomOut, 'Zoom out');
-  function applyZoom(delta) {
-    _zoom = Math.max(0.25, Math.min(1.0, _zoom + delta));
+  // Zoom: one toolbar button (#zoom-btn) opens a vertical slider under it. Drag
+  // up to zoom in (100% at the top), down to zoom out (25% at the bottom); the
+  // scale is logarithmic, so 50% sits in the middle and every stretch of the
+  // track is the same step by eye. A press anywhere outside the slider, the
+  // button again, or Esc closes it. Sizes are fixed and the popup is placed
+  // from the anchor's rect only: UXP can't be trusted to measure a fresh element.
+  var zoomBtn = document.getElementById('zoom-btn');
+  var _ZOOM_MIN = 0.25, _ZOOM_MAX = 1.0;
+  function _zoomLabel() {
+    return _zoom < 0.995 ? 'Zoom (' + Math.round(_zoom * 100) + '%)' : 'Zoom';
+  }
+  function setZoom(z) {
+    z = Math.max(_ZOOM_MIN, Math.min(_ZOOM_MAX, z));
+    if (Math.abs(z - _zoom) < 1e-6) return;
+    _zoom = z;
     _updateContentTransform();
   }
-  var _zoomTimer = null;
-  var _zoomInterval = null;
-  function _stopZoom(btn) {
-    clearTimeout(_zoomTimer);
-    clearInterval(_zoomInterval);
-    _zoomTimer = null; _zoomInterval = null;
-    if (btn) { btn.style.backgroundColor = ''; btn.style.color = ''; }
+  var _zsDismiss = null, _zsLit = null;
+  // Closes the slider; true if it was open (Esc uses that through _zoomPopHide)
+  function _hideZoomSlider() {
+    var pop = document.getElementById('_zoom-pop');
+    if (_zsDismiss) { document.removeEventListener('pointerdown', _zsDismiss, true); _zsDismiss = null; }
+    if (_zsLit) { _zsLit.style.backgroundColor = ''; _zsLit.style.color = ''; _zsLit = null; }
+    if (!pop) return false;
+    if (pop.parentNode) pop.parentNode.removeChild(pop);
+    return true;
   }
-  function addHoldZoom(btn, delta) {
-    if (!btn) return;
-    btn.addEventListener('pointerdown', function(e) {
+  _zoomPopHide = _hideZoomSlider;
+  function _showZoomSlider(anchor) {
+    _hideZoomSlider();
+    _hideTooltip();
+    if (!anchor) return;
+    var PAD_T = 10, PAD_B = 8, GAP = 6, LABEL_H = 14, POP_W = 34, INNER_W = POP_W - 2; // 1px border each side
+    var r  = anchor.getBoundingClientRect();
+    var ww = document.documentElement.clientWidth  || document.body.clientWidth;
+    var wh = document.documentElement.clientHeight || document.body.clientHeight;
+    var top    = Math.round(r.bottom + 4);
+    var trackH = Math.max(48, Math.min(116, wh - top - 4 - (PAD_T + GAP + LABEL_H + PAD_B + 2)));
+    var popH   = PAD_T + trackH + GAP + LABEL_H + PAD_B + 2;
+    var left   = Math.max(2, Math.min(ww - POP_W - 2, Math.round(r.left + r.width / 2 - POP_W / 2)));
+    var cx     = INNER_W / 2; // the track's centre line
+
+    var pop = document.createElement('div');
+    pop.id = '_zoom-pop';
+    pop.style.cssText = 'position:fixed;z-index:9999;left:' + left + 'px;top:' + top + 'px;width:' + POP_W + 'px;height:' + popH + 'px;' +
+      'box-sizing:border-box;background-color:#1c1c1c;border:1px solid rgba(255,255,255,0.18);border-radius:3px;';
+    // The press area: the track's height across the popup's whole width
+    var hit = document.createElement('div');
+    hit.style.cssText = 'position:absolute;left:0;top:' + PAD_T + 'px;width:' + INNER_W + 'px;height:' + trackH + 'px;cursor:pointer;';
+    var track = document.createElement('div');
+    track.style.cssText = 'position:absolute;left:' + (cx - 2) + 'px;top:0;width:4px;height:' + trackH + 'px;border-radius:2px;background-color:rgba(255,255,255,0.14);';
+    var fill = document.createElement('div');
+    fill.style.cssText = 'position:absolute;left:' + (cx - 2) + 'px;top:0;width:4px;height:0;border-radius:2px;background-color:#4a9eff;';
+    var thumb = document.createElement('div');
+    thumb.style.cssText = 'position:absolute;left:' + (cx - 6) + 'px;top:0;width:12px;height:12px;border-radius:6px;background-color:#ffffff;';
+    var label = document.createElement('div');
+    label.style.cssText = 'position:absolute;left:0;top:' + (PAD_T + trackH + GAP) + 'px;width:' + INNER_W + 'px;height:' + LABEL_H + 'px;' +
+      'line-height:' + LABEL_H + 'px;text-align:center;font-size:11px;color:#aaaaaa;font-family:system-ui,sans-serif;';
+    hit.appendChild(track);
+    hit.appendChild(fill);
+    hit.appendChild(thumb);
+    pop.appendChild(hit);
+    pop.appendChild(label);
+
+    var LOG = Math.log(_ZOOM_MAX / _ZOOM_MIN);
+    function yOf(z) { return (1 - Math.log(z / _ZOOM_MIN) / LOG) * trackH; }
+    var lastY = null, lastPct = null;
+    function place() { // change-only writes, as everywhere in the panel
+      var y = Math.round(yOf(_zoom));
+      if (y !== lastY) {
+        lastY = y;
+        thumb.style.top   = (y - 6) + 'px';
+        fill.style.top    = y + 'px';
+        fill.style.height = (trackH - y) + 'px';
+      }
+      var pct = Math.round(_zoom * 100) + '%';
+      if (pct !== lastPct) { lastPct = pct; label.textContent = pct; }
+    }
+    var trackTop = top + 1 + PAD_T; // viewport y of the track's top
+    var dragging = false, grab = 0;
+    function zoomAt(clientY) {
+      var y = Math.max(0, Math.min(trackH, clientY - trackTop - grab));
+      setZoom(_ZOOM_MIN * Math.exp((1 - y / trackH) * LOG));
+      place();
+    }
+    hit.addEventListener('pointerdown', function(e) {
+      if (e.button) return;
       e.preventDefault();
-      _stopZoom(zoomIn === btn ? zoomOut : zoomIn);
-      btn.style.backgroundColor = 'rgba(255,255,255,0.22)';
-      btn.style.color = '#ffffff';
-      applyZoom(delta);
-      _zoomTimer = setTimeout(function() {
-        _zoomInterval = setInterval(function() { applyZoom(delta); }, 80);
-      }, 600);
+      var dy = (e.clientY - trackTop) - yOf(_zoom);
+      grab = Math.abs(dy) <= 8 ? dy : 0; // a press on the thumb keeps its offset; one on the track jumps there
+      dragging = true;
+      try { hit.setPointerCapture(e.pointerId); } catch (_) {}
+      zoomAt(e.clientY);
     });
-    function stop() { _stopZoom(btn); }
-    btn.addEventListener('pointerup',     stop);
-    btn.addEventListener('pointerleave',  stop);
-    btn.addEventListener('pointercancel', stop);
+    hit.addEventListener('pointermove', function(e) { if (dragging) zoomAt(e.clientY); });
+    function endDrag() { dragging = false; }
+    hit.addEventListener('pointerup',     endDrag);
+    hit.addEventListener('pointercancel', endDrag);
+
+    document.body.appendChild(pop);
+    place();
+    if (anchor === zoomBtn) { // the menu button keeps its own tint (A-curve)
+      _zsLit = zoomBtn;
+      zoomBtn.style.backgroundColor = 'rgba(255,255,255,0.22)';
+      zoomBtn.style.color = '#ffffff';
+    }
+    _zsDismiss = function(ev) {
+      if (pop.contains(ev.target)) return;
+      if (zoomBtn && zoomBtn.contains(ev.target)) return; // its click closes it
+      _hideZoomSlider();
+    };
+    // Capture phase, so a handler that stops the press can't keep it open;
+    // deferred so the press that opened it doesn't close it
+    var d = _zsDismiss;
+    setTimeout(function() { if (_zsDismiss === d) document.addEventListener('pointerdown', d, true); }, 0);
   }
-  addHoldZoom(zoomIn,   0.1);
-  addHoldZoom(zoomOut, -0.1);
+  if (zoomBtn) {
+    _attachTooltip(zoomBtn, function() { return document.getElementById('_zoom-pop') ? '' : _zoomLabel(); });
+    zoomBtn.addEventListener('click', function() {
+      if (!_hideZoomSlider()) _showZoomSlider(zoomBtn);
+    });
+  }
 
   // Collapsed toolbar: as soon as the bar is too narrow for the left tools and
   // the zoom/settings group to sit apart, every tool but Full Screen and
@@ -4609,8 +4698,8 @@ function initPanel() {
   // only in its dropdown (their toolbar buttons stay in the HTML, hidden, as icon
   // sources and for _setDragGhost). The other tools join the dropdown once the
   // bar is narrow.
-  var _tbTools = [peakBtn, addPtBtn, zoomOut, zoomIn];
-  var _TB_NEED = (3 * 26 + 2 * 5) + (3 * 26 + 2 * 5) + 10 + 8;
+  var _tbTools = [peakBtn, addPtBtn, zoomBtn];
+  var _TB_NEED = (3 * 26 + 2 * 5) + (2 * 26 + 1 * 5) + 10 + 8;
   var _tbCollapsed = null;
   var _tbDismiss   = null;
   function _hideToolsMenu() {
@@ -4628,6 +4717,7 @@ function initPanel() {
     // inline display: UXP ignores class-driven display changes
     _tbTools.forEach(function(b) { if (b) b.style.display = collapse ? 'none' : ''; });
     _hideToolsMenu();
+    _hideZoomSlider(); // its anchor may just have been hidden
     _stylePeakBtn(); // the menu button only carries the A-curve tint while collapsed
   }
   function _showToolsMenu() {
@@ -4674,8 +4764,7 @@ function initPanel() {
     item(_dragGhost ? 'Ghost On' : 'Ghost Off', ghostBtn, function() { _setDragGhost(!_dragGhost); }, { active: _dragGhost });
     item('Numeric Entry', numBtn, function() { _showNumericPanel(); });
     if (_tbCollapsed) {
-      item('Zoom In',   zoomIn,    function() { applyZoom(0.1); },  { keepOpen: true });
-      item('Zoom Out',  zoomOut,   function() { applyZoom(-0.1); }, { keepOpen: true });
+      item(_zoomLabel(), zoomBtn, function() { _showZoomSlider(menuBtn); }); // the slider opens under the menu button
     }
     menu.style.left = '0px';
     menu.style.top  = '0px';
