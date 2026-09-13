@@ -4668,6 +4668,14 @@ function _openTextFile() {
 }
 
 function _showSettingsModal() {
+  // Sheen like the rest of the panel: a white gradient, brighter at the left, over
+  // each control's own colour (0.045 on rows, 0.06 on buttons, a step more on hover).
+  // The colour goes to backgroundColor and the gradient to backgroundImage: the
+  // background shorthand would drop the sheen.
+  function _tint(el, color, sheen) {
+    el.style.backgroundColor = color;
+    el.style.backgroundImage = sheen ? 'linear-gradient(to right, rgba(255,255,255,' + sheen + '), rgba(255,255,255,0))' : '';
+  }
   var modal = document.createElement('div');
   modal.id = 'settings-modal';
   var vw = document.documentElement.clientWidth  || document.body.clientWidth;
@@ -4689,11 +4697,11 @@ function _showSettingsModal() {
   closeBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 12 12" fill="none"><line x1="2.5" y1="2.5" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="9.5" y1="2.5" x2="2.5" y2="9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
   _attachTooltip(closeBtn, 'Close settings');
   // A 22px square like the row pin/undo buttons, in the panel's red
-  closeBtn.style.cssText = 'display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:3px;flex-shrink:0;cursor:pointer;background:rgba(255,144,144,0.18);color:#ff9090;transition:background 0.12s,color 0.12s;';
+  closeBtn.style.cssText = 'display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:3px;flex-shrink:0;cursor:pointer;background-color:rgba(255,144,144,0.18);background-image:linear-gradient(to right, rgba(255,255,255,0.06), rgba(255,255,255,0));color:#ff9090;transition:background 0.12s,color 0.12s;';
   // The whole banner is the close control: hovering anywhere on it lights the
   // banner and the cross, and a press anywhere on it closes the modal
   function _closeHot(on) {
-    closeBtn.style.background = on ? 'rgba(255,144,144,0.45)' : 'rgba(255,144,144,0.18)';
+    _tint(closeBtn, on ? 'rgba(255,144,144,0.45)' : 'rgba(255,144,144,0.18)', on ? 0.09 : 0.06);
     closeBtn.style.color      = on ? '#ffffff' : '#ff9090';
     header.style.background   = on ? 'rgba(255,255,255,0.05)' : '';
   }
@@ -4785,14 +4793,14 @@ function _showSettingsModal() {
   // Check for updates row
   var updatesRow = document.createElement('div');
   updatesRow.id = '_updates-row';
-  updatesRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(0,0,0,0.4);cursor:pointer;background:rgba(230,184,0,0.08);';
+  updatesRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid rgba(0,0,0,0.4);cursor:pointer;background-color:rgba(230,184,0,0.08);background-image:linear-gradient(to right, rgba(255,255,255,0.045), rgba(255,255,255,0));';
   var updatesLabel = document.createElement('span');
   updatesLabel.id = '_updates-label';
   updatesLabel.style.cssText = 'font-size:14px;flex:1;';
   updatesRow.appendChild(updatesLabel);
   _applyUpdateBtnState(updatesRow, updatesLabel);
-  updatesRow.addEventListener('mouseenter', function() { updatesRow.style.background='rgba(230,184,0,0.15)'; });
-  updatesRow.addEventListener('mouseleave', function() { updatesRow.style.background='rgba(230,184,0,0.08)'; });
+  updatesRow.addEventListener('mouseenter', function() { _tint(updatesRow, 'rgba(230,184,0,0.15)', 0.07); });
+  updatesRow.addEventListener('mouseleave', function() { _tint(updatesRow, 'rgba(230,184,0,0.08)', 0.045); });
   updatesRow.addEventListener('click', function() {
     if (_updateAvailable) {
       modal.remove();
@@ -4816,7 +4824,7 @@ function _showSettingsModal() {
   function _updateNotifCheck() {
     notifCheck.innerHTML = _updateNotifsOn ? _svgCheck : _svgCross;
     notifLabel.textContent = 'Update Notifications ' + (_updateNotifsOn ? 'On' : 'Off');
-    notifRow.style.background = _updateNotifsOn ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)';
+    _tint(notifRow, _updateNotifsOn ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)', 0.045);
   }
   var notifIcon = document.createElement('span');
   notifIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
@@ -4825,8 +4833,8 @@ function _showSettingsModal() {
   notifRow.appendChild(notifIcon);
   notifRow.appendChild(notifLabel);
   notifRow.appendChild(notifCheck);
-  notifRow.addEventListener('mouseenter', function() { notifRow.style.background = _updateNotifsOn ? 'rgba(61,220,132,0.15)' : 'rgba(255,144,144,0.15)'; });
-  notifRow.addEventListener('mouseleave', function() { notifRow.style.background = _updateNotifsOn ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)'; });
+  notifRow.addEventListener('mouseenter', function() { _tint(notifRow, _updateNotifsOn ? 'rgba(61,220,132,0.15)' : 'rgba(255,144,144,0.15)', 0.07); });
+  notifRow.addEventListener('mouseleave', function() { _tint(notifRow, _updateNotifsOn ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)', 0.045); });
   notifRow.addEventListener('click', function() {
     _updateNotifsOn = !_updateNotifsOn;
     localStorage.setItem(_UPDATE_NOTIF_KEY, _updateNotifsOn ? 'on' : 'off');
@@ -4846,7 +4854,7 @@ function _showSettingsModal() {
   function _updateGraphCheck() {
     graphCheck.innerHTML = _graphVisible ? _svgCheck : _svgCross;
     graphLabel.textContent = 'Graph ' + (_graphVisible ? 'On' : 'Off');
-    graphRow.style.background = _graphVisible ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)';
+    _tint(graphRow, _graphVisible ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)', 0.045);
   }
   var graphIcon = document.createElement('span');
   graphIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
@@ -4855,8 +4863,8 @@ function _showSettingsModal() {
   graphRow.appendChild(graphIcon);
   graphRow.appendChild(graphLabel);
   graphRow.appendChild(graphCheck);
-  graphRow.addEventListener('mouseenter', function() { graphRow.style.background = _graphVisible ? 'rgba(61,220,132,0.15)' : 'rgba(255,144,144,0.15)'; });
-  graphRow.addEventListener('mouseleave', function() { graphRow.style.background = _graphVisible ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)'; });
+  graphRow.addEventListener('mouseenter', function() { _tint(graphRow, _graphVisible ? 'rgba(61,220,132,0.15)' : 'rgba(255,144,144,0.15)', 0.07); });
+  graphRow.addEventListener('mouseleave', function() { _tint(graphRow, _graphVisible ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)', 0.045); });
   graphRow.addEventListener('click', function() {
     _setGraphVisible(!_graphVisible);
     _updateGraphCheck();
@@ -4873,7 +4881,7 @@ function _showSettingsModal() {
   function _updateTlCheck() {
     tlCheck.innerHTML = _tlVisible ? _svgCheck : _svgCross;
     tlLabel.textContent = 'Timeline ' + (_tlVisible ? 'On' : 'Off');
-    tlRow.style.background = _tlVisible ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)';
+    _tint(tlRow, _tlVisible ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)', 0.045);
   }
   var tlIcon = document.createElement('span');
   tlIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
@@ -4882,57 +4890,17 @@ function _showSettingsModal() {
   tlRow.appendChild(tlIcon);
   tlRow.appendChild(tlLabel);
   tlRow.appendChild(tlCheck);
-  tlRow.addEventListener('mouseenter', function() { tlRow.style.background = _tlVisible ? 'rgba(61,220,132,0.15)' : 'rgba(255,144,144,0.15)'; });
-  tlRow.addEventListener('mouseleave', function() { tlRow.style.background = _tlVisible ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)'; });
+  tlRow.addEventListener('mouseenter', function() { _tint(tlRow, _tlVisible ? 'rgba(61,220,132,0.15)' : 'rgba(255,144,144,0.15)', 0.07); });
+  tlRow.addEventListener('mouseleave', function() { _tint(tlRow, _tlVisible ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)', 0.045); });
   tlRow.addEventListener('click', function() {
     _setTimelineVisible(!_tlVisible);
     _updateTlCheck();
   });
   rowsCol.appendChild(tlRow);
 
-  // Grid size row
-  var gridRow = document.createElement('div');
-  gridRow.style.cssText = 'display:flex;align-items:center;padding:0 0 0 12px;height:36px;border-bottom:1px solid rgba(0,0,0,0.4);';
-  var gridIcon = document.createElement('span');
-  gridIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
-  gridIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" stroke="#b0b0b0" stroke-width="1.4" rx="1"/><line x1="6" y1="2" x2="6" y2="14" stroke="#b0b0b0" stroke-width="1"/><line x1="10" y1="2" x2="10" y2="14" stroke="#b0b0b0" stroke-width="1"/><line x1="2" y1="6" x2="14" y2="6" stroke="#b0b0b0" stroke-width="1"/><line x1="2" y1="10" x2="14" y2="10" stroke="#b0b0b0" stroke-width="1"/></svg>';
-  var gridLabel = document.createElement('span');
-  gridLabel.style.cssText = 'font-size:14px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d4d4d4;';
-  gridLabel.textContent = 'Grid Spacing';
-  var gridBtns = document.createElement('div');
-  gridBtns.style.cssText = 'display:flex;gap:0;flex-shrink:0;align-self:stretch;';
-  var gridSizes = [4, 8, 16];
-  var gridBtnEls = [];
-  gridSizes.forEach(function(size) {
-    var gb = document.createElement('div');
-    gb.textContent = size + 'x' + size;
-    var isActive = _gridSize === size;
-    gb.style.cssText = 'font-size:12px;padding:0 8px;cursor:pointer;display:flex;align-items:center;justify-content:center;min-width:48px;'
-      + 'color:' + (isActive ? '#3ddc84' : '#666') + ';'
-      + 'background:' + (isActive ? 'rgba(61,220,132,0.08)' : 'transparent') + ';';
-    gb.addEventListener('mouseenter', function() { gb.style.background = _gridSize === size ? 'rgba(61,220,132,0.15)' : 'rgba(255,255,255,0.05)'; });
-    gb.addEventListener('mouseleave', function() { gb.style.background = _gridSize === size ? 'rgba(61,220,132,0.08)' : 'transparent'; });
-    gb.addEventListener('click', function() {
-      _gridSize = size;
-      localStorage.setItem(_GRID_KEY, size);
-      gridBtnEls.forEach(function(el, idx) {
-        var a = gridSizes[idx] === size;
-        el.style.color = a ? '#3ddc84' : '#666';
-        el.style.background = a ? 'rgba(61,220,132,0.08)' : 'transparent';
-      });
-      if (_svgW > 0 && _svgH > 0) updateStaticSVG(_svgW, _svgH);
-    });
-    gridBtnEls.push(gb);
-    gridBtns.appendChild(gb);
-  });
-  gridRow.appendChild(gridIcon);
-  gridRow.appendChild(gridLabel);
-  gridRow.appendChild(gridBtns);
-  rowsCol.appendChild(gridRow);
-
   // Keyframe spacing row (how far apart the baked keyframes are)
   var densRow = document.createElement('div');
-  densRow.style.cssText = 'display:flex;align-items:center;padding:0 0 0 12px;height:36px;border-bottom:1px solid rgba(0,0,0,0.4);';
+  densRow.style.cssText = 'display:flex;align-items:center;padding:0 0 0 12px;height:36px;border-bottom:1px solid rgba(0,0,0,0.4);background-image:linear-gradient(to right, rgba(255,255,255,0.045), rgba(255,255,255,0));';
   _attachTooltip(densRow, 'How far apart the baked keyframes are. Every frame follows the curve exactly; 2 or 4 frames writes fewer keyframes, with straight lines between them');
   var densIcon = document.createElement('span');
   densIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
@@ -4950,16 +4918,17 @@ function _showSettingsModal() {
     var isActive = _bakeDensity === step;
     db.style.cssText = 'font-size:12px;padding:0 8px;cursor:pointer;display:flex;align-items:center;justify-content:center;min-width:48px;'
       + 'color:' + (isActive ? '#3ddc84' : '#666') + ';'
-      + 'background:' + (isActive ? 'rgba(61,220,132,0.08)' : 'transparent') + ';';
-    db.addEventListener('mouseenter', function() { db.style.background = _bakeDensity === step ? 'rgba(61,220,132,0.15)' : 'rgba(255,255,255,0.05)'; });
-    db.addEventListener('mouseleave', function() { db.style.background = _bakeDensity === step ? 'rgba(61,220,132,0.08)' : 'transparent'; });
+      + 'background-color:' + (isActive ? 'rgba(61,220,132,0.08)' : 'transparent') + ';'
+      + (isActive ? 'background-image:linear-gradient(to right, rgba(255,255,255,0.06), rgba(255,255,255,0));' : '');
+    db.addEventListener('mouseenter', function() { _tint(db, _bakeDensity === step ? 'rgba(61,220,132,0.15)' : 'rgba(255,255,255,0.05)', 0.09); });
+    db.addEventListener('mouseleave', function() { _tint(db, _bakeDensity === step ? 'rgba(61,220,132,0.08)' : 'transparent', _bakeDensity === step ? 0.06 : 0); });
     db.addEventListener('click', function() {
       _bakeDensity = step;
       localStorage.setItem(_DENSITY_KEY, step);
       densBtnEls.forEach(function(el, idx) {
         var a = densSteps[idx] === step;
         el.style.color = a ? '#3ddc84' : '#666';
-        el.style.background = a ? 'rgba(61,220,132,0.08)' : 'transparent';
+        _tint(el, a ? 'rgba(61,220,132,0.08)' : 'transparent', a ? 0.06 : 0);
       });
     });
     densBtnEls.push(db);
@@ -4969,46 +4938,6 @@ function _showSettingsModal() {
   densRow.appendChild(densLabel);
   densRow.appendChild(densBtns);
   rowsCol.appendChild(densRow);
-
-  // Preset layout row
-  var layoutRow = document.createElement('div');
-  layoutRow.style.cssText = 'display:flex;align-items:center;padding:0 0 0 12px;height:36px;border-bottom:1px solid rgba(0,0,0,0.4);';
-  var layoutIcon = document.createElement('span');
-  layoutIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
-  layoutIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><line x1="2" y1="4" x2="14" y2="4" stroke="#b0b0b0" stroke-width="1.4" stroke-linecap="round"/><line x1="2" y1="8" x2="14" y2="8" stroke="#b0b0b0" stroke-width="1.4" stroke-linecap="round"/><line x1="2" y1="12" x2="14" y2="12" stroke="#b0b0b0" stroke-width="1.4" stroke-linecap="round"/></svg>';
-  var layoutLabel = document.createElement('span');
-  layoutLabel.style.cssText = 'font-size:14px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d4d4d4;';
-  layoutLabel.textContent = 'Presets View';
-  var layoutBtns = document.createElement('div');
-  layoutBtns.style.cssText = 'display:flex;gap:0;flex-shrink:0;align-self:stretch;';
-  var layoutOptions = ['list', 'grid'];
-  var layoutBtnEls = [];
-  layoutOptions.forEach(function(opt) {
-    var lb = document.createElement('div');
-    lb.textContent = opt.charAt(0).toUpperCase() + opt.slice(1);
-    var isActive = _presetLayout === opt;
-    lb.style.cssText = 'font-size:12px;padding:0 8px;cursor:pointer;display:flex;align-items:center;justify-content:center;min-width:48px;'
-      + 'color:' + (isActive ? '#3ddc84' : '#666') + ';'
-      + 'background:' + (isActive ? 'rgba(61,220,132,0.08)' : 'transparent') + ';';
-    lb.addEventListener('mouseenter', function() { lb.style.background = _presetLayout === opt ? 'rgba(61,220,132,0.15)' : 'rgba(255,255,255,0.05)'; });
-    lb.addEventListener('mouseleave', function() { lb.style.background = _presetLayout === opt ? 'rgba(61,220,132,0.08)' : 'transparent'; });
-    lb.addEventListener('click', function() {
-      _presetLayout = opt;
-      localStorage.setItem(_LAYOUT_KEY, opt);
-      layoutBtnEls.forEach(function(el, idx) {
-        var a = layoutOptions[idx] === opt;
-        el.style.color = a ? '#3ddc84' : '#666';
-        el.style.background = a ? 'rgba(61,220,132,0.08)' : 'transparent';
-      });
-      _applyPresetLayout(true);
-    });
-    layoutBtnEls.push(lb);
-    layoutBtns.appendChild(lb);
-  });
-  layoutRow.appendChild(layoutIcon);
-  layoutRow.appendChild(layoutLabel);
-  layoutRow.appendChild(layoutBtns);
-  rowsCol.appendChild(layoutRow);
 
   content.appendChild(rowsCol);
   content.appendChild(colorSection);
@@ -5035,13 +4964,13 @@ function _showSettingsModal() {
   footerLeft.appendChild(ghLink);
 
   var resetRow = document.createElement('div');
-  resetRow.style.cssText = 'display:flex;align-items:center;padding:5px 10px;cursor:pointer;color:#ff9090;font-size:13px;background:rgba(255,144,144,0.08);flex-shrink:0;';
+  resetRow.style.cssText = 'display:flex;align-items:center;padding:5px 10px;cursor:pointer;color:#ff9090;font-size:13px;background-color:rgba(255,144,144,0.08);background-image:linear-gradient(to right, rgba(255,255,255,0.06), rgba(255,255,255,0));flex-shrink:0;';
   var resetLabel = document.createElement('span');
   resetLabel.textContent = 'Reset All Settings';
   _attachTooltip(resetRow, 'Restore defaults and remove all presets');
   resetRow.appendChild(resetLabel);
-  resetRow.addEventListener('mouseenter', function() { resetRow.style.background='rgba(255,144,144,0.15)'; });
-  resetRow.addEventListener('mouseleave', function() { resetRow.style.background='rgba(255,144,144,0.08)'; });
+  resetRow.addEventListener('mouseenter', function() { _tint(resetRow, 'rgba(255,144,144,0.15)', 0.09); });
+  resetRow.addEventListener('mouseleave', function() { _tint(resetRow, 'rgba(255,144,144,0.08)', 0.06); });
   resetRow.addEventListener('click', function() {
     modal.remove();
     _confirmReset();
@@ -5049,13 +4978,13 @@ function _showSettingsModal() {
 
   // Report an Issue: opens the GitHub issues page in the browser
   var issueRow = document.createElement('div');
-  issueRow.style.cssText = 'display:flex;align-items:center;padding:5px 10px;margin-right:8px;cursor:pointer;color:#4a9eff;font-size:13px;background:rgba(74,158,255,0.08);flex-shrink:0;';
+  issueRow.style.cssText = 'display:flex;align-items:center;padding:5px 10px;margin-right:8px;cursor:pointer;color:#4a9eff;font-size:13px;background-color:rgba(74,158,255,0.08);background-image:linear-gradient(to right, rgba(255,255,255,0.06), rgba(255,255,255,0));flex-shrink:0;';
   var issueLabel = document.createElement('span');
   issueLabel.textContent = 'Report an Issue';
   _attachTooltip(issueRow, 'Open the OpenCurve issues page on GitHub');
   issueRow.appendChild(issueLabel);
-  issueRow.addEventListener('mouseenter', function() { issueRow.style.background='rgba(74,158,255,0.15)'; });
-  issueRow.addEventListener('mouseleave', function() { issueRow.style.background='rgba(74,158,255,0.08)'; });
+  issueRow.addEventListener('mouseenter', function() { _tint(issueRow, 'rgba(74,158,255,0.15)', 0.09); });
+  issueRow.addEventListener('mouseleave', function() { _tint(issueRow, 'rgba(74,158,255,0.08)', 0.06); });
   issueRow.addEventListener('click', function() {
     var url = 'https://github.com/fayewave/OpenCurve/issues';
     if (_bridge && _bridge.openExternal) _bridge.openExternal(url); else window.open(url);
