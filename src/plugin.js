@@ -3281,7 +3281,7 @@ function _tlUpdateFade() {
 // UXP only: the second lines' fades come out lighter here than the same colours
 // drawn by CEP (the two editions side by side, 2026-09-13), so the top of each
 // line's gradient is multiplied by this to look the same. Tune by eye.
-var _TL_SEC_UXP_GAIN = 1.6;
+var _TL_SEC_UXP_GAIN = 2.0;
 function _tlSecAlpha(col, k) { // col with its alpha multiplied by k (capped at 1)
   return col.replace(/,\s*([0-9.]+)\)$/, function(m0, a) { return ',' + Math.min(1, parseFloat(a) * k).toFixed(3) + ')'; });
 }
