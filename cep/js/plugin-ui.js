@@ -1606,19 +1606,19 @@ function _tlSecondXs(g, origin) {
   return xs;
 }
 
-// Groups neighbouring lanes whose second lines share a colour and calls
-// draw(y, height, colour, xs) once per group: the group's top, its height less
-// the last lane's 1px divider row, and the lanes' _TL_COLORS sec tint
-function _tlSecondRuns(params, sel, valid, baked, laneH, y0, draw, xs) {
+// Calls draw(y, height, colour, state, xs) once per lane: the lane's top, its
+// height less its 1px divider row, its _TL_COLORS sec tint and state key. Every
+// lane draws its own segments because each one fades out towards the bottom of
+// its lane (full tint at the top edge, transparent at the bottom).
+function _tlSecondRows(params, sel, valid, baked, laneH, y0, draw, xs) {
   if (!xs.length) return;
-  var i = 0;
-  while (i < params.length) {
-    var col = _TL_COLORS[_tlLaneState(params[i].key, sel, valid, baked)].sec, j = i + 1;
-    while (j < params.length && _TL_COLORS[_tlLaneState(params[j].key, sel, valid, baked)].sec === col) j++;
-    draw(y0 + i * laneH, (j - i) * laneH - 1, col, xs);
-    i = j;
-  }
+  params.forEach(function(p, i) {
+    var st = _tlLaneState(p.key, sel, valid, baked);
+    draw(y0 + i * laneH, laneH - 1, _TL_COLORS[st].sec, st, xs);
+  });
 }
+// The same rgba colour at zero alpha, so a fade keeps its hue all the way down
+function _tlTransparent(col) { return col.replace(/,\s*[0-9.]+\)$/, ',0)'); }
 
 // Every lane is one property row tall, so the lanes line up with the rows beside them
 function _tlLaneH(n) { return _TL_ROW_H; }
@@ -1733,11 +1733,21 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
   defs.appendChild(sheen);
   els.svg.appendChild(defs);
   // Second lines (_tlSecondXs), drawn before the lanes so the dividers paint over them.
-  // Tinted per lane (_TL_COLORS sec); neighbouring lanes in the same state share one
-  // segment per line, ending above the run's last divider
-  _tlSecondRuns(params, sel, valid, baked, laneH, g.y0, function(y, h, col, xs) {
+  // Tinted per lane (_TL_COLORS sec) and faded top to bottom within each lane: one
+  // vertical SVG gradient per lane state (objectBoundingBox, so it maps onto each
+  // segment), full tint at the lane's top edge, transparent at its bottom.
+  var secFill = {};
+  _tlSecondRows(params, sel, valid, baked, laneH, g.y0, function(y, h, col, st, xs) {
+    if (!secFill[st]) {
+      var m = col.match(/rgba\((\d+),(\d+),(\d+),([0-9.]+)\)/), rgb = 'rgb(' + m[1] + ',' + m[2] + ',' + m[3] + ')';
+      var lg = _tlMk('linearGradient', { id: 'tl-sec-' + st, x1: 0, y1: 0, x2: 0, y2: 1 });
+      lg.appendChild(_tlMk('stop', { offset: 0, 'stop-color': rgb, 'stop-opacity': m[4] }));
+      lg.appendChild(_tlMk('stop', { offset: 1, 'stop-color': rgb, 'stop-opacity': 0 }));
+      defs.appendChild(lg);
+      secFill[st] = 'url(#tl-sec-' + st + ')';
+    }
     xs.forEach(function(x) {
-      els.svg.appendChild(_tlMk('rect', { x: x, y: y, width: 1, height: h, fill: col }));
+      els.svg.appendChild(_tlMk('rect', { x: x, y: y, width: 1, height: h, fill: secFill[st] }));
     });
   }, _tlSecondXs(g, tl.clipStart));
   params.forEach(function(p, i) {

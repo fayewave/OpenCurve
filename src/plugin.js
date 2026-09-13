@@ -3174,19 +3174,19 @@ function _tlSecondXs(g, origin) {
   return xs;
 }
 
-// Groups neighbouring lanes whose second lines share a colour and calls
-// draw(y, height, colour, xs) once per group: the group's top, its height less
-// the last lane's 1px divider row, and the lanes' _TL_COLORS sec tint
-function _tlSecondRuns(params, sel, valid, baked, laneH, y0, draw, xs) {
+// Calls draw(y, height, colour, state, xs) once per lane: the lane's top, its
+// height less its 1px divider row, its _TL_COLORS sec tint and state key. Every
+// lane draws its own segments because each one fades out towards the bottom of
+// its lane (full tint at the top edge, transparent at the bottom).
+function _tlSecondRows(params, sel, valid, baked, laneH, y0, draw, xs) {
   if (!xs.length) return;
-  var i = 0;
-  while (i < params.length) {
-    var col = _TL_COLORS[_tlLaneState(params[i].key, sel, valid, baked)].sec, j = i + 1;
-    while (j < params.length && _TL_COLORS[_tlLaneState(params[j].key, sel, valid, baked)].sec === col) j++;
-    draw(y0 + i * laneH, (j - i) * laneH - 1, col, xs);
-    i = j;
-  }
+  params.forEach(function(p, i) {
+    var st = _tlLaneState(p.key, sel, valid, baked);
+    draw(y0 + i * laneH, laneH - 1, _TL_COLORS[st].sec, st, xs);
+  });
 }
+// The same rgba colour at zero alpha, so a fade keeps its hue all the way down
+function _tlTransparent(col) { return col.replace(/,\s*[0-9.]+\)$/, ',0)'); }
 
 // Every lane is one property row tall, so the lanes line up with the rows beside them
 function _tlLaneH(n) { return _TL_ROW_H; }
@@ -3302,15 +3302,16 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
   // Second lines (_tlSecondXs): 1px HTML divs under the SVG like the lane dividers,
   // since HTML edges snap to device pixels where thin SVG lines came out soft.
   // Added before the lanes, so the dividers paint over them and stay unbroken.
-  // Tinted per lane (_TL_COLORS sec); neighbouring lanes in the same state share
-  // one segment per line, ending above the run's last divider, so they span the
-  // lanes only and the element count stays low.
-  _tlSecondRuns(params, sel, valid, baked, laneH, g.y0, function(y, h, col, xs) {
+  // Tinted per lane (_TL_COLORS sec) and faded top to bottom within each lane: a CSS
+  // gradient on the div (UXP draws no SVG gradients), full tint at the lane's top
+  // edge, transparent at its bottom, stopping above the divider row.
+  _tlSecondRows(params, sel, valid, baked, laneH, g.y0, function(y, h, col, st, xs) {
     if (!els.wrap) return;
+    var fade = 'linear-gradient(to bottom, ' + col + ', ' + _tlTransparent(col) + ')';
     xs.forEach(function(x) {
       var sl = document.createElement('div');
       sl.className = 'tl-lane-div'; // cleared with the dividers on the next rebuild
-      sl.style.cssText = 'position:absolute;top:' + y + 'px;left:' + x + 'px;width:1px;height:' + h + 'px;background:' + col + ';pointer-events:none;';
+      sl.style.cssText = 'position:absolute;top:' + y + 'px;left:' + x + 'px;width:1px;height:' + h + 'px;background-image:' + fade + ';pointer-events:none;';
       els.wrap.insertBefore(sl, els.svg);
     });
   }, _tlSecondXs(g, tl.clipStart));
