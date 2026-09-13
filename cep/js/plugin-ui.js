@@ -754,16 +754,26 @@ var Y_CLAMP_MAX         =  2.0;
 var PAD = 16, HANDLE_R = 5;
 var _zoom = 1.0;
 
+// The 0..1 range box is always square (1:1), the largest that fits inside the
+// pad, centred in the SVG; the rest of the SVG is the outer area (overshoot
+// handles, zoomed-out content). It used to stretch to the SVG's own aspect,
+// which squashed every curve in a wide or tall panel.
+function _rangeBox(W, H) {
+  var s = Math.max(1, Math.min(W, H) - 2 * PAD);
+  return { x: (W - s) / 2, y: (H - s) / 2, s: s };
+}
 function normToSVG(nx, ny, W, H) {
+  var b = _rangeBox(W, H);
   return {
-    cx: PAD + nx * (W - 2*PAD),
-    cy: PAD + (1 - ny) * (H - 2*PAD),
+    cx: b.x + nx * b.s,
+    cy: b.y + (1 - ny) * b.s,
   };
 }
 function svgToNorm(cx, cy, W, H) {
+  var b = _rangeBox(W, H);
   return {
-    nx: (cx - PAD) / (W - 2*PAD),
-    ny: 1 - (cy - PAD) / (H - 2*PAD),
+    nx: (cx - b.x) / b.s,
+    ny: 1 - (cy - b.y) / b.s,
   };
 }
 
