@@ -6186,7 +6186,7 @@ function _applyPresetLayout(force) {
   // (the v1.2.0 "smoother scrolling" bug, back when the toolbar button arrived)
   _styleLayoutBtn();
   var itemW = multi ? (100/cols).toFixed(3) + '%' : '100%';
-  var thumbSz = isGrid ? (cols >= 3 ? 30 : 32) : 28;
+  var thumbSz = isGrid ? (cols >= 3 ? 40 : 42) : 28;
 
   // List container
   if (multi) {
@@ -6219,7 +6219,7 @@ function _applyPresetLayout(force) {
       btn.style.alignSelf = 'flex-start';
       btn.style.overflow = 'visible';
       btn.style.whiteSpace = 'normal';
-      btn.style.minHeight = (cols >= 3 ? '58px' : '66px');
+      btn.style.minHeight = (thumbSz + 34) + 'px'; // 8px padding + thumbnail + 4px gap + a line of name + 2px padding
     } else if (multi) {
       // Two-column list: ordinary rows, half width each, so the whole
       // button set (width, wrap) is inline like the grid (UXP relayout rule).
@@ -6278,15 +6278,20 @@ function _applyPresetLayout(force) {
   });
 
   // Thumbnails
+  // The thumbnail SVG scales its 28-unit viewBox, so the curve's stroke is set in
+  // those units: about 2.25px wide at the grid sizes instead of thickening with them
   list.querySelectorAll('.preset-thumb').forEach(function(t) {
+    var tp = t.querySelector ? t.querySelector('path') : null; // the update tile's icon is a div
     if (isGrid) {
       t.setAttribute('width', String(thumbSz));
       t.setAttribute('height', String(thumbSz));
       t.style.marginRight = '0';
+      if (tp) tp.setAttribute('stroke-width', (2.25 * 28 / thumbSz).toFixed(2));
     } else {
       t.setAttribute('width', '28');
       t.setAttribute('height', '28');
       t.style.marginRight = '';
+      if (tp) tp.setAttribute('stroke-width', '2');
     }
   });
 
