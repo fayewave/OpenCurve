@@ -1714,8 +1714,8 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
         fill: sp.kind === 'bake' ? 'rgba(76,232,144,0.30)' : 'rgba(255,255,255,0.14)' }));
     });
     if (pair && isValid) {
-      // A selected row's pair is the full bar; an unselected row's is a thin line
-      var pairH = isSel ? barH : Math.max(2, Math.round(barH * 0.3));
+      // A selected row's pair is the full bar (14px); an unselected row's is 8px
+      var pairH = isSel ? barH : Math.min(barH, 8);
       var px0 = _tlX(pair.a, g), px1 = _tlX(pair.b, g);
       els.svg.appendChild(_tlMk('rect', { x: px0, y: cy - pairH / 2, width: Math.max(1, px1 - px0), height: pairH, rx: 1,
         fill: c.bar }));
