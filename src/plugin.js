@@ -4719,6 +4719,9 @@ function initPanel() {
     _ptbCollapsed = collapse;
     // inline display: UXP ignores class-driven display changes
     _PTB_IDS.forEach(function(id) { var b = document.getElementById(id); if (b) b.style.display = collapse ? 'none' : ''; });
+    // #preset-layout carries the margin that pushes the right group away; while it
+    // is hidden the menu button takes that job (inline, UXP ignores class changes)
+    pMenuBtn.style.marginRight = collapse ? 'auto' : '';
     _hidePresetMenu();
   }
   function _showPresetMenu() {
