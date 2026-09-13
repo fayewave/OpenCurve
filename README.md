@@ -47,28 +47,27 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 
 **Curves**
 - Multi-point curves and A-curve (speed graph) mode
-- Overshoot, anticipation and bounce eases
 - Flip, invert and numeric entry
-- Square graph, zoom, full-screen mode and a ghost of the curve while you drag
+- Square graph, full-screen mode and a ghost of the curve while you drag
 
 **Workflow**
 - New mini timeline with keyframe lanes, click-to-jump and live value readout
-- Per-property undo, plus an Undo button next to Go
+- Per-property undo, and the Undo button next to Go now in the `.ccx` edition too
 - Baked curves are remembered and can be reloaded, even after restarting Premiere
 - Playhead jump buttons that step through every keyframed area on a clip
 - Playback preview and a full set of keyboard shortcuts
 - Choose keyframe spacing (every 1, 2 or 4 frames)
 
 **Presets**
-- Starter pack of 16 classic eases
+- Starter pack of 17 eases, including Back and Bounce
 - Export and import preset files
 - Hover a preset to preview its motion
 
 **Interface & performance**
 - Redesigned panel with toolbars and a resizable graph, presets and timeline
-- Keyframe detection reacts instantly when the playhead moves
-- Smoother scrolling and faster polling in both editions
 - Show or hide the graph and timeline to fit any panel size
+- Faster, more responsive keyframe detection
+- Smoother scrolling in the `.ccx` edition
 
 ---
 
