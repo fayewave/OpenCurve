@@ -1580,7 +1580,7 @@ function _tlSec(x, g) { return g.a + (x - _TL_PAD_X) / (g.W - 2 * _TL_PAD_X) * (
 // stay on the seconds at any zoom. Returns those x columns.
 var _TL_SEC_GAP   = 10;
 var _TL_SEC_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
-var _TL_SEC_COLOR = 'rgba(255,255,255,0.07)';
+var _TL_SEC_COLOR = 'rgba(255,255,255,0.045)';
 function _tlSecondXs(g, origin) {
   var span = g.b - g.a, inner = g.W - 2 * _TL_PAD_X;
   if (!(span > 0) || !(inner > 0) || typeof origin !== 'number') return [];
@@ -1710,9 +1710,10 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
   var defs = _tlMk('defs', {});
   defs.appendChild(sheen);
   els.svg.appendChild(defs);
-  // Second lines (_tlSecondXs), drawn before the lanes so the dividers paint over them
+  // Second lines (_tlSecondXs), drawn before the lanes so the dividers paint over them;
+  // they span the lanes only, not the empty space below the last one
   _tlSecondXs(g, tl.clipStart).forEach(function(x) {
-    els.svg.appendChild(_tlMk('rect', { x: x, y: 0, width: 1, height: H, fill: _TL_SEC_COLOR }));
+    els.svg.appendChild(_tlMk('rect', { x: x, y: 0, width: 1, height: params.length * laneH, fill: _TL_SEC_COLOR }));
   });
   params.forEach(function(p, i) {
     var top = g.y0 + i * laneH, cy = top + laneH / 2;

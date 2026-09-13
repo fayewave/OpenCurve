@@ -3148,7 +3148,7 @@ function _tlSec(x, g) { return g.a + (x - _TL_PAD_X) / (g.W - 2 * _TL_PAD_X) * (
 // stay on the seconds at any zoom. Returns those x columns.
 var _TL_SEC_GAP   = 10;
 var _TL_SEC_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
-var _TL_SEC_COLOR = 'rgba(255,255,255,0.07)';
+var _TL_SEC_COLOR = 'rgba(255,255,255,0.045)';
 function _tlSecondXs(g, origin) {
   var span = g.b - g.a, inner = g.W - 2 * _TL_PAD_X;
   if (!(span > 0) || !(inner > 0) || typeof origin !== 'number') return [];
@@ -3280,10 +3280,11 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
   // Second lines (_tlSecondXs): 1px HTML divs under the SVG like the lane dividers,
   // since HTML edges snap to device pixels where thin SVG lines came out soft.
   // Added before the lanes, so the dividers paint over them and stay unbroken.
+  // They span the lanes only, not the empty space below the last one.
   if (els.wrap) _tlSecondXs(g, tl.clipStart).forEach(function(x) {
     var sl = document.createElement('div');
     sl.className = 'tl-lane-div'; // cleared with the dividers on the next rebuild
-    sl.style.cssText = 'position:absolute;top:0;left:' + x + 'px;width:1px;height:' + H + 'px;background:' + _TL_SEC_COLOR + ';pointer-events:none;';
+    sl.style.cssText = 'position:absolute;top:0;left:' + x + 'px;width:1px;height:' + (params.length * laneH) + 'px;background:' + _TL_SEC_COLOR + ';pointer-events:none;';
     els.wrap.insertBefore(sl, els.svg);
   });
   params.forEach(function(p, i) {
