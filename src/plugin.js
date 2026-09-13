@@ -3148,7 +3148,7 @@ function _tlSec(x, g) { return g.a + (x - _TL_PAD_X) / (g.W - 2 * _TL_PAD_X) * (
 // stay on the seconds at any zoom. Returns those x columns.
 var _TL_SEC_GAP   = 10;
 var _TL_SEC_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
-var _TL_SEC_COLOR = 'rgba(255,255,255,0.045)';
+var _TL_SEC_COLOR = 'rgba(255,255,255,0.03)';
 function _tlSecondXs(g, origin) {
   var span = g.b - g.a, inner = g.W - 2 * _TL_PAD_X;
   if (!(span > 0) || !(inner > 0) || typeof origin !== 'number') return [];
