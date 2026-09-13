@@ -20,26 +20,55 @@ A free bezier curve editor plugin to add custom easing to your keyframes in Adob
 ### How it works
 Place your playhead between 2 keyframes, select a property (position, opacity, scale, etc.), and apply your curve. OpenCurve writes the bezier handles directly to your keyframes.
 
-![OpenCurve how it works](img/opencurve_gif3.gif)
-
 ---
 
 ### Features
-- **Works anywhere** — Use on clips, nests, the Transform effect, Adjustment Layers
-- **Auto-detects keyframes** — finds keyframes on clips at the playhead without requiring you to select them first
-- **Presets** — Save any curve as a named preset and share them easily
-- **Snap to grid** — Hold shift to snap the bezier handles to the grid
-- **Flip and invert** — One click turns an ease-in into the matching ease-out, or swaps time and value for the inverse ease
-- **Load a baked curve back** — Baked properties remember their curve, even after reopening the project, so you can pick it up again and tweak it
+- **Works anywhere** — Use on clips, nests, graphics, the Transform effect and Adjustment Layers
+- **Auto-detects keyframes** — Finds keyframes on clips at the playhead without requiring you to select them first
+- **Multi-point curves** — Add points to build complex motion in a single ease, with smooth or broken handles
+- **A-curve mode** — Shape the ease as a speed graph: drag the peak to where the motion is fastest
+- **Overshoot and bounce** — Handles can leave the 0–1 box, so anticipation, overshoot and bounce eases just work
+- **Flip and invert** — One click turns an ease-in into an ease-out, or into its inverse
+- **Numeric entry** — Type exact handle values, or paste a `cubic-bezier()`
+- **Presets** — Save, rename and reorder your curves, start from a built-in pack (Ease, Cubic, Quint, Expo, Back, Bounce) and export/import them to share
+- **Mini timeline** — See every keyframed property at a glance, click to jump, hover to read values
+- **Per-property undo** — Undo a single property's ease, or load its baked curve back onto the graph, even after reopening the project
+- **Preview** — Press P to play the playhead through the eased keyframes
 - **Keyframe spacing** — Bake a keyframe every frame for an exact match, or every 2 or 4 frames for a lighter timeline
-- **Starter presets** — Ease, Cubic, Quint, Expo, Back and Bounce come ready to use, and presets export/import as a file so a team can share a pack
-- **Overshoot and bounce** — Handles can leave the 0–1 box, so anticipation, overshoot and bounce eases bake like any other
-- **Numeric entry** — Type the handle coordinates, or paste a `cubic-bezier()` value, straight into the curve
-- **Keyboard** — Enter presses Go, 1–9 pick presets, arrows nudge a handle, F/I flip and invert, P previews the pair, and Space / J K L play and shuttle without leaving the panel
-- **Preview** — Press P to run the playhead through the eased pair; hover the mini timeline to read a property's value at any frame
+- **Keyboard shortcuts** — Enter to apply, 1–9 for presets, arrows to nudge, Space / J K L for playback, and more
+- **Snap to grid** — Hold Shift to snap handles to the grid
 - **Undo and redo** — Supports Premiere's history system for full undo/redo support (`.ccx` version only)
-- **Customization** — List/grid view, change the grid size, and custom themes
+- **Customization** — Themes, grid size, list/grid presets, resizable layout and a full-screen graph
 - **Free forever** — No bloat, no logins. Made by an actual video editor for the editing community
+
+---
+
+### What's new in 2.0
+
+**Curves**
+- Multi-point curves and A-curve (speed graph) mode
+- Overshoot, anticipation and bounce eases
+- Flip, invert and numeric entry
+- Square graph, zoom, full-screen mode and a ghost of the curve while you drag
+
+**Workflow**
+- New mini timeline with keyframe lanes, click-to-jump and live value readout
+- Per-property undo, plus an Undo button next to Go
+- Baked curves are remembered and can be reloaded, even after restarting Premiere
+- Playhead jump buttons that step through every keyframed area on a clip
+- Playback preview and a full set of keyboard shortcuts
+- Choose keyframe spacing (every 1, 2 or 4 frames)
+
+**Presets**
+- Starter pack of 16 classic eases
+- Export and import preset files
+- Hover a preset to preview its motion
+
+**Interface & performance**
+- Redesigned panel with toolbars and a resizable graph, presets and timeline
+- Keyframe detection reacts instantly when the playhead moves
+- Smoother scrolling and faster polling in both editions
+- Show or hide the graph and timeline to fit any panel size
 
 ---
 
