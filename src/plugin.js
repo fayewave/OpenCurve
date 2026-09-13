@@ -3249,7 +3249,7 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
   if (!hasLanes) { _tlHighlightLane(null); _tlRowHover(null); _tlShowReadout(null); return; }
   var tl = s.tl, fps = tl.fps || 25;
   var d    = Math.max(3, Math.min(9, laneH - 3)); // diamond size
-  var barH = Math.max(2, Math.min(14, laneH - 4));
+  var barH = Math.max(2, Math.min(12, laneH - 4)); // bake, run and selected-pair bars
   var sel  = s.selectedParamKeys || [], valid = s.validParamKeys || [], baked = s.bakedParamKeys || [];
   params.forEach(function(p, i) {
     var top = g.y0 + i * laneH, cy = top + laneH / 2;
@@ -3291,8 +3291,8 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
         fill: sp.kind === 'bake' ? 'rgba(76,232,144,0.30)' : 'rgba(255,255,255,0.14)' }));
     });
     if (pair && isValid) {
-      // The pair bar is 12px on a selected row and 8px on an unselected one (bake and run bars use the full barH)
-      var pairH = Math.min(barH, isSel ? 12 : 8);
+      // The pair bar is the full barH (12px) on a selected row and 8px on an unselected one
+      var pairH = isSel ? barH : Math.min(barH, 8);
       var px0 = _tlX(pair.a, g), px1 = _tlX(pair.b, g);
       els.svg.appendChild(_tlMk('rect', { x: px0, y: cy - pairH / 2, width: Math.max(1, px1 - px0), height: pairH, rx: 1,
         fill: c.bar }));
