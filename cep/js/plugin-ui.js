@@ -2646,11 +2646,12 @@ function initPanel() {
   // air so they never touch before collapsing.
   var toolbar  = document.getElementById('graph-toolbar');
   var menuBtn  = document.getElementById('graph-tools-menu');
-  // The menu button is always shown: Ghost and Numeric Entry live only in its
-  // dropdown (their toolbar buttons stay in the HTML, hidden, as icon sources and
-  // for _setDragGhost). The other tools join the dropdown once the bar is narrow.
-  var _tbTools = [peakBtn, addPtBtn, flipBtn, invertBtn, zoomOut, zoomIn];
-  var _TB_NEED = (5 * 26 + 4 * 5) + (3 * 26 + 2 * 5) + 10 + 8;
+  // The menu button is always shown: Flip, Invert, Ghost and Numeric Entry live
+  // only in its dropdown (their toolbar buttons stay in the HTML, hidden, as icon
+  // sources and for _setDragGhost). The other tools join the dropdown once the
+  // bar is narrow.
+  var _tbTools = [peakBtn, addPtBtn, zoomOut, zoomIn];
+  var _TB_NEED = (3 * 26 + 2 * 5) + (3 * 26 + 2 * 5) + 10 + 8;
   var _tbCollapsed = null;
   var _tbDismiss   = null;
   function _hideToolsMenu() {
@@ -2708,9 +2709,9 @@ function initPanel() {
     if (_tbCollapsed) {
       item(_peakMode ? 'A-curve Mode: On' : 'A-curve Mode', peakBtn, function() { _setPeakMode(!_peakMode); }, { active: _peakMode });
       item('Add Point', addPtBtn, function() { if (_peakMode) _setPeakMode(false); _addPoint(); });
-      item('Flip',      flipBtn,   function() { _applyCurveOp(_flipCurve); });
-      item('Invert',    invertBtn, function() { _applyCurveOp(_invertCurve); });
     }
+    item('Flip',      flipBtn,   function() { _applyCurveOp(_flipCurve); });
+    item('Invert',    invertBtn, function() { _applyCurveOp(_invertCurve); });
     item(_dragGhost ? 'Ghost On' : 'Ghost Off', ghostBtn, function() { _setDragGhost(!_dragGhost); }, { active: _dragGhost });
     item('Numeric Entry', numBtn, function() { _showNumericPanel(); });
     if (_tbCollapsed) {
