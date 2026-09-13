@@ -3267,12 +3267,12 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
       dv.className = 'tl-lane-div';
       dv.style.cssText = 'position:absolute;left:0;right:0;top:' + (top + laneH - 1) + 'px;height:1px;background:#080808;pointer-events:none;';
       els.wrap.insertBefore(dv, els.svg); // under the SVG, so the playhead line paints over it
-      // Sheen like the property rows': brighter at the top of the lane, fading down
+      // Sheen like the property rows': brighter at the left of the lane, fading right
       // into its tint. A CSS gradient on a div under the translucent lane rect, since
       // UXP draws no SVG gradients; same class as the divider so a rebuild clears it
       var sh = document.createElement('div');
       sh.className = 'tl-lane-div';
-      sh.style.cssText = 'position:absolute;left:0;right:0;top:' + top + 'px;height:' + (laneH - 1) + 'px;background-image:linear-gradient(to bottom, rgba(255,255,255,0.045), rgba(255,255,255,0));pointer-events:none;';
+      sh.style.cssText = 'position:absolute;left:0;right:0;top:' + top + 'px;height:' + (laneH - 1) + 'px;background-image:linear-gradient(to right, rgba(255,255,255,0.045), rgba(255,255,255,0));pointer-events:none;';
       els.wrap.insertBefore(sh, els.svg);
     }
     var kf = (p.tlKf || []).slice().sort(function(x, y){ return x - y; });

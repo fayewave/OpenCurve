@@ -306,7 +306,7 @@ html, body {
 }
 
 /* Row lit up because its lane in the timeline is hovered (same look as :hover) */
-.prop-btn.tl-hover                { background-color: rgba(255,255,255,0.10); background-image: linear-gradient(to bottom, rgba(255,255,255,0.07), rgba(255,255,255,0)); color: #ffffff; }
+.prop-btn.tl-hover                { background-color: rgba(255,255,255,0.10); background-image: linear-gradient(to right, rgba(255,255,255,0.07), rgba(255,255,255,0)); color: #ffffff; }
 .prop-btn.active.tl-hover         { background-color: rgba(74,158,255,0.26);  color: #8fd0ff; }
 .prop-btn.active.pending.tl-hover { background-color: rgba(240,160,48,0.22);  color: #f7b95a; }
 .prop-btn.baked.tl-hover          { background-color: rgba(61,220,132,0.25);  color: #6cf0a6; }
@@ -345,7 +345,7 @@ html, body {
   margin-left: 5px;
   border-radius: 3px;
   background-color: rgba(255,255,255,0.08);
-  background-image: linear-gradient(to bottom, rgba(255,255,255,0.06), rgba(255,255,255,0));
+  background-image: linear-gradient(to right, rgba(255,255,255,0.06), rgba(255,255,255,0));
   color: #d4d4d4;
   /* no resting opacity: UXP ignores it, so with one the CEP build looks dimmer than the CCX */
   cursor: pointer;
@@ -386,14 +386,14 @@ html, body {
 
 .tool-btn:hover {
   background-color: rgba(255,255,255,0.16);
-  background-image: linear-gradient(to bottom, rgba(255,255,255,0.09), rgba(255,255,255,0));
+  background-image: linear-gradient(to right, rgba(255,255,255,0.09), rgba(255,255,255,0));
   color: #ffffff;
   opacity: 1;
 }
 
 .tool-btn:active {
   background-color: rgba(255,255,255,0.26);
-  background-image: linear-gradient(to bottom, rgba(255,255,255,0.09), rgba(255,255,255,0));
+  background-image: linear-gradient(to right, rgba(255,255,255,0.09), rgba(255,255,255,0));
   color: #ffffff;
   opacity: 1;
 }
@@ -448,17 +448,17 @@ html, body {
 }
 
 
-/* Each state's fill gets a white overlay that fades out downwards, so the top
-   of a tile is a little brighter than its colour. background-color is set
+/* Each state's fill gets a white overlay that fades out to the right, so the
+   left of a tile is a little brighter than its colour. background-color is set
    separately so a host that drops the gradient still shows the plain fill. */
 .preset-btn {
   background-color: transparent;
-  background-image: linear-gradient(to bottom, rgba(255,255,255,0.045), rgba(255,255,255,0));
+  background-image: linear-gradient(to right, rgba(255,255,255,0.045), rgba(255,255,255,0));
 }
 
 .preset-btn:hover {
   background-color: var(--surface2);
-  background-image: linear-gradient(to bottom, rgba(255,255,255,0.07), rgba(255,255,255,0));
+  background-image: linear-gradient(to right, rgba(255,255,255,0.07), rgba(255,255,255,0));
   color: var(--text);
 }
 
@@ -466,12 +466,12 @@ html, body {
 .preset-btn.active {
   color: var(--oc-active-color);
   background-color: var(--oc-active-bg);
-  background-image: linear-gradient(to bottom, rgba(255,255,255,0.07), rgba(255,255,255,0));
+  background-image: linear-gradient(to right, rgba(255,255,255,0.07), rgba(255,255,255,0));
 }
 .preset-btn[data-active="true"]:hover,
 .preset-btn.active:hover {
   background-color: var(--oc-active-bg2);
-  background-image: linear-gradient(to bottom, rgba(255,255,255,0.09), rgba(255,255,255,0));
+  background-image: linear-gradient(to right, rgba(255,255,255,0.09), rgba(255,255,255,0));
   color: var(--oc-active-color);
 }
 
@@ -594,7 +594,7 @@ html, body {
 }
 
 /* ─── Property buttons ──────────────────────────────────────── */
-/* Sheen: rows and buttons are a little brighter at the top, fading down into
+/* Sheen: rows and buttons are a little brighter at the left, fading right into
    their colour (a white background-image over the state's background-color).
    State rules set only background-color, never the background shorthand, which
    would drop the gradient; plugin.js tints buttons with style.backgroundColor
@@ -617,7 +617,7 @@ html, body {
   padding: 0 4px 0 8px; /* 4px right: the pin sits close to the edge */
   box-sizing: border-box;
   background-color: rgba(255,255,255,0.05);
-  background-image: linear-gradient(to bottom, rgba(255,255,255,0.045), rgba(255,255,255,0));
+  background-image: linear-gradient(to right, rgba(255,255,255,0.045), rgba(255,255,255,0));
   border: none;
   border-bottom: 1px solid #080808; /* opaque: translucent 1px lines render soft in UXP */
   border-radius: 0;
@@ -688,7 +688,7 @@ html, body {
   border-radius: 3px;
   /* Amber at rest: the playhead isn't over this property's keyframes yet, so the pin is the thing to press */
   background-color: rgba(240,160,48,0.22);
-  background-image: linear-gradient(to bottom, rgba(255,255,255,0.06), rgba(255,255,255,0));
+  background-image: linear-gradient(to right, rgba(255,255,255,0.06), rgba(255,255,255,0));
   color: #f7b95a;
   /* no resting opacity: UXP ignores it, so the CEP build looked dimmer than the CCX */
   cursor: pointer;
@@ -696,7 +696,7 @@ html, body {
 }
 .prop-pin:hover, .prop-pin.hover {
   background-color: rgba(240,160,48,0.45);
-  background-image: linear-gradient(to bottom, rgba(255,255,255,0.09), rgba(255,255,255,0));
+  background-image: linear-gradient(to right, rgba(255,255,255,0.09), rgba(255,255,255,0));
   color: #ffffff;
   opacity: 1;
 }
@@ -704,7 +704,7 @@ html, body {
    plugin.js also toggles .pressed on pointer down/up (_addPressState). */
 .prop-pin:active, .prop-pin.pressed {
   background-color: rgba(240,160,48,0.65);
-  background-image: linear-gradient(to bottom, rgba(255,255,255,0.09), rgba(255,255,255,0));
+  background-image: linear-gradient(to right, rgba(255,255,255,0.09), rgba(255,255,255,0));
   color: #ffffff;
   opacity: 1;
 }
@@ -754,7 +754,7 @@ html, body {
 
 .prop-btn:hover {
   background-color: rgba(255,255,255,0.10);
-  background-image: linear-gradient(to bottom, rgba(255,255,255,0.07), rgba(255,255,255,0));
+  background-image: linear-gradient(to right, rgba(255,255,255,0.07), rgba(255,255,255,0));
   color: #ffffff;
 }
 
@@ -802,7 +802,7 @@ html, body {
   margin-left: 6px;
   border-radius: 3px;
   background-color: rgba(61,220,132,0.18);
-  background-image: linear-gradient(to bottom, rgba(255,255,255,0.06), rgba(255,255,255,0));
+  background-image: linear-gradient(to right, rgba(255,255,255,0.06), rgba(255,255,255,0));
   color: #7ddc9a;
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
@@ -810,13 +810,13 @@ html, body {
 
 .prop-undo:hover {
   background-color: rgba(61,220,132,0.42);
-  background-image: linear-gradient(to bottom, rgba(255,255,255,0.09), rgba(255,255,255,0));
+  background-image: linear-gradient(to right, rgba(255,255,255,0.09), rgba(255,255,255,0));
   color: #ffffff;
 }
 
 .prop-undo:active, .prop-undo.pressed {
   background-color: rgba(61,220,132,0.62);
-  background-image: linear-gradient(to bottom, rgba(255,255,255,0.09), rgba(255,255,255,0));
+  background-image: linear-gradient(to right, rgba(255,255,255,0.09), rgba(255,255,255,0));
   color: #ffffff;
 }
 
@@ -831,7 +831,7 @@ html, body {
   margin-left: 6px;
   border-radius: 3px;
   background-color: rgba(61,220,132,0.18);
-  background-image: linear-gradient(to bottom, rgba(255,255,255,0.06), rgba(255,255,255,0));
+  background-image: linear-gradient(to right, rgba(255,255,255,0.06), rgba(255,255,255,0));
   color: #7ddc9a;
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
@@ -839,13 +839,13 @@ html, body {
 
 .prop-curve:hover {
   background-color: rgba(61,220,132,0.42);
-  background-image: linear-gradient(to bottom, rgba(255,255,255,0.09), rgba(255,255,255,0));
+  background-image: linear-gradient(to right, rgba(255,255,255,0.09), rgba(255,255,255,0));
   color: #ffffff;
 }
 
 .prop-curve:active, .prop-curve.pressed {
   background-color: rgba(61,220,132,0.62);
-  background-image: linear-gradient(to bottom, rgba(255,255,255,0.09), rgba(255,255,255,0));
+  background-image: linear-gradient(to right, rgba(255,255,255,0.09), rgba(255,255,255,0));
   color: #ffffff;
 }
 
@@ -1036,14 +1036,14 @@ html, body {
   align-items: center;
   justify-content: center;
   background-color: rgba(61,220,132,0.18);
-  background-image: linear-gradient(to bottom, rgba(255,255,255,0.06), rgba(255,255,255,0));
+  background-image: linear-gradient(to right, rgba(255,255,255,0.06), rgba(255,255,255,0));
   color: #7ddc9a;
   cursor: pointer;
   transition: color 0.15s, background 0.15s;
 }
 .btn-undo:not(.btn-dim):hover {
   background-color: rgba(61,220,132,0.42);
-  background-image: linear-gradient(to bottom, rgba(255,255,255,0.09), rgba(255,255,255,0));
+  background-image: linear-gradient(to right, rgba(255,255,255,0.09), rgba(255,255,255,0));
   color: #ffffff;
 }
 /* Nothing to undo: stays in place, grey and inert (colours are also set inline
@@ -1060,7 +1060,7 @@ html, body {
   flex: 1;
   height: 32px;
   padding: 0 10px;
-  background-image: linear-gradient(to bottom, rgba(255,255,255,0.06), rgba(255,255,255,0));
+  background-image: linear-gradient(to right, rgba(255,255,255,0.06), rgba(255,255,255,0));
 }
 #go-btn:not(.btn-disabled) {
   color: var(--green);
@@ -1068,13 +1068,13 @@ html, body {
 }
 #go-btn:not(.btn-disabled):hover {
   background-color: rgba(61,220,132,0.28);
-  background-image: linear-gradient(to bottom, rgba(255,255,255,0.09), rgba(255,255,255,0));
+  background-image: linear-gradient(to right, rgba(255,255,255,0.09), rgba(255,255,255,0));
   color: #5ce89a;
 }
 #go-btn.btn-disabled {
   color: #b4b4b4;
   background-color: rgba(255,255,255,0.05);
-  background-image: linear-gradient(to bottom, rgba(255,255,255,0.045), rgba(255,255,255,0));
+  background-image: linear-gradient(to right, rgba(255,255,255,0.045), rgba(255,255,255,0));
   opacity: 1;
 }
 

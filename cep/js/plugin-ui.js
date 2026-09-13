@@ -1674,9 +1674,9 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
   var d    = Math.max(3, Math.min(9, laneH - 3)); // diamond size
   var barH = Math.max(2, Math.min(14, laneH - 4));
   var sel  = s.selectedParamKeys || [], valid = s.validParamKeys || [], baked = s.bakedParamKeys || [];
-  // Sheen like the property rows': brighter at the top of each lane, fading down into
+  // Sheen like the property rows': brighter at the left of each lane, fading right into
   // its tint (the UXP edition uses an HTML div for this, having no SVG gradients)
-  var sheen = _tlMk('linearGradient', { id: 'tl-sheen', x1: 0, y1: 0, x2: 0, y2: 1 });
+  var sheen = _tlMk('linearGradient', { id: 'tl-sheen', x1: 0, y1: 0, x2: 1, y2: 0 });
   sheen.appendChild(_tlMk('stop', { offset: 0, 'stop-color': '#ffffff', 'stop-opacity': 0.045 }));
   sheen.appendChild(_tlMk('stop', { offset: 1, 'stop-color': '#ffffff', 'stop-opacity': 0 }));
   var defs = _tlMk('defs', {});
