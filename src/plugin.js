@@ -3140,6 +3140,32 @@ function _tlRange(s) {
 function _tlX(t, g)   { return _TL_PAD_X + (t - g.a) / (g.b - g.a) * (g.W - 2 * _TL_PAD_X); }
 function _tlSec(x, g) { return g.a + (x - _TL_PAD_X) / (g.W - 2 * _TL_PAD_X) * (g.b - g.a); }
 
+// Second lines. Whole clip-relative seconds (the time the hover readout shows),
+// thinned to every 2, 5, 10, 15, 30 s and so on while seconds would sit closer
+// than _TL_SEC_GAP px, so a long clip doesn't fill with lines. Each line's time
+// is exact (clip start + k steps) and goes through _tlX like everything else,
+// then rounds to the pixel column the playhead takes at that time, so the lines
+// stay on the seconds at any zoom. Returns those x columns.
+var _TL_SEC_GAP   = 10;
+var _TL_SEC_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
+var _TL_SEC_COLOR = 'rgba(255,255,255,0.07)';
+function _tlSecondXs(g, origin) {
+  var span = g.b - g.a, inner = g.W - 2 * _TL_PAD_X;
+  if (!(span > 0) || !(inner > 0) || typeof origin !== 'number') return [];
+  var pps = inner / span, step = 0;
+  for (var i = 0; i < _TL_SEC_STEPS.length; i++) {
+    if (_TL_SEC_STEPS[i] * pps >= _TL_SEC_GAP) { step = _TL_SEC_STEPS[i]; break; }
+  }
+  if (!step) return [];
+  var xs = [];
+  var k0 = Math.ceil((g.a - origin) / step - 1e-9), k1 = Math.floor((g.b - origin) / step + 1e-9);
+  for (var k = k0; k <= k1; k++) {
+    var x = Math.round(_tlX(origin + k * step, g));
+    if (x >= 0 && x < g.W) xs.push(x);
+  }
+  return xs;
+}
+
 // Every lane is one property row tall, so the lanes line up with the rows beside them
 function _tlLaneH(n) { return _TL_ROW_H; }
 
@@ -3251,6 +3277,15 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
   var d    = Math.max(3, Math.min(9, laneH - 3)); // diamond size
   var barH = Math.max(2, Math.min(12, laneH - 4)); // bake, run and selected-pair bars
   var sel  = s.selectedParamKeys || [], valid = s.validParamKeys || [], baked = s.bakedParamKeys || [];
+  // Second lines (_tlSecondXs): 1px HTML divs under the SVG like the lane dividers,
+  // since HTML edges snap to device pixels where thin SVG lines came out soft.
+  // Added before the lanes, so the dividers paint over them and stay unbroken.
+  if (els.wrap) _tlSecondXs(g, tl.clipStart).forEach(function(x) {
+    var sl = document.createElement('div');
+    sl.className = 'tl-lane-div'; // cleared with the dividers on the next rebuild
+    sl.style.cssText = 'position:absolute;top:0;left:' + x + 'px;width:1px;height:' + H + 'px;background:' + _TL_SEC_COLOR + ';pointer-events:none;';
+    els.wrap.insertBefore(sl, els.svg);
+  });
   params.forEach(function(p, i) {
     var top = g.y0 + i * laneH, cy = top + laneH / 2;
     // Same state logic as the row: green beats selection, selected is blue when the
