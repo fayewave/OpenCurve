@@ -4455,7 +4455,7 @@ function initPanel() {
     _holdFixWatch(el);
     if (replacement) _initDragSort(el); // the first element gets it from _renderPresets
     el.addEventListener('contextmenu', function(e) {
-      // Right-click on empty space (or the New tile): the list menu; presets have their own
+      // Right-click on empty space: Open Settings alone; presets have their own menu
       var onPreset = e.target.closest && e.target.closest('.preset-btn');
       if (onPreset && onPreset.id !== 'new-preset-btn') return;
       _showMiniCtxMenu(e, true);
@@ -4870,7 +4870,7 @@ function initPanel() {
   if (toolbar && typeof ResizeObserver !== 'undefined') new ResizeObserver(_tbLayout).observe(toolbar);
   _tbLayout();
 
-  // Icons shared by the preset list's context menu and the preset bar's menu
+  // Icons for the preset bar's menu
   var _icPaste = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><rect x="3" y="2" width="8" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.6"/><path fill="none" d="M5.5 2V1.5a1 1 0 011-1h1a1 1 0 011 1V2" stroke="currentColor" stroke-width="1.6"/><line x1="5.5" y1="6" x2="8.5" y2="6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="5.5" y1="8.5" x2="8.5" y2="8.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
   var _icStar   = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M7 1.6l1.6 3.4 3.7.5-2.7 2.6.7 3.7L7 10l-3.3 1.8.7-3.7L1.7 5.5l3.7-.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>';
   var _icExport = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2 9.5v2.5h10V9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 9V1.5M4.2 4.3L7 1.5l2.8 2.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -5085,10 +5085,6 @@ function initPanel() {
       if (t.btn && t.btn.parentNode) t.btn.parentNode.removeChild(t.btn);
     });
   }, _icDelete);
-  var _icSettingsCtx = '<svg width="16" height="16" viewBox="0 0 12 12" fill="none"><path d="M10.18 5 L11.53 5.12 L11.53 6.88 L10.18 7 A4.3 4.3 0 0 1 9.67 8.25 L9.67 8.25 L10.53 9.29 L9.29 10.53 L8.25 9.67 A4.3 4.3 0 0 1 7 10.18 L7 10.18 L6.88 11.53 L5.12 11.53 L5 10.18 A4.3 4.3 0 0 1 3.75 9.67 L3.75 9.67 L2.71 10.53 L1.47 9.29 L2.33 8.25 A4.3 4.3 0 0 1 1.82 7 L1.82 7 L0.47 6.88 L0.47 5.12 L1.82 5 A4.3 4.3 0 0 1 2.33 3.75 L2.33 3.75 L1.47 2.71 L2.71 1.47 L3.75 2.33 A4.3 4.3 0 0 1 5 1.82 L5 1.82 L5.12 0.47 L6.88 0.47 L7 1.82 A4.3 4.3 0 0 1 8.25 2.33 L8.25 2.33 L9.29 1.47 L10.53 2.71 L9.67 3.75 A4.3 4.3 0 0 1 10.18 5 Z M8.3 6 A2.3 2.3 0 0 0 3.7 6 A2.3 2.3 0 0 0 8.3 6 Z" fill="currentColor" fill-rule="evenodd"/></svg>'; // same gear as the graph toolbar
-  _ctxItem('Open Settings', false, function() {
-    _showSettingsModal();
-  }, _icSettingsCtx);
   function _showCtxMenu(preset, btn, startRename, e) {
     var existingMini = document.getElementById('_mini-ctx');
     if (existingMini && existingMini.parentNode) existingMini.parentNode.removeChild(existingMini);
@@ -5580,8 +5576,9 @@ function initPanel() {
     _showPastePanel();
   }
 
-  // Mini Settings-only context menu (used in preset list empty space + graph)
-  function _showMiniCtxMenu(e, showPaste, showLayout, showGrid, pointIdx, showTlZoom) {
+  // Mini context menu: Open Settings (preset list empty space), grid sizes (graph),
+  // a point's handle/delete items (graph point) or the zoom toggle (timeline)
+  function _showMiniCtxMenu(e, showSettings, showLayout, showGrid, pointIdx, showTlZoom) {
     console.log('[OC] _showMiniCtxMenu called');
     e.preventDefault();
     e.stopPropagation();
@@ -5632,24 +5629,20 @@ function initPanel() {
       _miniItem(isSmooth ? 'Break Handles' : 'Smooth Handles', isSmooth ? _icPtBreak : _icPtSmooth, function() { _setPointSmooth(pointIdx, !isSmooth); });
       _miniItem('Delete Point', _icPtDelete, function() { _removePoint(pointIdx); });
     } else {
-    // Timeline menu: what the lanes span, then the shared Open Settings
+    // Timeline menu: what the lanes span. Open Settings only appears in the preset
+    // list's empty-space menu, where it is the only item.
     if (showTlZoom) {
       _miniItem(_tlZoomKeys ? 'Show Whole Clip' : 'Zoom to Keyframes',
                 _tlZoomKeys ? _icTlClip : _icTlKeys,
                 function() { _tlSetZoom(!_tlZoomKeys); });
     }
-    _miniItem('Open Settings', _icSettings, function() { _showSettingsModal(); });
-
-    if (showPaste) {
-      _miniItem('Paste Preset', _icPaste, function() { _pasteCoordinates(); });
-      _miniItem('Add Starter Presets', _icStar, function() { _addStarterPresets(); });
-      _miniItem('Export Presets\u2026', _icExport, function() { _exportPresetsToFile(); });
-      _miniItem('Import Presets\u2026', _icImport, function() { _importPresetsFromFile(); });
-    }
+    if (showSettings) _miniItem('Open Settings', _icSettings, function() { _showSettingsModal(); });
 
     if (showGrid) {
+      var gridFirst = !mini.firstChild; // the graph menu is the grid row alone: no rule above it, no top padding
       var gridRow = document.createElement('div');
-      gridRow.style.cssText = 'display:flex;border-top:1px solid rgba(255,255,255,0.07);';
+      gridRow.style.cssText = 'display:flex;' + (gridFirst ? '' : 'border-top:1px solid rgba(255,255,255,0.07);');
+      if (gridFirst) mini.style.paddingTop = '0';
       var gridSizes = [4, 8, 16];
       gridSizes.forEach(function(size) {
         var gb = document.createElement('div');
@@ -5706,7 +5699,7 @@ function initPanel() {
     window.addEventListener('pointerdown', removeMini);
   }
 
-  // Right-click on the mini timeline's lanes or the property rows: zoom toggle + Open Settings.
+  // Right-click on the mini timeline's lanes or the property rows: the zoom toggle.
   // Bound to the SVG and its wrapper both; _showMiniCtxMenu stops propagation,
   // so the wrapper only ever handles the strip of area outside the SVG.
   (function() {
@@ -6940,7 +6933,7 @@ function _showNumericPanel() {
   setTimeout(function() { fields.p1x.focus(); fields.p1x.select(); }, 0);
 }
 
-// Preset files (Export / Import Presets in the preset list's context menu).
+// Preset files (Export / Import Presets in the preset bar's menu).
 // UXP: the plugin's own file pickers; the manifest asks for localFileSystem "request".
 function _saveTextFile(name, text) {
   var lfs = require('uxp').storage.localFileSystem;
