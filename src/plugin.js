@@ -1654,6 +1654,7 @@ async function _findQualifiedParams(chain, phLocal) {
 // chain, and VideoFilterFactory match names to find Time Remapping.
 async function _dumpComponents() {
   try {
+    var _dumpedParamShape = false;
     if (!ppro) { console.log('[FS] dump: premierepro not loaded'); return; }
     var project = await ppro.Project.getActiveProject();
     if (!project) { console.log('[FS] dump: no active project'); return; }
@@ -1696,13 +1697,42 @@ async function _dumpComponents() {
       for (var j = 0; j < paramCount; j++) {
         var param;
         try { param = await _call(comp, 'getParam', j); } catch(_) { continue; }
+        // Param name probe. getDisplayName() is a Component method and is NOT a
+        // member of ComponentParam, so the call below has always come back empty
+        // (that is the "returns empty" note in CLAUDE.md). Premiere 26's own API
+        // descriptor, embedded in Frontend.dll, declares ComponentParam with a
+        // readOnly string PROPERTY displayName and no getDisplayName method:
+        //   "name": "ComponentParam",
+        //   "properties": [ { "name": "displayName", "dataType": "string",
+        //                     "propType": "readOnly", "propKind": "instance" }, ... ]
+        // So read it as a property. If that populates, effect params name
+        // themselves and PARAM_NAMES becomes a fallback only.
         var pName = ''; try { pName = await _call(param, 'getDisplayName'); } catch(_) {}
+        var pProp = '', pType = '';
+        try { pProp = param.displayName; pType = typeof pProp; }
+        catch (ePd) { pType = 'threw'; pProp = (ePd && ePd.message) || 'error'; }
+        // Harmless if it is a plain string; catches the case where the proxy
+        // hands back a promise instead.
+        var pAwait = ''; try { pAwait = await param.displayName; } catch(_) {}
         var pMatch = ''; try { pMatch = await _call(param, 'getMatchName'); } catch(_) {}
         var kfSupported = '?'; try { kfSupported = await _call(param, 'areKeyframesSupported'); } catch(_) {}
         var kfTimes = null;
         try { kfTimes = await _call(param, 'getKeyframeListAsTickTimes'); } catch(_) {}
         var kfCount = kfTimes ? (Array.isArray(kfTimes) ? kfTimes.length : 0) : 0;
-        console.log('[FS]   Param[' + j + ']: display="' + pName + '" match="' + pMatch + '" kfOK=' + kfSupported + ' kfs=' + kfCount);
+        console.log('[FS]   Param[' + j + ']: .displayName="' + pProp + '" (' + pType + ')'
+          + ' awaited="' + pAwait + '"'
+          + ' getDisplayName()="' + pName + '" match="' + pMatch + '"'
+          + ' kfOK=' + kfSupported + ' kfs=' + kfCount);
+        // One-off member dump: shows what the proxy actually exposes, so a miss
+        // above can be told apart from the property being named something else.
+        if (!_dumpedParamShape) {
+          _dumpedParamShape = true;
+          var forIn = []; try { for (var pk in param) forIn.push(pk); } catch(_) {}
+          console.log('[FS]   (param shape) for-in: ' + forIn.join(', '));
+          try { console.log('[FS]   (param shape) own: ' + Object.getOwnPropertyNames(param).join(', ')); } catch(_) {}
+          try { console.log('[FS]   (param shape) proto: ' + Object.getOwnPropertyNames(Object.getPrototypeOf(param)).join(', ')); } catch(_) {}
+          try { console.log('[FS]   (param shape) ctor: ' + (param.constructor && param.constructor.name)); } catch(_) {}
+        }
       }
     }
 
