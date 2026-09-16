@@ -4279,6 +4279,7 @@ function _sdWatch(el, name, noKick) {
 }
 var _sdKickN = 0;
 var _renderPresetsRef = null; // set in initPanel; kick 6 rebuilds the preset list into a fresh element with it
+var _resetPresetsRef  = null; // set in initPanel; Reset All Settings rebuilds the preset list with it
 function _sdKick(el) {
   _sd.kickTimer = null;
   var kind = Array.isArray(_SCROLL_KICK) ? _SCROLL_KICK[_sdKickN++ % _SCROLL_KICK.length] : _SCROLL_KICK;
@@ -5465,6 +5466,17 @@ function initPanel() {
   };
 
   _renderPresetsRef = _renderPresets;
+  // Reset All Settings rebuilds the list from here: _presetList lives in this
+  // closure, so clearing storage alone left the old list in memory and the next
+  // preset edit wrote it straight back.
+  _resetPresetsRef = function() {
+    _presetList = BUILT_IN_PRESETS.map(function(p) {
+      return { id: p.id, name: p.name, curve: _cloneCurve(p.curve), builtIn: true };
+    }).concat(_starterPresetEntries());
+    _savePresetList(_presetList);
+    clearPresetActive();
+    _renderPresets();
+  };
   _renderPresets();
   _refreshUpdateNotification();
 
@@ -6822,33 +6834,51 @@ function _renamePresetDialog(current, onOk) {
 
 function _confirmReset() {
   _confirmDialog('Reset All Settings', 'This will clear all saved presets, the graph line colour, and reset the curve. This cannot be undone.', 'Reset', function() {
-    localStorage.removeItem('opencurve-presets-v10');
-    localStorage.removeItem('opencurve-sidebar-width');
-    localStorage.removeItem(_CURVE_COLOR_KEY);
-    localStorage.removeItem(_GRID_KEY);
-    localStorage.removeItem(_LAYOUT_KEY);
-    localStorage.removeItem(_ANIM_KEY);
-    localStorage.removeItem(_UPDATE_NOTIF_KEY);
-    localStorage.removeItem(_GRAPH_KEY);
-    localStorage.removeItem(_PEAK_KEY);
-    localStorage.removeItem(_DRAG_GHOST_KEY);
-    localStorage.removeItem(_DENSITY_KEY);
-    localStorage.removeItem(_TL_KEY);
-    localStorage.removeItem(_TL_ZOOM_KEY);
-    localStorage.removeItem(_TL_PROPS_KEY);
-    localStorage.removeItem(_TL_H_KEY);
-    _bakeDensity        = 1;
+    // Bake records are deliberately kept: they are a record of work done on the
+    // project, not a setting, and the dialog does not offer to clear them.
+    ['opencurve-presets-v10', 'opencurve-sidebar-width', _CURVE_COLOR_KEY, _GRID_KEY,
+     _LAYOUT_KEY, _ANIM_KEY, _UPDATE_NOTIF_KEY, _GRAPH_KEY, _PEAK_KEY, _DRAG_GHOST_KEY,
+     _DENSITY_KEY, _TL_KEY, _TL_ZOOM_KEY, _TL_PROPS_KEY, _TL_H_KEY
+    ].forEach(function(k) { try { localStorage.removeItem(k); } catch(_) {} });
+
+    // Everything below used to be left to location.reload(). If that call is a
+    // no-op the panel kept the deleted presets and the old layout while the
+    // flags said otherwise, and the next preset edit wrote the stale list
+    // straight back to storage, undoing the reset. The panel now resets itself
+    // and does not reload.
+    _bakeDensity    = 1;
+    _gridSize       = 8;
+    _presetLayout   = 'list';
+    _animationsOn   = true;
+    _updateNotifsOn = true;
+    _tlZoomKeys     = false;
+    _tlUserH        = null;
+    _peakMode       = false;
+    _dragGhost      = true;
+    _graphVisible   = true;
+    _tlVisible      = true;
+
+    _applyPeakVisibility();
+    _stylePeakBtn();
+    if (_peakThumbRefresh) _peakThumbRefresh();
+    _hideDragGhost();
+    _styleGhostBtn();
+    _styleViewBtns();
+    _applyGraphVisibility();   // also puts the preset column back to its default width
+    _applyTimelineVisibility();
+    _tlApplyHeightStyle();
+    _tlApplyHeight();
+    _tlApplyPropsWidth();
+    _applyPresetLayout(true);
+    _styleLayoutBtn();
     _applyCurveColor('#38fbb2');
-    _animationsOn       = true;
-    _updateNotifsOn     = true;
-    _graphVisible       = true;
-    _peakMode           = false;
-    _tlVisible          = true;
-    _tlZoomKeys         = false;
-    _tlUserH            = null;
     setState({ curve: { p1x: 0.625, p1y: 0.000, p2x: 0.375, p2y: 1.000 } });
+    if (_svgW > 0 && _svgH > 0) {
+      updateStaticSVG(_svgW, _svgH); // the grid size changed back to 8
+      updateDynamicSVG(getState().curve, _svgW, _svgH);
+    }
+    if (_resetPresetsRef) _resetPresetsRef();
     _showCopyToast('Reset all settings');
-    try { location.reload(); } catch(e) {}
   });
 }
 
