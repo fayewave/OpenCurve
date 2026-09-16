@@ -113,11 +113,13 @@ function _tForX(x, p1x, p2x) {
   }
   return (lo + hi) / 2;
 }
-function sampleBezier(x, curve) {
+// segs is optional: a loop that samples the same curve many times computes
+// _segsOf once and passes it in, instead of rebuilding it for every sample.
+function sampleBezier(x, curve, segs) {
   var cx = Math.max(0, Math.min(1, x));
   if (cx === 0) return 0;
   if (cx === 1) return 1;
-  if (_hasPts(curve)) return _sampleMulti(cx, curve);
+  if (_hasPts(curve)) return _sampleMulti(cx, curve, segs);
   var t = _tForX(cx, curve.p1x, curve.p2x);
   return _by(t, curve.p1y, curve.p2y);
 }
@@ -125,8 +127,9 @@ function sampleBezier(x, curve) {
 // this so a Back or Bounce curve isn't clipped at the box edge.
 function _curveYBounds(c) {
   var lo = 0, hi = 1, N = 32;
+  var segs = _hasPts(c) ? _segsOf(c) : null;
   for (var i = 1; i < N; i++) {
-    var y = sampleBezier(i / N, c);
+    var y = sampleBezier(i / N, c, segs);
     if (y < lo) lo = y;
     if (y > hi) hi = y;
   }
@@ -205,8 +208,8 @@ function _segAt(x, segs) {
   return segs[0];
 }
 
-function _sampleMulti(x, c) {
-  var s = _segAt(x, _segsOf(c));
+function _sampleMulti(x, c, segs) {
+  var s = _segAt(x, segs || _segsOf(c));
   var t = _segTForX(x, s);
   return _cub(t, s.y0, s.c1y, s.c2y, s.y3);
 }
@@ -608,10 +611,11 @@ function _velSamples(c, N) {
   var out = [], step = (1 - 2 * _PEAK_EPS) / (N - 1);
   if (_hasPts(c)) {
     var h = 5e-4;
+    var segs = _segsOf(c); // one list for all 2N samples below
     for (var j = 0; j < N; j++) {
       var x = _PEAK_EPS + j * step;
       var xa = Math.max(0, x - h), xb = Math.min(1, x + h);
-      out.push({ x: x, v: (sampleBezier(xb, c) - sampleBezier(xa, c)) / (xb - xa) });
+      out.push({ x: x, v: (sampleBezier(xb, c, segs) - sampleBezier(xa, c, segs)) / (xb - xa) });
     }
     return out;
   }
@@ -683,8 +687,9 @@ function _solvePeak(targetX, ny) {
 
 // The normalised bell (peak at the top) as an SVG path; tx/ty map 0..1 to pixels.
 // Shared by the graph and the preset thumbnails.
-function _peakBellPath(curve, N, tx, ty) {
-  var sm = _velSamples(curve, N), vmax = 0;
+function _peakBellPath(curve, N, tx, ty, sm) {
+  sm = sm || _velSamples(curve, N);
+  var vmax = 0;
   for (var i = 0; i < N; i++) if (sm[i].v > vmax) vmax = sm[i].v;
   if (!(vmax > 1e-9)) vmax = 1;
   var d = '';
@@ -705,17 +710,17 @@ function _updatePeakSVG(curve, W, H) {
   if (!(vmax > 1e-9)) vmax = 1;
   var d = _peakBellPath(curve, 96,
     function(x) { return normToSVG(x, 0, W, H).cx; },
-    function(y) { return normToSVG(0, y, W, H).cy; });
+    function(y) { return normToSVG(0, y, W, H).cy; }, sm);
   var first = normToSVG(0, Math.max(0, Math.min(1, sm[0].v / vmax)), W, H);
   var last  = normToSVG(1, Math.max(0, Math.min(1, sm[sm.length - 1].v / vmax)), W, H);
-  var cp = document.getElementById('sg-curve');
+  var cp = _ocEl('sg-curve');
   if (cp) cp.setAttribute('d', d);
   // The bezier itself stays visible behind the bell, greyed, so both views read at once
-  var ghost = document.getElementById('sg-ghost');
+  var ghost = _ocEl('sg-ghost');
   if (ghost) ghost.setAttribute('d', _curvePathD(curve, W, H));
-  var ep0 = document.getElementById('sg-ep0');
+  var ep0 = _ocEl('sg-ep0');
   if (ep0) { ep0.setAttribute('cx', first.cx); ep0.setAttribute('cy', first.cy); }
-  var ep3 = document.getElementById('sg-ep3');
+  var ep3 = _ocEl('sg-ep3');
   if (ep3) { ep3.setAttribute('cx', last.cx); ep3.setAttribute('cy', last.cy); }
   var px = (pk.v <= 1.02) ? 0.5 : pk.x; // a flat (linear) curve has no peak: centre the marker
   var pp = normToSVG(px, 1, W, H);
@@ -784,6 +789,7 @@ var Y_CLAMP_MAX         =  2.0;
 var PAD = 16, HANDLE_R = 5;
 var _zoom = 1.0;
 var _zoomPopHide = null; // set by initPanel: closes the zoom slider, true if it was open (Esc)
+var _closeMenus  = null; // set by initPanel: closes the tile / mini context menus, true if one was open
 
 // The 0..1 range box is always square (1:1), the largest that fits inside the
 // pad, centred in the SVG; the rest of the SVG is the outer area (overshoot
@@ -823,8 +829,21 @@ function _updateContentTransform() {
     'translate(' + cx + ',' + cy + ') scale(' + _zoom + ') translate(' + (-cx) + ',' + (-cy) + ')');
 }
 
+// The graph's SVG children are built once and then only repositioned, but the
+// drag hot path looked each one up by id on every frame. A cached node that has
+// left the document (the grid is rebuilt when its size changes) is re-fetched,
+// so the cache needs no explicit invalidation.
+var _ocEls = {};
+function _ocEl(id) {
+  var el = _ocEls[id];
+  if (el && el.parentNode) return el;
+  el = document.getElementById(id);
+  _ocEls[id] = el;
+  return el;
+}
+
 function _setLine(id, x1, y1, x2, y2) {
-  var el = document.getElementById(id);
+  var el = _ocEl(id);
   if (!el) return;
   el.setAttribute('x1', x1); el.setAttribute('y1', y1);
   el.setAttribute('x2', x2); el.setAttribute('y2', y2);
@@ -964,11 +983,11 @@ function updateDynamicSVG(curve, W, H) {
   var p3 = normToSVG(1, 1, W, H);
   _setLine('sg-tan1', p0.cx, p0.cy, p1.cx, p1.cy);
   _setLine('sg-tan2', p3.cx, p3.cy, p2.cx, p2.cy);
-  var cp = document.getElementById('sg-curve');
+  var cp = _ocEl('sg-curve');
   if (cp) cp.setAttribute('d', _curvePathD(curve, W, H));
-  var h1 = document.getElementById('sg-h1');
+  var h1 = _ocEl('sg-h1');
   if (h1) h1.setAttribute('transform', 'translate('+p1.cx+','+p1.cy+')');
-  var h2 = document.getElementById('sg-h2');
+  var h2 = _ocEl('sg-h2');
   if (h2) h2.setAttribute('transform', 'translate('+p2.cx+','+p2.cy+')');
   _updatePtsSVG(hc, W, H);
 }
@@ -1408,6 +1427,7 @@ function _panelShortcut(e) {
   }
   if (k === 'Escape') {
     if (_zoomPopHide && _zoomPopHide()) return true;
+    if (_closeMenus && _closeMenus()) return true; // tile and mini context menus
     if (_pv) { _pvStop(); return true; }
     if (_graphFull) { _setGraphFull(false); return true; }
   }
@@ -3297,6 +3317,16 @@ function initPanel() {
     _ctxMenu.style.display = 'none';
     _ctxTarget = null;
   }
+  // Both floating menus are placed at fixed coordinates, so they used to hang
+  // over unrelated content after a panel resize (or a _refreshScroller swap) and
+  // only closed on an outside press. Esc and the resize observer close them now.
+  _closeMenus = function() {
+    var open = false;
+    if (_ctxMenu && _ctxMenu.style.display !== 'none') { _hideCtxMenu(); open = true; }
+    var mini = document.getElementById('_mini-ctx');
+    if (mini && mini.parentNode) { mini.parentNode.removeChild(mini); open = true; }
+    return open;
+  };
   window.addEventListener('pointerdown', function(e) {
     if (!_ctxMenu.contains(e.target)) _hideCtxMenu();
   });
@@ -3986,6 +4016,9 @@ function initPanel() {
         }
         _tlApplyPropsWidth();
         _tlSetGoWidth();
+        // A floating menu is placed at fixed coordinates, so a resize would
+        // leave it hanging over whatever is now underneath it
+        if (_closeMenus) _closeMenus();
       });
       if (_mainRow) _colRO.observe(_mainRow);
       if (_tlRow)   _colRO.observe(_tlRow);
