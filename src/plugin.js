@@ -307,8 +307,14 @@ function _sampleMulti(x, c) {
   return _cub(t, s.y0, s.c1y, s.c2y, s.y3);
 }
 
-// Sort anchors, keep them apart, and pull every handle's x back inside its segment
+// Sort anchors, keep them apart, and pull every handle's x back inside its segment.
+// The head handles are clamped to the ranges a drag is allowed to produce, so a
+// pasted or imported curve can never carry values the graph editor would refuse.
 function _normalizeCurve(c) {
+  c.p1x = Math.max(0, Math.min(1, c.p1x));
+  c.p2x = Math.max(0, Math.min(1, c.p2x));
+  c.p1y = Math.max(Y_CLAMP_MIN, Math.min(Y_CLAMP_MAX, c.p1y));
+  c.p2y = Math.max(Y_CLAMP_MIN, Math.min(Y_CLAMP_MAX, c.p2y));
   if (!_hasPts(c)) { delete c.pts; return c; }
   c.pts.sort(function(a, b) { return a.x - b.x; });
   var n = c.pts.length;
@@ -541,7 +547,14 @@ function _curveToText(c) {
 }
 function _curveFromText(text) {
   var m = text && text.match(/opencurve\(([^)]*)\)/i);
-  if (!m) return null;
+  if (!m) {
+    // The other half of what _curveToText writes: a curve without points is cubic-bezier()
+    var b = text && text.match(/cubic-bezier\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/i);
+    if (!b) return null;
+    var h = [parseFloat(b[1]), parseFloat(b[2]), parseFloat(b[3]), parseFloat(b[4])];
+    if (h.some(isNaN)) return null;
+    return _normalizeCurve({ p1x: h[0], p1y: h[1], p2x: h[2], p2y: h[3] });
+  }
   var parts = m[1].split(',');
   if (parts.length < 5) return null;
   var head = parts.slice(0, 4).map(function(s) { return parseFloat(s); });
@@ -5390,16 +5403,10 @@ function initPanel() {
     _presetRO.observe(_presetListEl);
   }
 
-  // Parse cubic-bezier string → curve object or null
+  // Parse a curve string → curve object or null. _curveFromText takes both forms
+  // (cubic-bezier() and opencurve()) and clamps what it returns.
   function _parseCubicBezier(text) {
-    if (!text) return null;
-    var multi = _curveFromText(text); // opencurve(...) form carries points
-    if (multi) return multi;
-    var m = text.match(/cubic-bezier\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/i);
-    if (!m) return null;
-    var vals = [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]), parseFloat(m[4])];
-    if (vals.some(isNaN)) return null;
-    return { p1x: vals[0], p1y: vals[1], p2x: vals[2], p2y: vals[3] };
+    return _curveFromText(text);
   }
 
   // Create a preset from a parsed curve and add it to the list
