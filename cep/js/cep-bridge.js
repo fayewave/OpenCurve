@@ -18,6 +18,9 @@
   var POLL_MS        = 300; // slightly slower than UXP (200ms) due to evalScript overhead
   var pollTimer      = null;
   var _pollRunning   = false;
+  var _pollStartedAt = 0;     // when the running scan began, for the stuck-scan guard
+  var _pollToken     = 0;     // identifies the scan that owns _pollRunning
+  var _POLL_STUCK_MS = 5000;  // a scan still running after this is abandoned
   var _lastStatus    = '';
   var _skipPollUntil = 0;
   var _lastPh        = null; // last playhead position (seconds)
@@ -327,16 +330,30 @@
   }
 
   function poll() {
-    if (_pollRunning) { if (_debugTiming && _dbgStats) _dbgStats.dropped++; return; }
+    if (_pollRunning) {
+      // If the ExtendScript engine is blocked (another extension's modal, a long
+      // script elsewhere) the callback may never arrive, and the panel would then
+      // poll nothing for the rest of the session with no sign of why.
+      if (_pollStartedAt && Date.now() - _pollStartedAt > _POLL_STUCK_MS) {
+        console.log('[OC-CEP] poll: abandoning a scan stuck for ' + (Date.now() - _pollStartedAt) + 'ms');
+        _pollRunning = false;
+      } else {
+        if (_debugTiming && _dbgStats) _dbgStats.dropped++;
+        return;
+      }
+    }
     if (OpenCurve.isDragging) return;
     var s = OpenCurve.getState();
     if (s.isBaking) return;
     if (Date.now() < _skipPollUntil) return;
 
     _pollRunning = true;
+    _pollStartedAt = Date.now();
+    var _myPoll = ++_pollToken; // an abandoned scan must not clear the flag or apply its result
 
     var _t0 = _debugTiming ? Date.now() : 0;
     cs.evalScript('detectContext()', function(resultStr) {
+      if (_pollToken !== _myPoll) return; // abandoned; a newer scan owns the state
       _pollRunning = false;
       // Go was pressed while this scan was out: its result predates the bake
       // and would restore the pre-bake selection. Discard it.
@@ -529,12 +546,22 @@
     showSplash();
 
     // Check for post-update toast
-    if (localStorage.getItem('opencurve-post-update') === '1') {
-      localStorage.removeItem('opencurve-post-update');
-      setTimeout(function() {
-        OpenCurve.showCopyToast('Updated to v' + '2.0.0', '#3ddc84');
-      }, 500);
-    }
+    // "Updated to vX" toast. Nothing in the CEP edition ever set the
+    // opencurve-post-update flag this used to read (that key belongs to the UXP
+    // updater), so the toast could never appear. It now compares the version it
+    // last ran against, which also means no hardcoded version to bump here.
+    localStorage.removeItem('opencurve-post-update'); // from an older build
+    try {
+      var _verKey = 'opencurve-cep-version';
+      var _seen = localStorage.getItem(_verKey);
+      var _now  = OpenCurve.CURRENT_VERSION;
+      if (_seen && _now && _seen !== _now) {
+        setTimeout(function() {
+          OpenCurve.showCopyToast('Updated to v' + _now, '#3ddc84');
+        }, 500);
+      }
+      if (_now) localStorage.setItem(_verKey, _now);
+    } catch(e) {}
 
     // Start polling
     poll();

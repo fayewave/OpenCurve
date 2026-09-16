@@ -111,7 +111,7 @@ try {
           if (id === 'dump-comps')    _dumpComponents();
           if (id === 'poll-timing')   _toggleDebugTiming();
           if (id === 'scroll-debug')  _toggleDebugScroll();
-          if (id === 'reset')         _confirmReset();
+          // No 'reset' item in menuItems: Reset All Settings lives in Settings
         },
       },
     },
@@ -1099,6 +1099,7 @@ function initGraphEditor(svg) {
   var dragging  = null; // 'p1' | 'p2' | null
   var liveCurve = null; // working copy mutated during drag
   var dragRect  = null; // SVG rect cached at drag-start
+  var dragMoved = false; // a pointermove actually changed the curve this drag
 
   // Every inline style write relayouts the panel in UXP, and a hover fires many
   // pointermoves a second, so the cursor is written only when it changes.
@@ -1143,6 +1144,7 @@ function initGraphEditor(svg) {
       // Peak mode: the pointer is the peak, wherever you press
       svg.setPointerCapture(e.pointerId);
       dragging    = 'peak';
+      dragMoved   = true; // the press itself reshapes the curve in peak mode
       liveCurve   = _cloneCurve(getState().curve);
       dragRect    = svg.getBoundingClientRect();
       _isDragging = true;
@@ -1223,6 +1225,7 @@ function initGraphEditor(svg) {
       }
       return;
     }
+    dragMoved = true;
     // Hot path: pure arithmetic + 5 setAttribute calls — no layout, no redraw
     var raw = _unscale(e.clientX - dragRect.left, e.clientY - dragRect.top);
     var n   = svgToNorm(raw.cx, raw.cy, _svgW, _svgH);
@@ -1285,8 +1288,16 @@ function initGraphEditor(svg) {
     _isDragging = false;
     _setSnapBg(false);
     _hideDragGhost();
-    setState({ curve: liveCurve });
-    clearPresetActive();
+    // Only commit when the drag actually changed something. Pressing a handle
+    // and releasing without moving used to clear the active preset, so the tile
+    // un-highlighted although the curve was identical. (A press on empty graph
+    // space snaps the nearest handle and commits in pointerdown, so that path
+    // is already committed by the time we get here.)
+    if (dragMoved) {
+      setState({ curve: liveCurve });
+      clearPresetActive();
+    }
+    dragMoved = false;
     dragging  = null;
     liveCurve = null;
     dragRect  = null;
@@ -1296,12 +1307,9 @@ function initGraphEditor(svg) {
   svg.addEventListener('pointerup',     endDrag);
   svg.addEventListener('pointercancel', endDrag);
 
-  window.addEventListener('keydown', function(e) {
-    if (e.key === 'Shift' && dragging) _setSnapBg(true);
-  });
-  window.addEventListener('keyup', function(e) {
-    if (e.key === 'Shift') _setSnapBg(false);
-  });
+  // UXP never delivers key events to window or document (see CLAUDE.md), so
+  // these never fired here; the drag's own _setSnapBg(e.shiftKey) covers it.
+  // The CEP edition does receive them and keeps them.
 
 
   function onResize() {
@@ -1410,7 +1418,10 @@ function _extractValue(v) {
   if (typeof v === 'number') return v;
   if (v !== null && typeof v === 'object' && 'value' in v) {
     if (typeof v.value === 'number') return v.value;
-    if (Array.isArray(v.value) && v.value.length > 0) return v.value;
+    // Exactly two components (Position, Anchor Point, Scale as a pair): the bake
+    // writes these as a PointF. A longer array would be silently truncated to
+    // its first two values, so it is refused and the row is not offered.
+    if (Array.isArray(v.value) && v.value.length === 2) return v.value;
   }
   return null;
 }
@@ -3309,7 +3320,13 @@ function _tlRender(s, force) {
   var H      = Math.max(_TL_MIN_H, params.length * laneH, boxH);
   var W      = _tlW;
   var sel    = s.selectedParamKeys || [], valid = s.validParamKeys || [], baked = s.bakedParamKeys || [];
-  var sig = [W, H, n, _tlZoomKeys ? 'k' : 'c', range ? range.a.toFixed(4) + '-' + range.b.toFixed(4) : '', n === 0 ? s.status : ''].join('|');
+  // clipStart is the origin of the second lines and fps drives the run bars, and
+  // neither follows from the range: trimming a clip's head in keyframe-zoom mode
+  // moves both while every keyframe keeps its sequence time, so the lanes used
+  // to keep drawing the old second lines.
+  var sig = [W, H, n, _tlZoomKeys ? 'k' : 'c', range ? range.a.toFixed(4) + '-' + range.b.toFixed(4) : '',
+             s.tl ? Math.round((s.tl.clipStart || 0) * 1000) + '/' + (s.tl.fps || 0) : '',
+             n === 0 ? s.status : ''].join('|');
   if (range) params.forEach(function(p) {
     sig += '|' + p.key + ':' + p.displayName + ':' + (p.tlKf || []).map(function(t){ return Math.round(t * 1000); }).join(',')
          + ':' + (p.tlOut ? 'o' : Math.round(p.tlKf0 * 1000) + '/' + Math.round(p.tlKf1 * 1000))
@@ -3745,15 +3762,14 @@ function _tlSetGoWidth() {
     if (go.style.width !== 'auto') { go.style.width = 'auto'; go.style.flex = '0 0 auto'; }
     return;
   }
+  // _tlVisible is true here: the branch above returns otherwise
   var w = _tlPropsW;
-  if (_tlVisible) {
-    try {
-      var props = document.getElementById('prop-btns');
-      var pr = props ? props.getBoundingClientRect() : null;
-      var rr = go.parentNode ? go.parentNode.getBoundingClientRect() : null;
-      if (pr && rr && pr.width > 0 && rr.right > pr.left) w = Math.round(rr.right - pr.left);
-    } catch(_) {}
-  }
+  try {
+    var props = document.getElementById('prop-btns');
+    var pr = props ? props.getBoundingClientRect() : null;
+    var rr = go.parentNode ? go.parentNode.getBoundingClientRect() : null;
+    if (pr && rr && pr.width > 0 && rr.right > pr.left) w = Math.round(rr.right - pr.left);
+  } catch(_) {}
   if (go.style.width === w + 'px') return;
   go.style.width = w + 'px';
   go.style.flex  = '0 0 ' + w + 'px';
@@ -6103,6 +6119,9 @@ var POLL_MS        = 100;  // measured: full scan ~9ms avg / 23ms max, so 100ms 
 var _lastStatus    = '';
 var _skipPollUntil = 0;
 var _pollRunning   = false; // prevents concurrent poll calls piling up
+var _pollStartedAt = 0;     // when the running scan began, for the stuck-scan guard
+var _pollToken     = 0;     // identifies the scan that owns _pollRunning
+var _POLL_STUCK_MS = 5000;  // a scan still running after this is abandoned
 var _isDragging    = false; // pause polling while handle is being dragged
 
 // ─── Debug: poll timing ──────────────────────────────────────────────────
@@ -6171,16 +6190,31 @@ function _toggleDebugTiming() {
 }
 
 async function poll() {
-  if (_pollRunning) { if (_debugTiming && _dbgStats) _dbgStats.dropped++; return; } // previous tick still running
+  if (_pollRunning) {
+    // Every call in detectContext awaits a Premiere proxy. A promise that never
+    // settles would leave this flag set and stop the panel updating for the rest
+    // of the session with no sign of why, so a stuck scan is abandoned.
+    if (_pollStartedAt && Date.now() - _pollStartedAt > _POLL_STUCK_MS) {
+      console.log('[OC] poll: abandoning a scan stuck for ' + (Date.now() - _pollStartedAt) + 'ms');
+      _pollRunning = false;
+      _invalidateCache();
+    } else {
+      if (_debugTiming && _dbgStats) _dbgStats.dropped++;
+      return; // previous tick still running
+    }
+  }
   if (_isDragging)  return; // keep event loop free while user is dragging
   var s = getState();
   if (s.isBaking) return;
   if (Date.now() < _skipPollUntil) return;
   _pollRunning = true;
+  _pollStartedAt = Date.now();
+  var _myPoll = ++_pollToken; // an abandoned scan must not clear the flag or apply its result
   try {
     var _t0 = _debugTiming ? Date.now() : 0;
     var result = await detectContext();
     var _tDet = _debugTiming ? Date.now() - _t0 : 0;
+    if (_pollToken !== _myPoll) return; // this scan was abandoned; a newer one owns the state
     // A scan that was already running when Go was pressed describes the
     // keyframes as they were before the bake. Applying it would restore the
     // pre-bake selection and, worse, its 2+ frame bracket pair inside the new
@@ -6266,7 +6300,7 @@ async function poll() {
   } catch(err) {
     console.error('[FS] poll error:', err);
   } finally {
-    _pollRunning = false;
+    if (_pollToken === _myPoll) _pollRunning = false;
   }
 }
 window.__opencurvePoll = poll;
@@ -6306,6 +6340,7 @@ var _animationsOn       = localStorage.getItem(_ANIM_KEY) !== 'off';
 try { localStorage.removeItem('opencurve-scan-during-playback'); } catch(e) {}
 var _GRID_KEY           = 'opencurve-grid-size';
 var _gridSize           = parseInt(localStorage.getItem(_GRID_KEY), 10) || 8;
+if ([4, 8, 16].indexOf(_gridSize) < 0) _gridSize = 8; // only the three the menu offers
 var _LAYOUT_KEY         = 'opencurve-preset-layout';
 var _presetLayout       = localStorage.getItem(_LAYOUT_KEY) || 'list';
 var _GRAPH_KEY          = 'opencurve-graph-visible';
@@ -6726,6 +6761,11 @@ function _openReleasesPage() {
     console.error('[OC] openExternal failed:', e);
     navigator.clipboard.writeText(url).then(function() {
       _showCopyToast('Link copied — paste in browser', '#e6b800');
+    }, function(e2) {
+      // Both the browser launch and the clipboard refused: say so rather than
+      // leave an unhandled rejection and a click that appears to do nothing
+      console.error('[OC] clipboard write failed:', e2);
+      _showCopyToast('Could not open ' + url, '#ff9090');
     });
   });
 }
@@ -7602,9 +7642,8 @@ function _showSettingsModal() {
   modal.remove = function() { _settingsRO.disconnect(); _origRemove(); };
 }
 
-// Apply saved curve colour on load
-document.addEventListener('DOMContentLoaded', function() {
-  _applyCurveColor(_curveColor);
-});
+// The colour is applied by `create` right after initPanel(); a DOMContentLoaded
+// listener here would also never fire on the loader's plugin-update.js path,
+// where the script is appended after the document is ready.
 
 

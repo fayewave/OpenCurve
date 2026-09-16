@@ -977,6 +977,7 @@ function initGraphEditor(svg) {
   var dragging  = null;
   var liveCurve = null;
   var dragRect  = null;
+  var dragMoved = false; // a pointermove actually changed the curve this drag
 
   // Every inline style write relayouts the panel in UXP, and a hover fires many
   // pointermoves a second, so the cursor is written only when it changes.
@@ -1021,6 +1022,7 @@ function initGraphEditor(svg) {
       // Peak mode: the pointer is the peak, wherever you press
       svg.setPointerCapture(e.pointerId);
       dragging    = 'peak';
+      dragMoved   = true; // the press itself reshapes the curve in peak mode
       liveCurve   = _cloneCurve(getState().curve);
       dragRect    = svg.getBoundingClientRect();
       _isDragging = true;
@@ -1100,6 +1102,7 @@ function initGraphEditor(svg) {
       }
       return;
     }
+    dragMoved = true;
     var raw = _unscale(e.clientX - dragRect.left, e.clientY - dragRect.top);
     var n   = svgToNorm(raw.cx, raw.cy, _svgW, _svgH);
     var x   = Math.max(0,    Math.min(1,   n.nx));
@@ -1161,8 +1164,16 @@ function initGraphEditor(svg) {
     _isDragging = false;
     _setSnapBg(false);
     _hideDragGhost();
-    setState({ curve: liveCurve });
-    clearPresetActive();
+    // Only commit when the drag actually changed something. Pressing a handle
+    // and releasing without moving used to clear the active preset, so the tile
+    // un-highlighted although the curve was identical. (A press on empty graph
+    // space snaps the nearest handle and commits in pointerdown, so that path
+    // is already committed by the time we get here.)
+    if (dragMoved) {
+      setState({ curve: liveCurve });
+      clearPresetActive();
+    }
+    dragMoved = false;
     dragging  = null;
     liveCurve = null;
     dragRect  = null;
@@ -1710,7 +1721,13 @@ function _tlRender(s, force) {
   var H      = Math.max(_TL_MIN_H, params.length * laneH, boxH);
   var W      = _tlW;
   var sel    = s.selectedParamKeys || [], valid = s.validParamKeys || [], baked = s.bakedParamKeys || [];
-  var sig = [W, H, n, _tlZoomKeys ? 'k' : 'c', range ? range.a.toFixed(4) + '-' + range.b.toFixed(4) : '', n === 0 ? s.status : ''].join('|');
+  // clipStart is the origin of the second lines and fps drives the run bars, and
+  // neither follows from the range: trimming a clip's head in keyframe-zoom mode
+  // moves both while every keyframe keeps its sequence time, so the lanes used
+  // to keep drawing the old second lines.
+  var sig = [W, H, n, _tlZoomKeys ? 'k' : 'c', range ? range.a.toFixed(4) + '-' + range.b.toFixed(4) : '',
+             s.tl ? Math.round((s.tl.clipStart || 0) * 1000) + '/' + (s.tl.fps || 0) : '',
+             n === 0 ? s.status : ''].join('|');
   if (range) params.forEach(function(p) {
     sig += '|' + p.key + ':' + p.displayName + ':' + (p.tlKf || []).map(function(t){ return Math.round(t * 1000); }).join(',')
          + ':' + (p.tlOut ? 'o' : Math.round(p.tlKf0 * 1000) + '/' + Math.round(p.tlKf1 * 1000))
@@ -2131,15 +2148,14 @@ function _tlSetGoWidth() {
     if (go.style.width !== 'auto') { go.style.width = 'auto'; go.style.flex = '0 0 auto'; }
     return;
   }
+  // _tlVisible is true here: the branch above returns otherwise
   var w = _tlPropsW;
-  if (_tlVisible) {
-    try {
-      var props = document.getElementById('prop-btns');
-      var pr = props ? props.getBoundingClientRect() : null;
-      var rr = go.parentNode ? go.parentNode.getBoundingClientRect() : null;
-      if (pr && rr && pr.width > 0 && rr.right > pr.left) w = Math.round(rr.right - pr.left);
-    } catch(_) {}
-  }
+  try {
+    var props = document.getElementById('prop-btns');
+    var pr = props ? props.getBoundingClientRect() : null;
+    var rr = go.parentNode ? go.parentNode.getBoundingClientRect() : null;
+    if (pr && rr && pr.width > 0 && rr.right > pr.left) w = Math.round(rr.right - pr.left);
+  } catch(_) {}
   if (go.style.width === w + 'px') return;
   go.style.width = w + 'px';
   go.style.flex  = '0 0 ' + w + 'px';
@@ -4078,6 +4094,7 @@ var _animationsOn       = localStorage.getItem(_ANIM_KEY) !== 'off';
 try { localStorage.removeItem('opencurve-scan-during-playback'); } catch(e) {}
 var _GRID_KEY           = 'opencurve-grid-size';
 var _gridSize           = parseInt(localStorage.getItem(_GRID_KEY), 10) || 8;
+if ([4, 8, 16].indexOf(_gridSize) < 0) _gridSize = 8; // only the three the menu offers
 var _LAYOUT_KEY         = 'opencurve-preset-layout';
 var _presetLayout       = localStorage.getItem(_LAYOUT_KEY) || 'list';
 var _GRAPH_KEY          = 'opencurve-graph-visible';
@@ -5341,6 +5358,9 @@ if (document.readyState === 'loading') {
 
 // ─── Public API ──────────────────────────────────────────────────────────
 return {
+  // Version (the bridge compares it with the last one it saw, for the update toast)
+  CURRENT_VERSION: CURRENT_VERSION,
+
   // State
   getState:    getState,
   setState:    setState,
