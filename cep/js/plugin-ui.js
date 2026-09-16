@@ -2026,8 +2026,8 @@ function _tlComposeReadout() {
   // renderUI on every pointer move over the lanes
   var txt = document.getElementById('status-text'), clipEl = document.getElementById('status-clip');
   if (!txt) return;
-  var st = getState();
-  txt.textContent = _statusMsg(st, !!clipEl && clipEl.style.display !== 'none' && !!st.clipName);
+  var s = getState();
+  txt.textContent = _statusMsg(s, !!clipEl && clipEl.style.display !== 'none' && !!s.clipName);
 }
 // The property's value under the pointer (what Premiere interpolates there, so
 // it reflects the baked keyframes). One host read in flight at a time; the
@@ -2185,15 +2185,11 @@ function _tlApplyPropsWidth() {
   if (!props) return;
   var w = _tlSavedPropsWidth();
   _tlPropsW = w;
-  if (_tlVisible) {
-    props.style.width    = w + 'px';
-    props.style.flex     = '0 0 ' + w + 'px';
-    props.style.maxWidth = '';
-  } else {
-    props.style.width    = '';
-    props.style.flex     = '1 1 auto';
-    props.style.maxWidth = 'none';
-  }
+  // Change-only writes, matching the UXP edition: this runs from the .main-row
+  // ResizeObserver and UXP relayouts the panel on every style write
+  var want = _tlVisible ? { width: w + 'px', flex: '0 0 ' + w + 'px', maxWidth: '' }
+                        : { width: '',       flex: '1 1 auto',        maxWidth: 'none' };
+  Object.keys(want).forEach(function(k) { if (props.style[k] !== want[k]) props.style[k] = want[k]; });
   _tlSetGoWidth(); // Go keeps the column's width even with the timeline off
 }
 
@@ -2587,8 +2583,7 @@ function renderUI(s) {
   var txt   = document.getElementById('status-text');
   if (strip && txt) {
     var cfg  = STATUS_CONFIG[s.status] || STATUS_CONFIG['idle'];
-    var msg  = typeof cfg.text === 'function' ? cfg.text(s) : cfg.text;
-    strip.className = 'status-strip ' + cfg.cls;
+    var cls  = 'status-strip ' + cfg.cls;
     // Marker: hollow diamond while the playhead is outside every pair ("Move
     // playhead..."), a tick once properties are selected (blue), solid otherwise
     // (including "N properties ready")
@@ -2621,12 +2616,12 @@ function renderUI(s) {
     if (dotEl && dotEl.style.color !== _sc.dot)  dotEl.style.color  = _sc.dot;
     if (txt.style.color !== _sc.text) txt.style.color = _sc.text;
     if (clipEl && clipEl.style.color !== _sc.text) clipEl.style.color = _sc.text;
-    if (_tlHoverText) msg = _tlHoverText; // pointer over the mini timeline: what's under it
-    if (showClip) msg = '\u00b7 ' + msg;
+    var msg  = _statusMsg(s, showClip);
     // Clickable whenever there are valid params: click selects all, click again clears
     var _vk = s.validParamKeys || [];
-    if (_vk.length > 0 && s.status !== 'done' && !s.isBaking) strip.className += ' status-clickable';
-    txt.textContent = msg;
+    if (_vk.length > 0 && s.status !== 'done' && !s.isBaking) cls += ' status-clickable';
+    if (strip.className !== cls) strip.className = cls; // a class write restyles the strip's subtree
+    if (txt.textContent !== msg) txt.textContent = msg;
   }
 
   var goBtn     = document.getElementById('go-btn');
@@ -2647,6 +2642,16 @@ function renderUI(s) {
   }
 
   _tlRender(s);
+}
+
+// The status strip's message: the mini timeline's hover readout while the
+// pointer is over a lane, else the state's text; a middle dot before it when
+// the clip name is shown ahead of it.
+function _statusMsg(s, showClip) {
+  var cfg = STATUS_CONFIG[s.status] || STATUS_CONFIG['idle'];
+  var msg = typeof cfg.text === 'function' ? cfg.text(s) : cfg.text;
+  if (_tlHoverText) msg = _tlHoverText; // pointer over the mini timeline: what's under it
+  return showClip ? '\u00b7 ' + msg : msg;
 }
 
 // ─── Panel init ───────────────────────────────────────────────────────────
