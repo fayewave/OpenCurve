@@ -1436,14 +1436,38 @@ async function _getSelectionItems(sequence) {
   return items;
 }
 
+// Name, start and end of a clip, read in parallel. Every Premiere object here is
+// a proxy and every getter is an IPC round trip, so the three go together rather
+// than one after another, and callers that need the times reuse them instead of
+// reading the same values again.
+async function _clipInfo(item, trackIdx) {
+  var r = await Promise.all([
+    item.getName().then(null, function() { return ''; }),
+    item.getStartTime().then(null, function() { return null; }),
+    item.getEndTime().then(null, function() { return null; })
+  ]);
+  var n = r[0] || '';
+  var s = r[1] && typeof r[1].seconds === 'number' ? r[1].seconds : '';
+  var e = r[2] && typeof r[2].seconds === 'number' ? r[2].seconds : '';
+  return {
+    name: n,
+    start: typeof s === 'number' ? s : -1,
+    end:   typeof e === 'number' ? e : -1,
+    id: n + '|' + s + '|' + e + (trackIdx !== undefined ? '|T' + trackIdx : '')
+  };
+}
+
 // Composite clip identity — name + start + end + track index.
 // Unique even for same-named clips stacked on different tracks.
 async function _clipIdentity(item, trackIdx) {
-  var n = '', s = '', e = '';
-  try { n = await item.getName(); } catch(_) {}
-  try { var st = await item.getStartTime(); s = st && typeof st.seconds === 'number' ? st.seconds : ''; } catch(_) {}
-  try { var et = await item.getEndTime();   e = et && typeof et.seconds === 'number' ? et.seconds : ''; } catch(_) {}
-  return n + '|' + s + '|' + e + (trackIdx !== undefined ? '|T' + trackIdx : '');
+  try { return (await _clipInfo(item, trackIdx)).id; } catch(_) { return '||' + (trackIdx !== undefined ? '|T' + trackIdx : ''); }
+}
+
+// Identities of every selected item, read in parallel (the cache check and the
+// snapshot below both need them, and used to fetch the selection again for each).
+async function _selIdentities(selItems) {
+  if (!selItems || !selItems.length) return [];
+  return await Promise.all(selItems.map(function(it) { return _clipIdentity(it); }));
 }
 
 // Returns ALL clips at the playhead across all video tracks (topmost first)
@@ -1465,23 +1489,25 @@ async function _clipsViaTrackScan(sequence, ph) {
     try { all = await track.getTrackItems(1, false); } catch(_) {}
     if (!all || all.length === 0) continue;
 
+    // Every clip's name, start and end, all in flight together. Reading them one
+    // clip after another cost two sequential round trips per clip on every
+    // moved playhead: 400+ on a 200-clip sequence, continuously during playback.
+    var infos = [];
+    try { infos = await Promise.all(all.map(function(it) { return _clipInfo(it, t); })); } catch(_) { continue; }
+
     for (var i = 0; i < all.length; i++) {
       try {
-        var item = all[i];
-        var st = await item.getStartTime();
-        var et = await item.getEndTime();
-        var s = st && typeof st.seconds === 'number' ? st.seconds : -1;
-        var e = et && typeof et.seconds === 'number' ? et.seconds : -1;
+        var item = all[i], info = infos[i];
+        if (!info) continue;
+        var s = info.start, e = info.end;
         // End is exclusive, as in Premiere: a playhead sitting on a cut belongs to
         // the incoming clip. Treating it as inside the outgoing one made the panel
         // report that clip's properties (and "Move playhead between keyframes",
         // since the playhead is at its out-point) on the first frame of the next.
-        if (ph >= s && ph < e) {
-          var chain = await item.getComponentChain();
-          if (chain) {
-            var id = await _clipIdentity(item, t);
-            results.push({ clip: item, chain: chain, clipStart: s, clipEnd: e, trackIdx: t, identity: id });
-          }
+        if (s < 0 || e < 0 || ph < s || ph >= e) continue;
+        var chain = await item.getComponentChain();
+        if (chain) {
+          results.push({ clip: item, chain: chain, clipStart: s, clipEnd: e, trackIdx: t, identity: info.id });
         }
       } catch(_) {}
     }
@@ -1489,8 +1515,9 @@ async function _clipsViaTrackScan(sequence, ph) {
   return results;
 }
 
-async function _clipViaSelection(sequence) {
-  var selItems = await _getSelectionItems(sequence);
+async function _clipViaSelection(sequence, selItems) {
+  // selItems is passed in by detectContext, which fetched it for this poll
+  if (!selItems) { try { selItems = await _getSelectionItems(sequence); } catch(_) { selItems = null; } }
   for (var si = 0; si < (selItems || []).length; si++) {
     try {
       var ch = await selItems[si].getComponentChain();
@@ -1503,10 +1530,10 @@ async function _clipViaSelection(sequence) {
         var mn = ''; try { mn = await _call(firstComp, 'getMatchName'); } catch(_) {}
         if (mn.indexOf('Internal') === 0) continue; // Audio chain — skip
       }
-      var cs = await _clipStart(selItems[si]);
-      var ce = await _clipEnd(selItems[si]);
-      var id = await _clipIdentity(selItems[si]);
-      return { clip: selItems[si], chain: ch, clipStart: cs, clipEnd: ce, viaSelection: true, identity: id };
+      // One read for name, start and end instead of three separate passes
+      var info = await _clipInfo(selItems[si]);
+      return { clip: selItems[si], chain: ch, clipStart: info.start >= 0 ? info.start : 0,
+               clipEnd: info.end, viaSelection: true, identity: info.id };
     } catch(_) {}
   }
   return null;
@@ -1515,14 +1542,6 @@ async function _clipViaSelection(sequence) {
 
 // Get clip start time in sequence (seconds). Keyframe times are clip-local,
 // so we need this to convert the sequence playhead into clip-local time.
-async function _clipStart(clip) {
-  try {
-    var st = await clip.getStartTime();
-    if (st && typeof st.seconds === 'number') return st.seconds;
-  } catch(_) {}
-  return 0;
-}
-
 // Clip end in sequence seconds (the mini timeline's right edge in clip view)
 async function _clipEnd(clip) {
   try {
@@ -1591,6 +1610,9 @@ async function _findQualifiedParams(chain, phLocal) {
       for (var ks = 0; ks < kfArr.length; ks++) kfSecs.push(kfArr[ks].seconds);
       qualified.push({ key: i+'_'+j, displayName: displayName,
                        param: param, comp: comp, paramIdx: j,
+                       // val0 is the value at kf0 this loop already read; the bake
+                       // context below used to fetch the same value a second time
+                       val0: extracted,
                        kf0: kf0, kf1: kf1, totalKf: kfArr.length, isOutside: isOutside, kfSecs: kfSecs });
     }
   }
@@ -2162,16 +2184,18 @@ function _jumpPair(kfSecs, phLocal, fps) {
   return _nearestPair(kfSecs, phLocal, fps);
 }
 
-async function _detectContextFull(project, sequence, ph) {
+async function _detectContextFull(project, sequence, ph, selItems) {
   var bestQualified = null;
   var bestFound     = null;
 
-  // 1. Try selected clip first — fast path, avoids expensive track scan
+  // 1. Try selected clip first — fast path, avoids expensive track scan.
+  // selItems comes from detectContext, which has already fetched it this poll.
   var sel = null;
-  try { sel = await _clipViaSelection(sequence); } catch(_) {}
+  try { sel = await _clipViaSelection(sequence, selItems); } catch(_) {}
   if (sel) {
     var clipStart   = sel.clipStart || 0;
     var clipInPoint = await _clipInPoint(sel.clip);
+    sel.clipIn      = clipInPoint; // reused below instead of reading it again
     var phLocal     = (ph - clipStart) + clipInPoint;
     var qualifiedParams = await _findQualifiedParams(sel.chain, phLocal);
     if (qualifiedParams.length > 0) {
@@ -2191,6 +2215,7 @@ async function _detectContextFull(project, sequence, ph) {
       var found = scanned[ci];
       var clipStart   = found.clipStart || 0;
       var clipInPoint = await _clipInPoint(found.clip);
+      found.clipIn    = clipInPoint; // reused below instead of reading it again
       var phLocal     = (ph - clipStart) + clipInPoint;
       var qualifiedParams = await _findQualifiedParams(found.chain, phLocal);
       if (qualifiedParams.length > 0) {
@@ -2203,7 +2228,6 @@ async function _detectContextFull(project, sequence, ph) {
 
   // No clips found at playhead at all
   if (!sel && scanned.length === 0) {
-    _cache.clipStartSec = null;
     return { status: 'no-clip', availableParams: [], hint: 'No video clip found at playhead position' };
   }
 
@@ -2212,13 +2236,13 @@ async function _detectContextFull(project, sequence, ph) {
   }
 
   var found = bestFound;
-  _cache.clipStartSec = found.clipStart || 0;
   // Identity for bake records (per-row undo). Name + in-point survive moving the
   // clip around the timeline, unlike start/end. The UXP API has no stable clip
   // id, so a copy of the clip shares this identity; the records are also checked
   // against the property's actual keyframes (see _bakedKeysFor), which limits
   // any mix-up to copies that carry the same baked keyframes.
-  var clipIn = await _clipInPoint(found.clip);
+  // Already read when this clip was picked above; one round trip, not two
+  var clipIn = typeof found.clipIn === 'number' ? found.clipIn : await _clipInPoint(found.clip);
   var clipId = '';
   var seqKey = '';
   var clipName = '';
@@ -2266,7 +2290,9 @@ async function _detectContextFull(project, sequence, ph) {
   var paramContexts = {};
   for (var vi = 0; vi < validParams.length; vi++) {
     var vp   = validParams[vi];
-    var val0 = _extractValue(await _getValue(vp.param, vp.kf0));
+    // val0 came back with the qualified entry; only the second value is new,
+    // and the two used to be fetched one after the other
+    var val0 = vp.val0 !== undefined ? vp.val0 : _extractValue(await _getValue(vp.param, vp.kf0));
     var val1 = _extractValue(await _getValue(vp.param, vp.kf1));
     var fc   = Math.round((vp.kf1.seconds - vp.kf0.seconds) * fps);
     paramContexts[vp.key] = {
@@ -2340,23 +2366,23 @@ async function detectContext() {
     // rescan and the UI only caught up on the 1s heartbeat (bug in <= 1.2.3).
     var moved = (_cache.playhead !== null && ph !== _cache.playhead);
 
+    // The selection is fetched once per poll and its identities read in
+    // parallel. The cache check, the snapshot and _clipViaSelection each used to
+    // fetch it again and re-read the same names and times one after another:
+    // about 2 + 3N sequential round trips on an idle tick, three times that when
+    // the selection changed.
+    var selItems = null, selIds = null;
+    try {
+      selItems = await _getSelectionItems(sequence);
+      selIds   = await _selIdentities(selItems);
+    } catch(_) { selItems = null; selIds = null; }
+    var selCount = selIds ? selIds.length : 0;
+    var selId    = selCount > 0 ? selIds.join('+') : null;
+
     // If playhead hasn't moved, check if selection changed before returning cache
     _cache.pollCount++;
     if (!moved && _cache.lastResult && _cache.pollCount < HEARTBEAT_POLLS) {
-      // Selection identity check — combined identity of ALL selected items
-      var selChanged = false;
-      try {
-        var selItems = await _getSelectionItems(sequence);
-        var selCount = selItems ? selItems.length : 0;
-        if (selCount !== _cache.selItemCount) {
-          selChanged = true;
-        } else if (selCount > 0) {
-          var ids = [];
-          for (var si = 0; si < selCount; si++) ids.push(await _clipIdentity(selItems[si]));
-          var combinedId = ids.join('+');
-          if (combinedId !== _cache.selClipId) selChanged = true;
-        }
-      } catch(_) {}
+      var selChanged = (selCount !== _cache.selItemCount) || (selCount > 0 && selId !== _cache.selClipId);
       if (!selChanged) { _dbgKind = 'cache'; return _cache.lastResult; }
       _cache.pollCount = 0;
     }
@@ -2365,27 +2391,13 @@ async function detectContext() {
     _cache.pollCount = 0;
 
     // Snapshot selection identity for future change detection
-    try {
-      var selSnap = await _getSelectionItems(sequence);
-      var snapCount = selSnap ? selSnap.length : 0;
-      _cache.selItemCount = snapCount;
-      if (snapCount > 0) {
-        var snapIds = [];
-        for (var si2 = 0; si2 < snapCount; si2++) snapIds.push(await _clipIdentity(selSnap[si2]));
-        _cache.selClipId = snapIds.join('+');
-      } else {
-        _cache.selClipId = null;
-      }
-    } catch(_) {
-      _cache.selItemCount = 0;
-      _cache.selClipId    = null;
-    }
+    _cache.selItemCount = selCount;
+    _cache.selClipId    = selId;
 
     var _tFull = Date.now();
-    var result = await _detectContextFull(project, sequence, ph);
+    var result = await _detectContextFull(project, sequence, ph, selItems);
     _dbgKind = 'full'; _dbgFullMs = Date.now() - _tFull;
     _cache.lastResult   = result;
-    _cache.lastResultAt = Date.now();
     return result;
 
   } catch(err) {
@@ -2765,13 +2777,6 @@ async function _undoRecords(recs, label, key) {
     console.error('[OC] undo bake error:', err);
     _showCopyToast('Undo failed: ' + (err && err.message ? err.message : String(err)), '#ff9090');
   }
-}
-
-function _kfCount(param) {
-  try {
-    var arr = param.getKeyframeListAsTickTimes();
-    return Array.isArray(arr) ? arr.length : Array.from(arr).length;
-  } catch(_) { return -1; }
 }
 
 // ─── UI ───────────────────────────────────────────────────────────────────
@@ -6074,13 +6079,10 @@ var _cache = {
   sequenceGuid:   null,   // guid of active sequence
   fps:            null,   // cached fps for current sequence
   fpsCheckedAt:   0,      // timestamp of last fps detection
-  clipStrategy:   null,   // 'track' | 'selection' — whichever worked last
-  clipStartSec:   null,   // start time of last detected clip (identity key)
   selClipId:      null,   // composite identity string: name|start|end
   selItemCount:   0,      // number of selected items (fast identity check)
   selTrackItemSig: null,  // 'noargs' | 'typed' — which getTrackItems call works on selection
   lastResult:     null,   // full detectContext result
-  lastResultAt:   0,      // timestamp of last full detection
   pollCount:      0,      // polls since last full detection
 };
 
@@ -6089,7 +6091,6 @@ var HEARTBEAT_POLLS    = 10;    // force full re-scan every N polls even if play
 
 function _invalidateCache() {
   _cache.playhead      = null;
-  _cache.clipStartSec  = null;
   _cache.selClipId     = null;
   _cache.selItemCount  = 0;
   _cache.lastResult    = null;
