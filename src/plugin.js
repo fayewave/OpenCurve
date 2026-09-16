@@ -1100,11 +1100,18 @@ function initGraphEditor(svg) {
   var liveCurve = null; // working copy mutated during drag
   var dragRect  = null; // SVG rect cached at drag-start
 
-  function hitTest(e) {
+  // Every inline style write relayouts the panel in UXP, and a hover fires many
+  // pointermoves a second, so the cursor is written only when it changes.
+  var _curCursor = '';
+  function setCursor(v) { if (_curCursor !== v) { _curCursor = v; svg.style.cursor = v; } }
+
+  // rect and curve are optional: the hover path measures and clones once per
+  // move and passes them in, instead of each helper doing its own.
+  function hitTest(e, rect, curve) {
     if (_peakMode) return null;
-    var rect = dragRect || svg.getBoundingClientRect();
+    rect = rect || dragRect || svg.getBoundingClientRect();
     var raw  = _unscale(e.clientX - rect.left, e.clientY - rect.top);
-    var c    = liveCurve || getState().curve;
+    var c    = curve || liveCurve || getState().curve;
     var R    = HANDLE_R + HIT_TOLERANCE;
     function near(d, r) {
       var hp = _handlePos(c, d), sp = normToSVG(hp.x, hp.y, _svgW, _svgH);
@@ -1140,7 +1147,7 @@ function initGraphEditor(svg) {
       dragRect    = svg.getBoundingClientRect();
       _isDragging = true;
       e.preventDefault();
-      svg.style.cursor = 'grabbing';
+      setCursor('grabbing');
       _applyPeakPointer(e);
       return;
     }
@@ -1172,7 +1179,7 @@ function initGraphEditor(svg) {
     dragRect    = svg.getBoundingClientRect();
     _isDragging = true;
     e.preventDefault();
-    svg.style.cursor = 'grabbing';
+    setCursor('grabbing');
   });
 
   var _coordsEl = document.getElementById('graph-coords');
@@ -1190,25 +1197,27 @@ function initGraphEditor(svg) {
     if (dragging) {
       // coords updated in hot path below
     } else {
+      // One rect read and one state clone for the whole move: this ran
+      // getBoundingClientRect twice and cloned the curve twice per pointermove.
+      var rectH = svg.getBoundingClientRect();
       if (_peakMode) {
-        svg.style.cursor = 'crosshair';
-        var rectP = svg.getBoundingClientRect();
-        var rp = _unscale(e.clientX - rectP.left, e.clientY - rectP.top);
+        setCursor('crosshair');
+        var rp = _unscale(e.clientX - rectH.left, e.clientY - rectH.top);
         var np = svgToNorm(rp.cx, rp.cy, _svgW, _svgH);
         var hx = Math.max(0, Math.min(1, np.nx)), hy = Math.max(0, Math.min(1, np.ny));
         var hp = _peakOf(_solvePeak(hx, hy), 48);
         _showPeakCoords(hp.v <= 1.02 ? hx : hp.x, hp.v);
         return;
       }
-      var hit = hitTest(e);
-      svg.style.cursor = hit ? 'grab' : 'crosshair';
+      var curveH = liveCurve || getState().curve;
+      var hit = hitTest(e, rectH, curveH);
+      setCursor(hit ? 'grab' : 'crosshair');
       if (hit) {
         // Snap to handle position
-        var hp0 = _handlePos(getState().curve, hit);
+        var hp0 = _handlePos(curveH, hit);
         _showCoords(hp0.x, hp0.y);
       } else {
-        var rect2 = svg.getBoundingClientRect();
-        var rc = _unscale(e.clientX - rect2.left, e.clientY - rect2.top);
+        var rc = _unscale(e.clientX - rectH.left, e.clientY - rectH.top);
         var nc = svgToNorm(rc.cx, rc.cy, _svgW, _svgH);
         _showCoords(nc.nx, nc.ny);
       }
@@ -1281,7 +1290,7 @@ function initGraphEditor(svg) {
     dragging  = null;
     liveCurve = null;
     dragRect  = null;
-    svg.style.cursor = 'crosshair';
+    setCursor('crosshair');
   }
 
   svg.addEventListener('pointerup',     endDrag);
@@ -5363,103 +5372,101 @@ function initPanel() {
   // Drag-to-reorder (pointer events)
   function _initDragSort(container) {
     var dragEl = null, dropLine = null, startY = 0, startX = 0, moved = false;
-    var _lastDownBtn = null, _lastDownTime = 0;
-    var _dragGhost = null;
+    var _dragGhost = null, _ghostW = 80, _ghostH = 60;
+    var _dropHighlight = null;
+    var _pendingPointerId = null;
 
     container.addEventListener('pointerdown', function(e) {
+      // Left button only: a right-press used to arm a drag and take pointer
+      // capture, so a small movement before release both reordered the list and
+      // opened the tile's context menu.
+      if (e.button !== 0) return;
       var btn = e.target;
       while (btn && btn !== container) {
         if (btn.classList && btn.classList.contains('preset-btn')) break;
         btn = btn.parentNode;
       }
       if (!btn || btn === container) return;
-      if (btn.id === 'new-preset-btn') return;
       if (btn.id === '_update-notif') return;
-      if (e.target.classList && e.target.classList.contains('preset-rename-input')) return;
-
-      // If this is a rapid second press on the same button, let dblclick fire instead
-      var now = Date.now();
-      if (btn === _lastDownBtn && now - _lastDownTime < 350) {
-        _lastDownBtn = null;
-        return;
-      }
-      _lastDownBtn = btn;
-      _lastDownTime = now;
 
       dragEl = btn; startX = e.clientX; startY = e.clientY; moved = false;
-      container.setPointerCapture(e.pointerId);
+      // Capture is taken on the first real move, not here: Chromium retargets
+      // the following click to the capturing element.
+      _pendingPointerId = e.pointerId;
     });
 
-    var _dropHighlight = null;
     container.addEventListener('pointermove', function(e) {
       if (!dragEl) return;
       if (!moved && Math.abs(e.clientY - startY) < 5) return;
       if (!moved) {
+        if (_pendingPointerId != null) {
+          container.setPointerCapture(_pendingPointerId);
+          _pendingPointerId = null;
+        }
         moved = true;
         dropLine = document.createElement('div');
         dropLine.className = 'preset-drop-line';
         dragEl.classList.add('preset-dragging');
         if (_presetCols > 1) {
-          // Create floating ghost
+          // Floating ghost. Its size never changes, so it is measured once here
+          // instead of reading offsetWidth/offsetHeight on every move (a read
+          // straight after a style write forces a layout).
           var rect = dragEl.getBoundingClientRect();
+          _ghostW = rect.width || 80;
+          _ghostH = rect.height || 60;
           _dragGhost = dragEl.cloneNode(true);
           _dragGhost.style.cssText = 'position:fixed;z-index:9999;pointer-events:none;opacity:0.6;transform:scale(0.85);width:' + rect.width + 'px;';
-          _dragGhost.style.left = (e.clientX - rect.width / 2) + 'px';
-          _dragGhost.style.top = (e.clientY - rect.height / 2) + 'px';
+          _dragGhost.style.left = (e.clientX - _ghostW / 2) + 'px';
+          _dragGhost.style.top = (e.clientY - _ghostH / 2) + 'px';
           document.body.appendChild(_dragGhost);
           dragEl.style.display = 'none';
         }
       }
-      // Move ghost
-      if (_dragGhost) {
-        var gw = _dragGhost.offsetWidth || 80;
-        var gh = _dragGhost.offsetHeight || 60;
-        _dragGhost.style.left = (e.clientX - gw / 2) + 'px';
-        _dragGhost.style.top = (e.clientY - gh / 2) + 'px';
-      }
+      // Measure before writing anything this move, so the rect reads below don't
+      // force a layout on the ghost's new position.
       var isGrid = _presetCols > 1; // grid, or the two-column list
       var items = Array.from(container.children).filter(function(c) {
-        return c !== dragEl && c !== dropLine && c.id !== 'new-preset-btn';
+        return c !== dragEl && c !== dropLine;
       });
       var after = null;
       if (isGrid) {
-        // Find which tile the cursor is over
-        var hoverTarget = null;
+        // Insert before the tile the cursor is over (the dragged item takes its place)
         for (var i = 0; i < items.length; i++) {
           var r = items[i].getBoundingClientRect();
           if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
-            hoverTarget = items[i];
+            after = items[i];
             break;
           }
         }
-        // Insert before the hovered tile (dragged item takes its place)
-        if (hoverTarget) after = hoverTarget;
-        // Highlight the target tile
-        if (_dropHighlight && _dropHighlight !== after) {
-          _dropHighlight.style.outline = '';
-        }
-        if (after && after !== dragEl) {
-          after.style.outline = '2px solid var(--accent)';
-          _dropHighlight = after;
-        } else if (_dropHighlight) {
-          _dropHighlight.style.outline = '';
-          _dropHighlight = null;
-        }
       } else {
-        if (_dropHighlight) { _dropHighlight.style.outline = ''; _dropHighlight = null; }
         for (var j = 0; j < items.length; j++) {
           var r2 = items[j].getBoundingClientRect();
           if (e.clientY < r2.top + r2.height / 2) { after = items[j]; break; }
         }
       }
-      var newPBtn = document.getElementById('new-preset-btn');
-      if (after) container.insertBefore(dropLine, after);
-      else if (newPBtn) container.insertBefore(dropLine, newPBtn);
-      else container.appendChild(dropLine);
+      // Writes from here down
+      var wantHi = (isGrid && after && after !== dragEl) ? after : null;
+      if (_dropHighlight !== wantHi) {
+        if (_dropHighlight) _dropHighlight.style.outline = '';
+        if (wantHi) wantHi.style.outline = '2px solid var(--accent)';
+        _dropHighlight = wantHi;
+      }
+      // Moving the drop line is what invalidates every rect above, so leave it
+      // alone while the target is unchanged: most moves then touch no DOM at all.
+      var curNext = (dropLine.parentNode === container) ? dropLine.nextSibling : undefined;
+      if (curNext !== after) {
+        if (after) container.insertBefore(dropLine, after);
+        else container.appendChild(dropLine);
+      }
+      if (_dragGhost) {
+        _dragGhost.style.left = (e.clientX - _ghostW / 2) + 'px';
+        _dragGhost.style.top = (e.clientY - _ghostH / 2) + 'px';
+      }
     });
 
     function endDragSort() {
       if (!dragEl) return;
+      _pendingPointerId = null;
       if (moved && dropLine) {
         container.insertBefore(dragEl, dropLine);
         container.removeChild(dropLine);
@@ -5472,8 +5479,11 @@ function initPanel() {
       if (_dragGhost && _dragGhost.parentNode) { _dragGhost.parentNode.removeChild(_dragGhost); _dragGhost = null; }
       dragEl.style.display = '';
       dragEl.classList.remove('preset-dragging');
+      var didMove = moved;
       dragEl = null; dropLine = null; moved = false;
-      if (_presetCols > 1) _applyPresetLayout(true);
+      // Only after a real reorder: a plain click in grid view used to rewrite
+      // every tile's inline styles, and each write relayouts the panel in UXP.
+      if (didMove && _presetCols > 1) _applyPresetLayout(true);
     }
 
     container.addEventListener('pointerup',     endDragSort);
