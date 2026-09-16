@@ -3016,7 +3016,7 @@ function _pressPreset(i) {
   var list = document.getElementById('all-presets-list');
   if (!list) return;
   var tiles = Array.prototype.filter.call(list.querySelectorAll('.preset-btn'), function(b) {
-    return b.id !== 'new-preset-btn' && b.id !== '_update-notif';
+    return b.id !== '_update-notif';
   });
   if (tiles[i]) tiles[i].click();
 }
@@ -4597,7 +4597,7 @@ function initPanel() {
     el.addEventListener('contextmenu', function(e) {
       // Right-click on empty space: Open Settings alone; presets have their own menu
       var onPreset = e.target.closest && e.target.closest('.preset-btn');
-      if (onPreset && onPreset.id !== 'new-preset-btn') return;
+      if (onPreset) return;
       _showMiniCtxMenu(e, true);
     });
     if (_presetRO) { _presetRO.disconnect(); _presetRO.observe(el); }
@@ -5528,11 +5528,8 @@ function initPanel() {
   function _renderPresets() {
     var list = document.getElementById('all-presets-list');
     if (!list) return;
-    // Preserve the New Preset button if it exists
-    var newBtn = document.getElementById('new-preset-btn');
     list.innerHTML = '';
     _presetList.forEach(function(p) { list.appendChild(_buildPresetBtn(p)); });
-    if (newBtn) list.appendChild(newBtn);
     _initDragSort(list);
   }
 
@@ -5592,8 +5589,7 @@ function initPanel() {
     _presetList.push(preset);
     _savePresetList(_presetList);
     var btn = _buildPresetBtn(preset);
-    var newPBtn = document.getElementById('new-preset-btn');
-    if (newPBtn) list.insertBefore(btn, newPBtn); else list.appendChild(btn);
+    list.appendChild(btn);
     _applyPresetLayout(true);
     if (btn._ocRename) btn._ocRename();
   }
@@ -5603,11 +5599,10 @@ function initPanel() {
   function _addPresetEntries(entries) {
     var list = document.getElementById('all-presets-list');
     if (!list || !entries.length) return;
-    var newPBtn = document.getElementById('new-preset-btn');
     entries.forEach(function(p) {
       _presetList.push(p);
       var btn = _buildPresetBtn(p);
-      if (newPBtn) list.insertBefore(btn, newPBtn); else list.appendChild(btn);
+      list.appendChild(btn);
     });
     _savePresetList(_presetList);
     _applyPresetLayout(true);
@@ -5760,7 +5755,7 @@ function initPanel() {
 
   // Mini context menu: Open Settings (preset list empty space), grid sizes (graph),
   // a point's handle/delete items (graph point) or the zoom toggle (timeline)
-  function _showMiniCtxMenu(e, showSettings, showLayout, showGrid, pointIdx, showTlZoom) {
+  function _showMiniCtxMenu(e, showSettings, showGrid, pointIdx, showTlZoom) {
     console.log('[OC] _showMiniCtxMenu called');
     e.preventDefault();
     e.stopPropagation();
@@ -5774,8 +5769,6 @@ function initPanel() {
     mini.style.display = 'block';
 
     var _icSettings = '<svg width="16" height="16" viewBox="0 0 12 12" fill="none"><path d="M10.18 5 L11.53 5.12 L11.53 6.88 L10.18 7 A4.3 4.3 0 0 1 9.67 8.25 L9.67 8.25 L10.53 9.29 L9.29 10.53 L8.25 9.67 A4.3 4.3 0 0 1 7 10.18 L7 10.18 L6.88 11.53 L5.12 11.53 L5 10.18 A4.3 4.3 0 0 1 3.75 9.67 L3.75 9.67 L2.71 10.53 L1.47 9.29 L2.33 8.25 A4.3 4.3 0 0 1 1.82 7 L1.82 7 L0.47 6.88 L0.47 5.12 L1.82 5 A4.3 4.3 0 0 1 2.33 3.75 L2.33 3.75 L1.47 2.71 L2.71 1.47 L3.75 2.33 A4.3 4.3 0 0 1 5 1.82 L5 1.82 L5.12 0.47 L6.88 0.47 L7 1.82 A4.3 4.3 0 0 1 8.25 2.33 L8.25 2.33 L9.29 1.47 L10.53 2.71 L9.67 3.75 A4.3 4.3 0 0 1 10.18 5 Z M8.3 6 A2.3 2.3 0 0 0 3.7 6 A2.3 2.3 0 0 0 8.3 6 Z" fill="currentColor" fill-rule="evenodd"/></svg>';
-    var _icGrid = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="1.5" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="8" y="1.5" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="1.5" y="8" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="8" y="8" width="4.5" height="4.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
-    var _icList = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><line x1="1.5" y1="3.5" x2="12.5" y2="3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="1.5" y1="7" x2="12.5" y2="7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="1.5" y1="10.5" x2="12.5" y2="10.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
     var _icTlKeys = '<svg width="16" height="16" viewBox="0 0 12 12" fill="none"><path d="M3.2 1.5H1.5v9h1.7M8.8 1.5h1.7v9H8.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><polygon points="6,3.4 8.6,6 6,8.6 3.4,6" fill="currentColor"/></svg>';
     var _icTlClip = '<svg width="16" height="16" viewBox="0 0 12 12" fill="none"><rect x="0.9" y="2.6" width="10.2" height="6.8" rx="1" fill="none" stroke="currentColor" stroke-width="1.6"/><polygon points="6,4.2 7.6,6 6,7.8 4.4,6" fill="currentColor"/></svg>';
 
@@ -5889,7 +5882,7 @@ function initPanel() {
     var targets = [document.getElementById('tl-svg'), document.querySelector('.tl-canvas-wrap'), document.getElementById('prop-btns')];
     targets.forEach(function(el) {
       if (!el) return;
-      el.addEventListener('contextmenu', function(e) { _showMiniCtxMenu(e, false, false, false, null, true); });
+      el.addEventListener('contextmenu', function(e) { _showMiniCtxMenu(e, false, false, null, true); });
     });
   })();
 
@@ -5899,8 +5892,8 @@ function initPanel() {
     if (!graph) return;
     graph.addEventListener('contextmenu', function(e) {
       var hit = _graphHitTest ? _graphHitTest(e) : null;
-      if (hit && hit.k === 'a') { _showMiniCtxMenu(e, false, false, false, hit.i); return; }
-      _showMiniCtxMenu(e, false, false, true);
+      if (hit && hit.k === 'a') { _showMiniCtxMenu(e, false, false, hit.i); return; }
+      _showMiniCtxMenu(e, false, true);
     });
   })();
 

@@ -138,50 +138,6 @@ input, textarea {
 
 
 /* ─── Select dropdown ───────────────────────────────────────── */
-.select-wrapper {
-  position: relative;
-  flex: 1;
-}
-
-.styled-select {
-  width: 100%;
-  appearance: none;
-  background: var(--surface2);
-  border: 1px solid var(--border2);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  font-family: var(--font);
-  font-size: 14px;
-  padding: 0 28px 0 9px;
-  height: 20px;
-  cursor: pointer;
-  outline: none;
-  transition: border-color 0.15s;
-}
-
-.styled-select:hover:not(:disabled) {
-  border-color: rgba(255,255,255,0.2);
-}
-
-.styled-select:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(74,158,255,0.2);
-}
-
-.styled-select:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.select-chevron {
-  position: absolute;
-  right: 9px;
-  top: 50%;
-  transform: translateY(-50%);
-  pointer-events: none;
-  color: var(--text-dim);
-}
-
 /* ─── Graph section ─────────────────────────────────────────── */
 .graph-section {
   display: flex;
@@ -429,13 +385,6 @@ input, textarea {
 }
 
 /* ─── Preset buttons ────────────────────────────────────────── */
-.preset-row {
-  display: flex;
-  flex-direction: column;
-  border-bottom: 1px solid rgba(0,0,0,0.4);
-  flex-shrink: 0;
-}
-
 /* Chromium draws the translucent white --border as a light line here; UXP
    renders it dark. Use an explicit dark divider so the two editions match. */
 .preset-btn {
@@ -457,6 +406,7 @@ input, textarea {
   display: flex;
   align-items: center;
   gap: 0;
+  transition: color 0.12s, background 0.12s;
 }
 
 /* Thumbnails stay full-strength in both editions (UXP never applied the old
@@ -514,6 +464,7 @@ input, textarea {
   cursor: pointer;
   margin-left: auto;
   color: var(--text-dim);
+  transition: opacity 0.1s, color 0.1s;
 }
 
 .preset-btn:hover .preset-delete {
@@ -569,21 +520,6 @@ input, textarea {
 .oc-field.paste { background: #1c1c1c; }
 .oc-field.hex   { background: #252525; }
 
-.preset-rename-input {
-  flex: 1;
-  background: transparent;
-  border-top: none;
-  border-left: none;
-  border-right: none;
-  border-bottom: 1px solid var(--accent);
-  color: var(--text);
-  font-family: var(--font);
-  font-size: 14px;
-  padding: 0;
-  outline: none;
-  min-width: 0;
-}
-
 .preset-dragging {
   opacity: 0.4;
 }
@@ -636,6 +572,7 @@ input, textarea {
   text-align: left;
   white-space: nowrap;
   overflow: hidden;
+  transition: color 0.12s, background 0.12s;
 }
 
 /* Diamond marker at the start of each property row; inherits the row colour */
@@ -810,6 +747,7 @@ input, textarea {
   background-image: linear-gradient(to right, rgba(255,255,255,0.06), rgba(255,255,255,0));
   color: #7ddc9a;
   cursor: pointer;
+  transition: background 0.12s, color 0.12s;
 }
 
 .prop-undo:hover {
@@ -953,11 +891,6 @@ input, textarea {
 .status-done .status-text    { color: var(--text-dim); }
 
 /* ─── Action row ────────────────────────────────────────────── */
-.action-row {
-  display: flex;
-  flex-direction: column;
-}
-
 .btn {
   display: flex;
   align-items: center;
@@ -978,24 +911,6 @@ input, textarea {
   white-space: nowrap;
   outline: none;
   transition: background 0.12s, color 0.12s;
-}
-
-/* Secondary (Detect) */
-.btn-secondary {
-  color: var(--text-dim);
-}
-.btn-secondary:hover {
-  background: var(--surface2);
-  color: var(--text);
-}
-
-/* Primary (Go) */
-.btn-primary {
-  color: var(--accent);
-  font-weight: 600;
-}
-.btn-primary:hover:not(.btn-disabled) {
-  background: var(--accent-dim);
 }
 
 /* Disabled */
