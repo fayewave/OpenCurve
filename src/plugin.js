@@ -147,11 +147,17 @@ function setState(updates) {
 
 // ─── Curve animation ─────────────────────────────────────────────────────
 var _curveAnimRaf = null;
-function _animateToCurve(target, onUpdate) {
+// Stop a running tween. Anything that edits the curve must call this first: the
+// next frame would otherwise overwrite the edit, and a multi-point blend carries
+// _matchCurves padding anchors that a press landing mid-tween could commit.
+function _cancelCurveAnim() {
   if (_curveAnimRaf) { cancelAnimationFrame(_curveAnimRaf); _curveAnimRaf = null; }
+  _animVis = null;
+}
+function _animateToCurve(target, onUpdate) {
+  _cancelCurveAnim();
   // Multi-point curves tween too: _matchCurves pads both sides with shape-neutral
   // splits until they share the same anchors, so every coordinate can be lerped.
-  // The last frame sets the real target, so the padding never outlives the tween.
   var real = getState().curve;
   var pair = _matchCurves(real, target);
   var from = pair[0], to = pair[1];
@@ -162,16 +168,24 @@ function _animateToCurve(target, onUpdate) {
   var vFrom = _visOf(from, real), vTo = _visOf(to, target);
   var duration = 150;
   var start = null;
+  // The state carries the target for the whole tween and the frames only draw, so
+  // a bake, copy or preset save landing mid-flight sees the curve the user asked
+  // for rather than an intermediate (which would also carry the padding anchors).
+  // It saves the ~9 renderUI passes a per-frame setState used to fan out.
+  setState({ curve: _cloneCurve(target) });
   function easeInOut(t) { return t < 0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
   function step(ts) {
     if (!start) start = ts;
     var p = Math.min((ts - start) / duration, 1);
-    var e = easeInOut(p);
-    var cur = _lerpCurve(from, to, e);
-    _animVis = _lerpCurve(vFrom, vTo, e);
-    try { setState({ curve: cur }); onUpdate(cur); } finally { _animVis = null; }
-    if (p < 1) { _curveAnimRaf = requestAnimationFrame(step); }
-    else { setState({ curve: _cloneCurve(target) }); onUpdate(getState().curve); _curveAnimRaf = null; }
+    if (p < 1) {
+      var e = easeInOut(p);
+      _animVis = _lerpCurve(vFrom, vTo, e);
+      try { onUpdate(_lerpCurve(from, to, e)); } finally { _animVis = null; }
+      _curveAnimRaf = requestAnimationFrame(step);
+    } else {
+      _curveAnimRaf = null;
+      onUpdate(getState().curve); // the real target, without the padding
+    }
   }
   _curveAnimRaf = requestAnimationFrame(step);
 }
@@ -411,6 +425,7 @@ function _mirrorHandle(p, moved, loX, hiX, sameLen) {
 }
 
 function _commitCurve(c) {
+  _cancelCurveAnim(); // a running tween would overwrite this edit on its next frame
   _normalizeCurve(c);
   setState({ curve: c });
   clearPresetActive();
@@ -1106,6 +1121,7 @@ function initGraphEditor(svg) {
 
   svg.addEventListener('pointerdown', function(e) {
     if (e.button !== 0) return;
+    _cancelCurveAnim(); // settle on the target first: never drag a tween intermediate
     _showDragGhost(getState().curve, _svgW, _svgH); // before any snap moves the curve
     if (_peakMode) {
       // The peak solver only produces a single-segment cubic, so a curve with
