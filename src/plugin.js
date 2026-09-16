@@ -5047,11 +5047,43 @@ function initPanel() {
   // ── Unified preset system ─────────────────────────────────────
   var _STORAGE_KEY  = 'opencurve-presets-v10';
 
+  // Anything stored here reaches _buildPresetBtn -> _thumbPathD during initPanel,
+  // so a bad shape used to throw before Go, the status strip and renderUI were
+  // wired: the panel came up with no presets and a dead Go button and said
+  // nothing about why. Only well-formed entries are kept; the rest are dropped.
+  function _validPreset(p) {
+    if (!p || typeof p !== 'object') return false;
+    if (typeof p.name !== 'string') return false;
+    var c = p.curve;
+    if (!c || typeof c !== 'object') return false;
+    var k = ['p1x', 'p1y', 'p2x', 'p2y'];
+    for (var i = 0; i < k.length; i++) if (typeof c[k[i]] !== 'number' || !isFinite(c[k[i]])) return false;
+    if (c.pts !== undefined && !Array.isArray(c.pts)) return false;
+    return true;
+  }
   function _loadPresetList() {
-    try { return JSON.parse(localStorage.getItem(_STORAGE_KEY)); } catch(e) { return null; }
+    var raw;
+    try { raw = JSON.parse(localStorage.getItem(_STORAGE_KEY)); } catch(e) { return null; }
+    if (!Array.isArray(raw)) return null;
+    var out = [];
+    for (var i = 0; i < raw.length; i++) {
+      if (!_validPreset(raw[i])) continue;
+      var p = raw[i];
+      out.push({ id: String(p.id || ('p' + i)), name: p.name, curve: _normalizeCurve(_cloneCurve(p.curve)), builtIn: !!p.builtIn });
+    }
+    if (out.length !== raw.length) console.log('[OC] dropped ' + (raw.length - out.length) + ' malformed preset(s) from storage');
+    // An empty list is a real state (every preset can be deleted, built-ins too),
+    // so it is kept. Falling back to the defaults is only for a stored list that
+    // had entries and lost all of them to validation.
+    if (raw.length && !out.length) return null;
+    return out;
   }
   function _savePresetList(list) {
-    localStorage.setItem(_STORAGE_KEY, JSON.stringify(list));
+    try { localStorage.setItem(_STORAGE_KEY, JSON.stringify(list)); }
+    catch(e) {
+      console.log('[OC] could not save presets:', e);
+      _showCopyToast('Could not save presets: ' + (e && e.message ? e.message : 'storage full'), '#ff9090');
+    }
   }
 
   // _presetList: array of { id, name, curve, builtIn? }
@@ -5504,7 +5536,11 @@ function initPanel() {
     _openTextFile().then(function(text) {
       if (text === null || text === undefined) return;
       var parsed = null;
-      try { parsed = JSON.parse(text); } catch(_) {}
+      // A BOM-prefixed file (some editors add one on save) makes JSON.parse throw,
+      // which read as "Not an OpenCurve preset file" on a perfectly good export
+      var raw = String(text);
+      if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1); // strip a BOM
+      try { parsed = JSON.parse(raw); } catch(_) {}
       var arr = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.presets) ? parsed.presets : null);
       if (!arr) { _showCopyToast('Not an OpenCurve preset file', '#ff9090'); return; }
       var have = {};

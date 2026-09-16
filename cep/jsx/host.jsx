@@ -35,14 +35,41 @@ function _paramName(matchName, idx) {
   return matchName + ' ' + idx;
 }
 
+// A JSON string literal. The old version escaped only backslash, quote and
+// newline, so a clip named with a tab or a carriage return produced a payload
+// the panel could not parse, and the UI froze on its previous state for as long
+// as that clip was under the playhead.
+function _jsonQuote(s) {
+  var out = '"';
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charAt(i), code = s.charCodeAt(i);
+    if (c === '"') out += '\\"';
+    else if (c === '\\') out += '\\\\';
+    else if (code === 8)  out += '\\b';
+    else if (code === 9)  out += '\\t';
+    else if (code === 10) out += '\\n';
+    else if (code === 12) out += '\\f';
+    else if (code === 13) out += '\\r';
+    else if (code < 32 || code === 0x2028 || code === 0x2029) {
+      var hex = code.toString(16);
+      while (hex.length < 4) hex = '0' + hex;
+      out += '\\u' + hex;
+    }
+    else out += c;
+  }
+  return out + '"';
+}
+
 function _jsonStringify(obj) {
   // ExtendScript doesn't have JSON.stringify in older versions
   if (typeof JSON !== 'undefined' && JSON.stringify) return JSON.stringify(obj);
   // Minimal fallback
   if (obj === null) return 'null';
   if (typeof obj === 'undefined') return 'null';
-  if (typeof obj === 'number' || typeof obj === 'boolean') return String(obj);
-  if (typeof obj === 'string') return '"' + obj.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n') + '"';
+  // NaN and Infinity are not JSON; String() would emit a token JSON.parse rejects
+  if (typeof obj === 'number') return isFinite(obj) ? String(obj) : 'null';
+  if (typeof obj === 'boolean') return String(obj);
+  if (typeof obj === 'string') return _jsonQuote(obj);
   if (obj instanceof Array) {
     var parts = [];
     for (var i = 0; i < obj.length; i++) parts.push(_jsonStringify(obj[i]));
@@ -52,7 +79,7 @@ function _jsonStringify(obj) {
     var pairs = [];
     for (var k in obj) {
       if (obj.hasOwnProperty(k)) {
-        pairs.push('"' + k + '":' + _jsonStringify(obj[k]));
+        pairs.push(_jsonQuote(k) + ':' + _jsonStringify(obj[k]));
       }
     }
     return '{' + pairs.join(',') + '}';
@@ -328,7 +355,7 @@ function detectContext() {
     }
     if (_sig === _ocCacheKey && _ocPollCount < _OC_HEARTBEAT && _ocCacheResult !== null) {
       _ocPollCount++;
-      return '{"status":"unchanged","ph":' + ph + '}';
+      return _jsonStringify({ status: 'unchanged', ph: ph });
     }
     _ocPollCount = 0;
     _ocCacheKey  = _sig;
@@ -773,6 +800,14 @@ function importBakeRecords(json) {
   try {
     var arr = _jsonParse(json);
     if (!(arr instanceof Array)) return '0';
+    // Ids already on the stack. The panel can reload (Reset All Settings calls
+    // location.reload) without this ExtendScript engine restarting, so importing
+    // on top of a live stack used to duplicate every restored record: rows then
+    // listed the same bake twice and the session floor was undercounted.
+    var seen = {};
+    for (var si = 0; si < _undoStack.length; si++) {
+      for (var sj = 0; sj < _undoStack[si].length; sj++) seen['i' + _undoStack[si][sj].id] = true;
+    }
     var batches = [], count = 0;
     for (var i = 0; i < arr.length; i++) {
       var b = arr[i];
@@ -781,13 +816,16 @@ function importBakeRecords(json) {
       for (var j = 0; j < b.length; j++) {
         var r = b[j];
         if (!r || typeof r.id !== 'number' || !(r.times instanceof Array)) continue;
+        if (seen['i' + r.id]) continue;
+        seen['i' + r.id] = true;
         clean.push(r); count++;
         if (r.id > _ocBakeSeq) _ocBakeSeq = r.id;
       }
       if (clean.length) batches.push(clean);
     }
     _undoStack = batches.concat(_undoStack);
-    _ocSessionFloor = batches.length;
+    // Restored batches go under the live ones, so the session count is unchanged
+    _ocSessionFloor += batches.length;
     return String(count);
   } catch(e) { return '0'; }
 }

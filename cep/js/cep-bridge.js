@@ -237,7 +237,11 @@
           _saveBakeRecords();
           _lastStatus = '';
           _skipPollUntil = 0;
-          OpenCurve.setState({ bakedParamKeys: [], status: 'idle' });
+          // Only the latest batch was popped: rows with other live records are
+          // still baked. Clearing bakedParamKeys and forcing 'idle' greyed every
+          // green row and showed "Open a project and select a clip" until the
+          // next poll. The host dropped its cache, so a scan now repaints it.
+          poll();
           OpenCurve.showCopyToast('Undone (' + res.removed + ' keyframes removed)', '#f0a030');
         } else {
           OpenCurve.showCopyToast(res.error || 'Undo failed', '#ff9090');
@@ -359,9 +363,14 @@
       }
 
       // Scanning continues during playback (the 1.x pause option was removed in 2.0.0)
+      // The no-project / no-sequence / error results carry no ph; treating that
+      // undefined as a move made _phMovedAt lie, and Space within 700ms of one
+      // then told ocTransport the playhead was moving and inverted the QE toggle.
       var ph = result.ph;
-      if (_lastPh !== null && ph !== _lastPh) _phMovedAt = Date.now();
-      _lastPh = ph;
+      if (typeof ph === 'number') {
+        if (_lastPh !== null && ph !== _lastPh) _phMovedAt = Date.now();
+        _lastPh = ph;
+      }
 
       var s = OpenCurve.getState();
       var updates = {
