@@ -3291,10 +3291,14 @@ function _tlRender(s, force) {
   if (force || sig !== _tlSig) {
     _tlSig = sig;
     _tlBuild(s, params, range, n, laneH, H, W);
+    // Six forced layout reads between them. They only matter when the lanes were
+    // rebuilt (row count, height or width changed); scrolling has its own
+    // handler in _wireTlScroll and the drag handles call them directly. Running
+    // them unconditionally cost those reads on every 10Hz playback tick.
+    _tlSetGoWidth(); // the scrollbar may have appeared or gone with this render
+    _tlUpdateFade();
   }
   _tlPlacePlayhead(s);
-  _tlSetGoWidth(); // the scrollbar may have appeared or gone with this render
-  _tlUpdateFade();
 }
 
 // Edge fades: the bottom one while the lanes + rows can scroll further down,
@@ -3343,6 +3347,7 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
   // Lane dividers are HTML divs laid over the SVG (see the loop below); drop the old set
   if (els.wrap) els.wrap.querySelectorAll('.tl-lane-div').forEach(function(el) { el.parentNode.removeChild(el); });
   _tlLanes = [];
+  _tlLitKey = null; // the lit lane's rect is about to be replaced
   _tlPh = null;
   _tlGhost = null;
   var g = { W: W, H: H, laneH: laneH, n: n, a: range ? range.a : 0, b: range ? range.b : 1, y0: 0 };
@@ -3460,17 +3465,29 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
   _tlPlaceGhost(_tlGhostSec); // a rebuild under a still pointer keeps the ghost where it was
 }
 
+// Move a playhead marker to x, writing only what changed. Both markers are
+// re-placed on every render and on every pointer move over the lanes, and the
+// snapped position lands on the same pixel column for many of those, so the
+// five attribute writes were mostly redundant.
+function _tlPlaceMarker(m, x, on) {
+  if (m._ocOn !== on) {
+    m._ocOn = on;
+    m.line.setAttribute('visibility', on ? 'visible' : 'hidden');
+    m.tri.setAttribute('visibility',  on ? 'visible' : 'hidden');
+  }
+  if (!on) return;
+  x = Math.round(x) + 0.5;
+  if (m._ocX === x) return;
+  m._ocX = x;
+  m.line.setAttribute('x1', x);
+  m.line.setAttribute('x2', x);
+  m.tri.setAttribute('points', (x - 3.5) + ',0 ' + (x + 3.5) + ',0 ' + x + ',4');
+}
+
 function _tlPlacePlayhead(s) {
   if (!_tlPh || !_tlGeo || !s.tl || typeof s.tl.ph !== 'number') return;
   var g = _tlGeo, x = _tlX(s.tl.ph, g);
-  var on = x >= 0 && x <= g.W;
-  _tlPh.line.setAttribute('visibility', on ? 'visible' : 'hidden');
-  _tlPh.tri.setAttribute('visibility',  on ? 'visible' : 'hidden');
-  if (!on) return;
-  x = Math.round(x) + 0.5;
-  _tlPh.line.setAttribute('x1', x);
-  _tlPh.line.setAttribute('x2', x);
-  _tlPh.tri.setAttribute('points', (x - 3.5) + ',0 ' + (x + 3.5) + ',0 ' + x + ',4');
+  _tlPlaceMarker(_tlPh, x, x >= 0 && x <= g.W);
 }
 
 // Ghost playhead at sec (sequence seconds), hidden with null. Snaps to the same
@@ -3480,14 +3497,7 @@ function _tlPlaceGhost(sec) {
   _tlGhostSec = (typeof sec === 'number') ? sec : null;
   if (!_tlGhost || !_tlGeo) return;
   var g = _tlGeo, x = _tlGhostSec === null ? -1 : _tlX(_tlGhostSec, g);
-  var on = x >= 0 && x <= g.W;
-  _tlGhost.line.setAttribute('visibility', on ? 'visible' : 'hidden');
-  _tlGhost.tri.setAttribute('visibility',  on ? 'visible' : 'hidden');
-  if (!on) return;
-  x = Math.round(x) + 0.5;
-  _tlGhost.line.setAttribute('x1', x);
-  _tlGhost.line.setAttribute('x2', x);
-  _tlGhost.tri.setAttribute('points', (x - 3.5) + ',0 ' + (x + 3.5) + ',0 ' + x + ',4');
+  _tlPlaceMarker(_tlGhost, x, x >= 0 && x <= g.W);
 }
 
 // Select or deselect a property for baking: the row click, and a double press
@@ -3516,8 +3526,19 @@ function _togglePropKey(key) {
 }
 
 // Lane highlight: a hovered row lights its lane, a hovered lane lights its row
+// Light one lane, from the lanes' own pointermove and from a row's mouseenter.
+// Only the two lanes involved change, and an unchanged key does nothing: this
+// used to rewrite every lane's fill on every pointer move.
+var _tlLitKey = null; // lane currently lit (reset by _tlBuild with _tlLanes)
 function _tlHighlightLane(key) {
-  _tlLanes.forEach(function(l) { l.bg.setAttribute('fill', l.key === key ? l.hover : l.fill); });
+  key = key || null;
+  if (_tlLitKey === key) return;
+  for (var i = 0; i < _tlLanes.length; i++) {
+    var l = _tlLanes[i];
+    if (l.key === _tlLitKey) l.bg.setAttribute('fill', l.fill);
+    if (l.key === key)       l.bg.setAttribute('fill', l.hover);
+  }
+  _tlLitKey = key;
 }
 function _tlRowHover(key) {
   if (_tlHoverKey === key) return;
@@ -3960,6 +3981,11 @@ function _addPressState(el) {
 // attributes (UXP can't rebuild SVG via innerHTML and ignores class swaps).
 function _setMarker(host, mode) {
   if (!host) return;
+  // Called for every row and the strip on every render (10Hz during playback).
+  // The mode rarely changes, so skip the two querySelectors and six attribute
+  // writes when it hasn't.
+  if (host._ocMark === mode) return;
+  host._ocMark = mode;
   var d = host.querySelector('.mk-diamond'), t = host.querySelector('.mk-tick');
   var tick = mode === 'tick';
   if (d) {
@@ -4056,6 +4082,8 @@ function renderUI(s) {
         btn.appendChild(propUndo);
         btn.appendChild(propPin);
         btn.dataset.key = p.key;
+        // The sync pass below reads these instead of querying for them each tick
+        btn._oc = { mark: propDiamond, pin: propPin, undo: propUndo, curve: propCurve };
         // Hovering a row lights its lane in the mini timeline (a hovered lane lights the row)
         btn.addEventListener('mouseenter', function() { _tlHighlightLane(p.key); });
         btn.addEventListener('mouseleave', function() { _tlHighlightLane(null); });
@@ -4063,42 +4091,50 @@ function renderUI(s) {
         propBtns.appendChild(btn);
       });
     }
-    // Sync active state
+    // Sync active state. This runs on every render, which is every 100ms poll
+    // while the playhead moves, so each row first checks whether anything it
+    // draws actually changed: without that it cost four querySelectors, eight
+    // classList writes and two inline display writes per row per tick.
     var selKeys   = s.selectedParamKeys || [];
     var bakedKeys = s.bakedParamKeys   || [];
     var validKeys = s.validParamKeys   || [];
     propBtns.querySelectorAll('.prop-btn').forEach(function(btn) {
       var k = btn.dataset.key;
-      var isSel = selKeys.indexOf(k) >= 0;
+      var isSel      = selKeys.indexOf(k) >= 0;
+      var isBakedRow = bakedKeys.indexOf(k) >= 0;
+      var isValid    = validKeys.indexOf(k) >= 0;
+      var brec       = isBakedRow ? _bakeRecFor(s, k) : null;
+      var hasCurve   = !!(brec && brec.curve);
+      var stateKey   = (isSel ? 's' : '') + (isBakedRow ? 'b' : '') + (isValid ? 'v' : '') + (hasCurve ? 'c' : '');
+      if (btn._ocState === stateKey) return;
+      btn._ocState = stateKey;
+      // Children are cached on the row when it is built (_oc); the lookups are
+      // a fallback for a row from an older render.
+      var els = btn._oc || {};
       btn.classList.toggle('active', isSel);
       // Marker: a tick while selected or baked (green row); otherwise a filled
       // diamond when the playhead is already over this property's pair (the pin
       // is blue), hollow if not
-      var isBakedRow = bakedKeys.indexOf(k) >= 0;
-      _setMarker(btn.querySelector('.prop-diamond'), (isSel || isBakedRow) ? 'tick' : (validKeys.indexOf(k) >= 0 ? 'filled' : 'hollow'));
+      _setMarker(els.mark || btn.querySelector('.prop-diamond'), (isSel || isBakedRow) ? 'tick' : (isValid ? 'filled' : 'hollow'));
       // Selected but the playhead isn't between its keyframes yet: orange until it is
-      btn.classList.toggle('pending', isSel && validKeys.indexOf(k) < 0);
+      btn.classList.toggle('pending', isSel && !isValid);
       // Playhead is already between this property's keyframes: pin shows blue even when unselected
-      btn.classList.toggle('ready', validKeys.indexOf(k) >= 0);
-      btn.classList.toggle('baked',  bakedKeys.indexOf(k) >= 0 && selKeys.indexOf(k) < 0);
+      btn.classList.toggle('ready', isValid);
+      btn.classList.toggle('baked', isBakedRow && !isSel);
       // The pin carries its own state classes: UXP doesn't restyle a child when
       // only the row's class changes, so ".prop-btn.baked .prop-pin" went stale
-      var pinEl = btn.querySelector('.prop-pin');
+      var pinEl = els.pin || btn.querySelector('.prop-pin');
       if (pinEl) {
-        var pinReady = validKeys.indexOf(k) >= 0;
-        pinEl.classList.toggle('pin-ready',   pinReady);
+        pinEl.classList.toggle('pin-ready',   isValid);
         pinEl.classList.toggle('pin-active',  isSel);
-        pinEl.classList.toggle('pin-pending', isSel && !pinReady);
-        pinEl.classList.toggle('pin-baked',   bakedKeys.indexOf(k) >= 0 && !isSel);
+        pinEl.classList.toggle('pin-pending', isSel && !isValid);
+        pinEl.classList.toggle('pin-baked',   isBakedRow && !isSel);
       }
       // Undo button only on rows with a bake to undo (inline style: UXP ignores class-driven display changes)
-      var undoEl = btn.querySelector('.prop-undo');
-      if (undoEl) undoEl.style.display = bakedKeys.indexOf(k) >= 0 ? 'flex' : 'none';
-      var curveEl = btn.querySelector('.prop-curve');
-      if (curveEl) {
-        var brec = bakedKeys.indexOf(k) >= 0 ? _bakeRecFor(s, k) : null;
-        curveEl.style.display = (brec && brec.curve) ? 'flex' : 'none';
-      }
+      var undoEl = els.undo || btn.querySelector('.prop-undo');
+      if (undoEl) { var ud = isBakedRow ? 'flex' : 'none'; if (undoEl.style.display !== ud) undoEl.style.display = ud; }
+      var curveEl = els.curve || btn.querySelector('.prop-curve');
+      if (curveEl) { var cd = hasCurve ? 'flex' : 'none'; if (curveEl.style.display !== cd) curveEl.style.display = cd; }
     });
   }
 
@@ -4118,8 +4154,12 @@ function renderUI(s) {
     var clipEl   = document.getElementById('status-clip');
     var showClip = !!clipEl && !!cfg.clip && !!s.clipName;
     if (clipEl) {
-      clipEl.textContent   = showClip ? s.clipName : '';
-      clipEl.style.display = showClip ? 'block' : 'none'; // inline: UXP ignores class-driven display
+      // Change-only, like the strip's class and text below: this whole block
+      // runs on every render, and UXP relayouts the panel on any write
+      var clipTxt = showClip ? s.clipName : '';
+      var clipDsp = showClip ? 'block' : 'none'; // inline: UXP ignores class-driven display
+      if (clipEl.textContent !== clipTxt) clipEl.textContent = clipTxt;
+      if (clipEl.style.display !== clipDsp) clipEl.style.display = clipDsp;
     }
     // Colours inline: UXP doesn't restyle the dot/text/clip spans when only
     // the strip's class changes, so the ".status-valid .status-text" rules
@@ -4133,9 +4173,9 @@ function renderUI(s) {
       'status-done':     { dot: '#555',    text: '#888'    }, // grey; the green rows carry the result
     }[cfg.cls] || { dot: '#555', text: '#888' };
     var dotEl = strip.querySelector('.status-dot');
-    if (dotEl)  dotEl.style.color  = _sc.dot;
-    txt.style.color = _sc.text;
-    if (clipEl) clipEl.style.color = _sc.text;
+    if (dotEl && dotEl.style.color !== _sc.dot)  dotEl.style.color  = _sc.dot;
+    if (txt.style.color !== _sc.text) txt.style.color = _sc.text;
+    if (clipEl && clipEl.style.color !== _sc.text) clipEl.style.color = _sc.text;
     var msg  = _statusMsg(s, showClip);
     // Clickable whenever there are valid params: click selects all, click again clears
     var _vk = s.validParamKeys || [];
@@ -4155,9 +4195,11 @@ function renderUI(s) {
     var enabled = s.status === 'valid' && activeContexts.length > 0 && !s.isBaking;
     goBtn.classList.toggle('btn-disabled', !enabled);
     var goLabel = document.getElementById('go-label');
-    if (goArrow)   goArrow.style.display   = s.isBaking ? 'none' : 'inline';
-    if (goLabel)   goLabel.style.display   = s.isBaking ? 'none' : 'inline';
-    if (goSpinner) goSpinner.style.display = s.isBaking ? 'inline-block' : 'none';
+    // Change-only: isBaking is false on all but a handful of renders
+    var onD = s.isBaking ? 'none' : 'inline', spD = s.isBaking ? 'inline-block' : 'none';
+    if (goArrow   && goArrow.style.display   !== onD) goArrow.style.display   = onD;
+    if (goLabel   && goLabel.style.display   !== onD) goLabel.style.display   = onD;
+    if (goSpinner && goSpinner.style.display !== spD) goSpinner.style.display = spD;
   }
 
   _tlRender(s);
@@ -5935,7 +5977,9 @@ function initPanel() {
     var valid = s.validParamKeys || [];
     var clickable = (valid.length > 0 && s.status !== 'done' && !s.isBaking)
                  || (s.status === 'outside' && !!_nearestJumpParam(s));
-    statusStrip.style.cursor = clickable ? 'pointer' : 'default';
+    // Change-only: this runs on every setState, and UXP relayouts on every write
+    var cur = clickable ? 'pointer' : 'default';
+    if (statusStrip.style.cursor !== cur) statusStrip.style.cursor = cur;
   }
   stateListeners.push(_updateStripCursor);
 
