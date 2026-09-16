@@ -2562,9 +2562,23 @@ function _recForRow(rec, p) {
 function _recAlive(rec, kfSecs) {
   function has(t){ return kfSecs.some(function(h){ return Math.abs(h - t) < 1e-4; }); }
   if (!has(rec.kf0Sec) || !has(rec.kf1Sec)) return false;
-  var n = 0;
-  rec.times.forEach(function(t){ if (has(t)) n++; });
-  return n > 0 && n * 2 >= rec.times.length;
+  // One walk over each instead of scanning kfSecs per written time: this runs
+  // for every live record on every poll, and a long bake carries hundreds of
+  // times. Both arrays are written ascending; the scan is the fallback.
+  var times = rec.times, n = 0;
+  function sorted(a) { for (var i = 1; i < a.length; i++) if (a[i] < a[i-1]) return false; return true; }
+  if (sorted(kfSecs) && sorted(times)) {
+    var i = 0, j = 0;
+    while (i < kfSecs.length && j < times.length) {
+      var d = kfSecs[i] - times[j];
+      if (d < -1e-4) i++;
+      else if (d > 1e-4) j++;
+      else { n++; i++; j++; }
+    }
+  } else {
+    times.forEach(function(t){ if (has(t)) n++; });
+  }
+  return n > 0 && n * 2 >= times.length;
 }
 // A record only applies to the row while the playhead's bracketing pair sits inside
 // the span it baked. Elsewhere on the clip the row is a normal row, so a second

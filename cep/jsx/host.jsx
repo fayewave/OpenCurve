@@ -287,9 +287,11 @@ function _ocReturn(jsonStr) {
 
 // FPS rarely changes within a session — cache per sequence instead of
 // re-reading getSettings() on every poll.
-function _fpsCached(sequence) {
-  var seqId = '';
-  try { seqId = String(sequence.sequenceID || sequence.name || ''); } catch(e) {}
+function _ocSeqId(sequence) {
+  try { return String(sequence.sequenceID || sequence.name || ''); } catch(e) { return ''; }
+}
+function _fpsCached(sequence, seqId) {
+  if (seqId === undefined) seqId = _ocSeqId(sequence);
   if (_ocFps > 0 && seqId === _ocFpsSeqId) return _ocFps;
   _ocFps = _detectFps(sequence);
   _ocFpsSeqId = seqId;
@@ -314,13 +316,13 @@ function detectContext() {
 
     var playerPos = sequence.getPlayerPosition();
     var ph = playerPos.seconds;
-    var fps = _fpsCached(sequence);
+    // One read per poll: _fpsCached used to build the same id a second time
+    var seqId = _ocSeqId(sequence);
+    var fps = _fpsCached(sequence, seqId);
 
     // Find clips at playhead across all video tracks (from the structure cache;
     // see _ocWalkTracks). Selected clip goes first so user can override which
     // clip is targeted.
-    var seqId = '';
-    try { seqId = String(sequence.sequenceID || sequence.name || ''); } catch(e) {}
     var numTracks = sequence.videoTracks.numTracks;
     if (!_ocTracks || _ocTracksSeq !== seqId || _ocTracksCount !== numTracks || _ocPollCount >= _OC_HEARTBEAT) {
       _ocWalkTracks(sequence, numTracks, seqId);
@@ -383,17 +385,29 @@ function detectContext() {
       var clipInfo = allClipResults[ci];
       var clip = clipInfo.clip;
       var phLocal = (ph - clipInfo.clipStart) + clipInfo.clipInPoint;
-      var components = clip.components;
+      // Not every track item has a component chain (some graphics and adjustment
+      // types throw here). Skipping the clip keeps the panel working; letting it
+      // reach the outer catch returned status 'error' and dropped all three
+      // caches, so every poll re-walked the tracks and hit the same clip again.
+      var components = null;
+      try { components = clip.components; } catch(e) { continue; }
+      if (!components) continue;
+      var numComps = 0;
+      try { numComps = components.numItems; } catch(e) { continue; }
       var qualifiedParams = [];
       var cacheEntries = [];
 
-      for (var compIdx = 0; compIdx < components.numItems; compIdx++) {
+      for (var compIdx = 0; compIdx < numComps; compIdx++) {
         var comp = components[compIdx];
         var matchName = '';
         try { matchName = comp.matchName; } catch(e) {}
 
-        var props = comp.properties;
-        for (var propIdx = 0; propIdx < props.numItems; propIdx++) {
+        var props = null;
+        try { props = comp.properties; } catch(e) { continue; }
+        if (!props) continue;
+        var numProps = 0;
+        try { numProps = props.numItems; } catch(e) { continue; }
+        for (var propIdx = 0; propIdx < numProps; propIdx++) {
           var prop = props[propIdx];
 
           // Check if property has keyframes
@@ -645,6 +659,9 @@ function bakeKeyframes(argsJSON) {
 
     var project = app.project;
     var sequence = project.activeSequence;
+    // Without this the verification below throws on a null sequence and the
+    // catch reports "Clip changed since the last scan", which is misleading
+    if (!sequence) return _jsonStringify({ success: false, error: 'No active sequence' });
     var totalActions = 0;
     var firstErr = null;
 
@@ -724,7 +741,10 @@ function bakeKeyframes(argsJSON) {
           try {
             prop.addKey(timeSec);
             prop.setValueAtKey(timeSec, value, doUpdate);
-            addedTimes.push(timeSec);
+            // Rounded to 1e-6, well inside the 1e-4 tolerance every comparison
+            // uses. Full doubles made the exported records several times larger
+            // than they need to be, and the export runs after every bake.
+            addedTimes.push(Math.round(timeSec * 1e6) / 1e6);
             totalActions++;
           } catch(e) { if (!firstErr) firstErr = label + ': ' + (e.message || String(e)); }
         }
@@ -937,14 +957,39 @@ function _ocHasTime(kfSecs, t) {
   for (var i = 0; i < kfSecs.length; i++) if (Math.abs(kfSecs[i] - t) < 0.0001) return true;
   return false;
 }
+function _ocSortedAsc(a) {
+  for (var i = 1; i < a.length; i++) if (a[i] < a[i - 1]) return false;
+  return true;
+}
+// How many of `times` appear in `kfSecs`, both ascending: one walk over each.
+function _ocCountShared(kfSecs, times) {
+  var n = 0, i = 0, j = 0;
+  while (i < kfSecs.length && j < times.length) {
+    var d = kfSecs[i] - times[j];
+    if (d < -0.0001) i++;
+    else if (d > 0.0001) j++;
+    else { n++; i++; j++; }
+  }
+  return n;
+}
 // Is this bake still on the property? Both original keyframes must be there
 // plus at least half of the ones we wrote.
+// This runs for every matching record on every poll, including while the
+// playhead is moving. Scanning all of kfSecs for each written time made it
+// quadratic: a 600-frame bake cost hundreds of thousands of compares per poll
+// in ExtendScript, and scrubbing stuttered once a clip carried a few of them.
+// Both arrays are written in ascending order, so a merge walk does it in one
+// pass; the old scan stays as the fallback if either is ever out of order.
 function _ocBakeAlive(info, kfSecs) {
   if (typeof info.kf0Time === 'number' && !_ocHasTime(kfSecs, info.kf0Time)) return false;
   if (typeof info.kf1Time === 'number' && !_ocHasTime(kfSecs, info.kf1Time)) return false;
-  var n = 0;
-  for (var i = 0; i < info.times.length; i++) if (_ocHasTime(kfSecs, info.times[i])) n++;
-  return n > 0 && n * 2 >= info.times.length;
+  var times = info.times, n = 0;
+  if (_ocSortedAsc(kfSecs) && _ocSortedAsc(times)) {
+    n = _ocCountShared(kfSecs, times);
+  } else {
+    for (var i = 0; i < times.length; i++) if (_ocHasTime(kfSecs, times[i])) n++;
+  }
+  return n > 0 && n * 2 >= times.length;
 }
 
 function _ocFindBake(id) {
