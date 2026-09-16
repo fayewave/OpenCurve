@@ -778,7 +778,7 @@ function _setPeakMode(on) {
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────
-var FALLBACK_FPS        = 30;
+
 var DONE_DISPLAY_MS     = 1000;
 var ERROR_DISPLAY_MS    = 3000;
 var HIT_TOLERANCE       = 6;
