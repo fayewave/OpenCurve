@@ -227,7 +227,11 @@ function _ocClipsAt(ph) {
     var items = _ocTracks[ti].items;
     for (var i = 0; i < items.length; i++) {
       var it = items[i];
-      if (ph < it.start || ph > it.end) continue;
+      // End is exclusive, as in Premiere: a playhead sitting on a cut belongs to
+      // the incoming clip. Treating it as inside the outgoing one made the panel
+      // report that clip's properties (and "Move playhead between keyframes",
+      // since the playhead is at its out-point) on the first frame of the next.
+      if (ph < it.start || ph >= it.end) continue;
       var liveStart;
       try { liveStart = it.clip.start.seconds; } catch(e) { return null; }
       if (Math.abs(liveStart - it.start) > 0.0005) return null;
@@ -997,6 +1001,7 @@ function undoBake() {
     var sequence = app.project.activeSequence;
     var removed = 0;
     var skipped = 0;
+    var kept = []; // records whose clip could not be found: keep them for a retry
 
     var _hasUndoGroup = (typeof app.beginUndoGroup === 'function' && typeof app.endUndoGroup === 'function');
     if (_hasUndoGroup) app.beginUndoGroup('OpenCurve undo bake');
@@ -1004,6 +1009,10 @@ function undoBake() {
       for (var i = 0; i < batch.length; i++) {
         var r = _ocUndoInfo(sequence, batch[i]);
         removed += r.removed; skipped += r.skipped;
+        // undoBakeParam keeps a skipped record for the same reason: dropping it
+        // strands keyframes that are still on the clip with no record to undo
+        // them, so the row loses its green state and its undo button for good.
+        if (r.skipped !== 0) kept.push(batch[i]);
       }
     } finally {
       if (_hasUndoGroup) app.endUndoGroup();
@@ -1018,6 +1027,10 @@ function undoBake() {
       _undoStack.push(batch);
       return _jsonStringify({ success: false, error: 'Could not undo — the original clip may have moved or changed. Select it and try again.', remaining: _ocSessionBatches() });
     }
+
+    // Part of the batch was undone; whatever could not be reached goes back on
+    // the stack so the next press (or the row button) can still undo it.
+    if (kept.length) _undoStack.push(kept);
 
     return _jsonStringify({ success: true, removed: removed, skipped: skipped, remaining: _ocSessionBatches() });
   } catch(err) {

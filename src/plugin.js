@@ -1460,7 +1460,11 @@ async function _clipsViaTrackScan(sequence, ph) {
         var et = await item.getEndTime();
         var s = st && typeof st.seconds === 'number' ? st.seconds : -1;
         var e = et && typeof et.seconds === 'number' ? et.seconds : -1;
-        if (ph >= s && ph <= e) {
+        // End is exclusive, as in Premiere: a playhead sitting on a cut belongs to
+        // the incoming clip. Treating it as inside the outgoing one made the panel
+        // report that clip's properties (and "Move playhead between keyframes",
+        // since the playhead is at its out-point) on the first frame of the next.
+        if (ph >= s && ph < e) {
           var chain = await item.getComponentChain();
           if (chain) {
             var id = await _clipIdentity(item, t);
@@ -2675,7 +2679,13 @@ async function _undoRecords(recs, label, key) {
         var kfTimes = await _call(param, 'getKeyframeListAsTickTimes');
         var kfArr = kfTimes ? (Array.isArray(kfTimes) ? kfTimes : Array.from(kfTimes)) : [];
         for (var ki = 0; ki < kfArr.length; ki++) have.push(kfArr[ki].seconds);
-      } catch(_) { continue; }
+      } catch(_) {
+        // The handle went stale (the clip moved, or it is from an earlier scan).
+        // Count it as unreachable so the batch is kept and can be retried with
+        // the playhead over that clip; dropping it would strand real keyframes.
+        unreachable++;
+        continue;
+      }
       if (!_recAlive(rec, have)) { _dropBake(rec); continue; }
       var times = rec.times.filter(function(t){
         return have.some(function(h){ return Math.abs(h - t) < 1e-4; });
