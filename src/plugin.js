@@ -83,6 +83,9 @@ try {
           console.log('[FS] panel show — starting poll');
           _applyPresetLayout(true);
           poll();
+          // A show without a matching hide would otherwise leave an orphan
+          // interval running for the session, polling at twice the rate
+          if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
           if (_POLL_ON) pollTimer = setInterval(poll, POLL_MS); // _POLL_ON: scroll-freeze elimination switch
           if (_updateNotifsOn) _checkForUpdates(true);
         },
@@ -2934,6 +2937,16 @@ var _NATIVE_TRANSPORT = false; // UXP: a focused panel field swallows Space/J/K/
 function _panelShortcut(e) {
   var k = e.key || '', code = e.code || '';
   var lk = k.length === 1 ? k.toLowerCase() : k;
+  if (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'ArrowUp' || k === 'ArrowDown') {
+    var st = e.shiftKey ? 1 / _gridSize : 0.01;
+    _nudgeHandle(k === 'ArrowLeft' ? -st : k === 'ArrowRight' ? st : 0,
+                 k === 'ArrowUp'   ?  st : k === 'ArrowDown'  ? -st : 0);
+    return true; // the one shortcut meant to repeat while the key is held
+  }
+  // Everything below acts once per press. On auto-repeat a held Space toggled
+  // the preview ~30 times a second (three host calls each), a held L doubled
+  // the shuttle rate per repeat, and a held digit restarted the preset tween.
+  if (e.repeat) return false;
   var isTransport = k === ' ' || code === 'Space' || lk === 'j' || lk === 'k' || lk === 'l';
   if (isTransport) {
     if (_NATIVE_TRANSPORT) return false; // CEP: Premiere receives the key itself, doing it here doubled the toggle
@@ -2943,13 +2956,6 @@ function _panelShortcut(e) {
   }
   if (lk === 'p') { if (_pv && _pv.back) _pvStop(); else _previewPair(); return true; }
   if (k.length === 1 && k >= '1' && k <= '9') { _pressPreset(parseInt(k, 10) - 1); return true; }
-  if (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'ArrowUp' || k === 'ArrowDown') {
-    var st = e.shiftKey ? 1 / _gridSize : 0.01;
-    _nudgeHandle(k === 'ArrowLeft' ? -st : k === 'ArrowRight' ? st : 0,
-                 k === 'ArrowUp'   ?  st : k === 'ArrowDown'  ? -st : 0);
-    return true;
-  }
-  if (e.repeat) return false;
   if (lk === 'f') { _applyCurveOp(_flipCurve);   return true; }
   if (lk === 'i') { _applyCurveOp(_invertCurve); return true; }
   if (lk === 'a') { _setPeakMode(!_peakMode);    return true; }
@@ -3024,14 +3030,18 @@ function _pvTick(st) {
   if (frame === st.last && !done) return;
   st.last = frame;
   st.busy = true;
+  // _pvStop acts on whatever _pv currently is, so a late callback from a run the
+  // user has already replaced (press L as a pair preview lands its last step)
+  // would kill the new run and send the playhead back to the old one's start.
   _hostSetPlayhead(frame / st.fps, st.info).then(function() {
     st.busy = false;
     st.steps++;
-    if (done) { console.log('[OC] preview: done after ' + st.steps + ' steps'); _pvStop(true); }
+    if (done && _pv === st) { console.log('[OC] preview: done after ' + st.steps + ' steps'); _pvStop(true); }
   }, function(e) {
     console.log('[OC] preview: set playhead failed at frame ' + frame + ':', e && e.message ? e.message : e);
-    _showCopyToast('Preview failed: ' + (e && e.message ? e.message : 'could not move the playhead'), '#ff9090');
     st.busy = false;
+    if (_pv !== st) return;
+    _showCopyToast('Preview failed: ' + (e && e.message ? e.message : 'could not move the playhead'), '#ff9090');
     _pvStop();
   });
 }
@@ -3984,7 +3994,11 @@ function renderUI(s) {
   if (propBtns) {
     var params  = s.availableParams || [];
     var curKeys = propBtns.dataset.keys || '';
-    var newKeys = params.map(function(p){ return p.key; }).join(',');
+    // The display name is part of the signature: keys are compIdx_propIdx, so
+    // swapping one effect for another can land a different property on the same
+    // key and the row would keep the old label (the lanes already follow the name).
+    // A key can never contain '~', so the two halves stay unambiguous.
+    var newKeys = params.map(function(p){ return p.key + '~' + (p.displayName || ''); }).join(',');
     if (curKeys !== newKeys) {
       _hideTooltip(); // rows are being replaced; don't leave a tooltip for a removed pin
       propBtns.innerHTML = '';
@@ -6164,6 +6178,8 @@ var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#38fbb2';
 var _updateAvailable    = false;
 var _latestVersion      = null;
 var _updateDismissed    = false;
+var _lastUpdateCheckAt  = 0;       // throttles the silent check (see _checkForUpdates)
+var _UPDATE_CHECK_MS    = 3600000; // an hour between silent checks
 var _UPDATE_NOTIF_KEY   = 'opencurve-update-notif';
 var _updateNotifsOn     = localStorage.getItem(_UPDATE_NOTIF_KEY) !== 'off';
 var _ANIM_KEY           = 'opencurve-animations';
@@ -6612,7 +6628,15 @@ function _isNewerVersion(a, b) {
 }
 
 function _checkForUpdates(silent) {
-  _updateDismissed = false;
+  // The silent check runs on every panel show (workspace tab, dock/undock), so it
+  // is throttled and must not resurrect a tile the user dismissed. Only a manual
+  // check from the flyout clears the dismissal.
+  if (silent) {
+    if (Date.now() - _lastUpdateCheckAt < _UPDATE_CHECK_MS) return;
+  } else {
+    _updateDismissed = false;
+  }
+  _lastUpdateCheckAt = Date.now();
   if (!silent) _showCopyToast('Checking for updates…');
   fetch('https://api.github.com/repos/fayewave/OpenCurve/releases/latest')
     .then(function(r) {
@@ -6984,6 +7008,11 @@ function _openTextFile() {
 }
 
 function _showSettingsModal() {
+  // The flyout's Settings item is Premiere's own menu and stays reachable while
+  // the modal is open, so without this a second modal stacked on the first: only
+  // the top one could be closed and the buried one kept its body ResizeObserver
+  // running for the session. The patched remove() disconnects that observer.
+  if (document.getElementById('settings-modal')) return;
   // Sheen like the rest of the panel: a white gradient, brighter at the left, over
   // each control's own colour (0.045 on rows, 0.06 on buttons, a step more on hover).
   // The colour goes to backgroundColor and the gradient to backgroundImage: the
