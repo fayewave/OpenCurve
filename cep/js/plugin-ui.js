@@ -5177,10 +5177,14 @@ function _showSettingsModal() {
   modal.remove = function() { _settingsRO.disconnect(); _origRemove(); };
 }
 
-// Apply saved curve colour on load
-document.addEventListener('DOMContentLoaded', function() {
+// Apply the saved curve colour on load. This is the only place the default
+// lives; the bridge used to re-apply it with a stale '#4a9eff' fallback and
+// painted every fresh install blue.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', function() { _applyCurveColor(_curveColor); });
+} else {
   _applyCurveColor(_curveColor);
-});
+}
 
 // ─── Public API ──────────────────────────────────────────────────────────
 return {

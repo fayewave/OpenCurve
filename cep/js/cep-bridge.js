@@ -515,7 +515,6 @@
       undoBtn.removeAttribute('title');
       OpenCurve.attachTooltip(undoBtn, function() { return undoBtn.classList.contains('btn-dim') ? 'Nothing to undo' : 'Undo last bake'; });
     }
-    OpenCurve.applyCurveColor(localStorage.getItem('opencurve-line-color') || '#4a9eff');
 
     // Show first-launch splash
     showSplash();
