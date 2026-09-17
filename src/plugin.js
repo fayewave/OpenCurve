@@ -3465,23 +3465,32 @@ function _tlRender(s, force) {
 // fades stuck as they were at the bottom after a scroll back up (2026-09-17).
 // The likeliest reason is that a scroll change doesn't dirty UXP's layout, so
 // that rect keeps the offset of the last relayout; scrollTop is always current.
-function _tlUpdateFade() {
+// keep === 'keep' (the settle right after a _refreshScroller swap) reuses the
+// last measured sizes: measured on the just-inserted element, the bottom fade
+// flashed on at the bottom of the list until the next scroll event.
+var _tlFadeSize = null; // { over, right } from the last measured call
+function _tlUpdateFade(keep) {
   var els = _tlEls;
   if (!els || !els.fade || !els.scroll || !els.inner) return;
-  var showBottom = false, showTop = false, rightInset = 0;
-  try {
-    var sr = els.scroll.getBoundingClientRect(), ir = els.inner.getBoundingClientRect();
-    var top = els.scroll.scrollTop, over = Math.max(0, ir.height - sr.height);
-    showBottom = (over - top) > 1; // content still hidden under the bottom edge
-    showTop    = top > 1;          // content scrolled up past the top edge
-    var props = document.getElementById('prop-btns');
-    var pr = (props && _tlVisible) ? props.getBoundingClientRect() : null;
-    var rr = els.root.getBoundingClientRect();
-    if (pr && pr.width > 0) rightInset = Math.max(0, Math.round(rr.right - pr.right));
-  } catch(_) {}
+  var size = _tlFadeSize, top = 0;
+  try { top = els.scroll.scrollTop; } catch(_) {}
+  if (keep !== 'keep' || !size) {
+    size = { over: 0, right: 0 };
+    try {
+      var sr = els.scroll.getBoundingClientRect(), ir = els.inner.getBoundingClientRect();
+      size.over = Math.max(0, ir.height - sr.height); // how far the box can scroll
+      var props = document.getElementById('prop-btns');
+      var pr = (props && _tlVisible) ? props.getBoundingClientRect() : null;
+      var rr = els.root.getBoundingClientRect();
+      if (pr && pr.width > 0) size.right = Math.max(0, Math.round(rr.right - pr.right));
+    } catch(_) {}
+    _tlFadeSize = size;
+  }
+  var showBottom = (size.over - top) > 1; // content still hidden under the bottom edge
+  var showTop    = top > 1;               // content scrolled up past the top edge
   // Change-only writes: this runs on every scroll event of the box and after
   // every render, and UXP relayouts the panel on any inline style write
-  var right = rightInset + 'px', ob = showBottom ? '1' : '0', ot = showTop ? '1' : '0';
+  var right = size.right + 'px', ob = showBottom ? '1' : '0', ot = showTop ? '1' : '0';
   var fs = els.fade.style;
   if (fs.right   !== right) fs.right   = right;
   if (fs.opacity !== ob)    fs.opacity = ob;
@@ -3919,8 +3928,9 @@ function _tlInit() {
     _holdFixWatch(el);          // fresh element after each scroll burst
     el._ocRewire = _wireTlScroll;
     // The swap's scrollTop restore can land before this listener exists (or
-    // fire nothing at 0), so settle the fades once on the replacement
-    if (swapped) _tlUpdateFade();
+    // fire nothing at 0), so settle the fades once on the replacement, with the
+    // sizes measured before the swap (see _tlUpdateFade)
+    if (swapped) _tlUpdateFade('keep');
   }
   if (_tlEls.scroll) _wireTlScroll(_tlEls.scroll);
   var svg = _tlEls.svg;
