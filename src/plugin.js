@@ -6730,6 +6730,7 @@ function _applyPresetLayout(force) {
   var tileH = isGrid ? thumbSz + 34 : _TILE_H_LIST;
   var rows = Math.max(1, Math.floor((panelH - _PAGER_H) / tileH));
   _presetPerPage = rows * cols;
+  _presetRows = rows; _presetPanelH = panelH; _presetTileH = tileH; // for the row stretch in _presetPageApply
   var cacheKey = (isGrid ? 'g' : 'l') + cols + '_' + btnCount + '_' + _presetPerPage;
   if (!force && _applyPresetLayout._lastKey === cacheKey) { _presetPageApply(); return; }
   _applyPresetLayout._lastKey = cacheKey;
@@ -6760,7 +6761,8 @@ function _applyPresetLayout(force) {
     if (isGrid) {
       btn.style.width = itemW;
       btn.style.flexDirection = 'column';
-      btn.style.padding = '8px 4px 2px';
+      btn.style.padding = '4px 4px';
+      btn.style.justifyContent = 'center'; // rows are stretched to fill the page, content stays centred
       btn.style.border = 'none';
       btn.style.borderBottom = 'none';
       btn.style.marginRight = '0';
@@ -6771,7 +6773,7 @@ function _applyPresetLayout(force) {
       btn.style.alignSelf = 'flex-start';
       btn.style.overflow = 'visible';
       btn.style.whiteSpace = 'normal';
-      btn.style.minHeight = (thumbSz + 34) + 'px'; // 8px padding + thumbnail + 4px gap + a line of name + 2px padding
+      btn.style.minHeight = (thumbSz + 34) + 'px'; // padding + thumbnail + 4px gap + a line of name (the rows-per-page tile height)
     } else if (multi) {
       // Two-column list: ordinary rows, half width each, so the whole
       // button set (width, wrap) is inline like the grid (UXP relayout rule).
@@ -6789,6 +6791,7 @@ function _applyPresetLayout(force) {
       btn.style.overflow = '';
       btn.style.whiteSpace = '';
       btn.style.minHeight = '';
+      btn.style.justifyContent = '';
     } else {
       btn.style.width = '';
       btn.style.flexDirection = '';
@@ -6802,6 +6805,7 @@ function _applyPresetLayout(force) {
       btn.style.overflow = '';
       btn.style.whiteSpace = '';
       btn.style.minHeight = '';
+      btn.style.justifyContent = '';
       btn.style.marginRight = '';
       btn.style.marginBottom = '';
     }
@@ -6931,6 +6935,7 @@ var _PAGE_FLIP_MS = 600;  // hover on a pager arrow while dragging a tile
 var _presetPage    = 0;
 var _presetPerPage = 1;
 var _presetPages   = 1;
+var _presetRows = 1, _presetPanelH = 0, _presetTileH = 45; // from the last layout pass
 function _presetTiles() {
   var list = document.getElementById('all-presets-list');
   if (!list) return [];
@@ -6948,6 +6953,16 @@ function _presetPageApply() {
     if (t.classList.contains('preset-dragging')) continue;
     var d = (i >= from && i < to) ? '' : 'none';
     if (t.style.display !== d) t.style.display = d;
+  }
+  // Rows stretch to fill the page: the list's height (the column less the pager
+  // while it shows) over the rows that fit it, so no empty band is left under
+  // the last row. The same height on every page, so a short last page keeps
+  // its tiles the size of the others. Unknown height (first render): none set.
+  var listH = pages > 1 ? _presetPanelH - _PAGER_H : _presetPanelH;
+  var rowsFit = pages > 1 ? _presetRows : Math.max(1, Math.floor(_presetPanelH / _presetTileH));
+  var rowH = listH > 0 ? (listH / rowsFit).toFixed(2) + 'px' : '';
+  for (var j = 0; j < tiles.length; j++) {
+    if (tiles[j].style.height !== rowH) tiles[j].style.height = rowH;
   }
   var pager = document.getElementById('preset-pager');
   if (!pager) return;
