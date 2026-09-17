@@ -4637,7 +4637,7 @@ function _refreshScroller(el) {
 // dragged, a programmatic jump) cancels the easing and is left alone.
 var _UXP_NOTCH_MAX = 24; // any scroll step up to this is taken as one wheel notch (UXP moved 9px per notch, later 11px)
 var _WHEEL_STEP = 90;
-var _WHEEL_MS   = 110; // ease duration; 0 = one write per notch, no easing
+var _WHEEL_MS   = 0;   // ease duration; 0 = one write per notch, no easing (110 until 2026-09-17: each eased frame was a chance for UXP to apply a notch to a stale position)
 var _WHEEL_ON   = true;  // false = leave UXP's own per-notch scrolling alone
 function _smoothWheel(el) {
   if (!_WHEEL_ON || !el || el._ocWheel) return;
