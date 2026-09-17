@@ -3347,24 +3347,49 @@ function _tlRange(s) {
 function _tlX(t, g)   { return _TL_PAD_X + (t - g.a) / (g.b - g.a) * (g.W - 2 * _TL_PAD_X); }
 function _tlSec(x, g) { return g.a + (x - _TL_PAD_X) / (g.W - 2 * _TL_PAD_X) * (g.b - g.a); }
 
-// Second lines. Whole clip-relative seconds (the time the hover readout shows),
-// thinned to every 2, 5, 10, 15, 30 s and so on while seconds would sit closer
-// than _TL_SEC_GAP px, so a long clip doesn't fill with lines. Each line's time
-// is exact (clip start + k steps) and goes through _tlX like everything else,
-// then rounds to the pixel column the playhead takes at that time, so the lines
-// stay on the seconds at any zoom. Returns those x columns.
-var _TL_SEC_GAP   = 10;
-var _TL_SEC_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
-function _tlSecondXs(g, origin) {
+// Tick lines, clip-relative (the time base the hover readout shows): the finest
+// step that keeps them _TL_SEC_GAP px apart, from single frames through groups
+// of frames (_tlFrameSteps) to whole seconds and then every 2, 5, 10, 15, 30 s
+// and so on. Until 2026-09-17 the finest step was one second, so a short clip
+// got a line or two far apart. Each line's time is exact (clip start + k steps)
+// and goes through _tlX like everything else, then rounds to the pixel column
+// the playhead takes at that time, so the lines stay on their frames and seconds
+// at any zoom. Returns those x columns.
+var _TL_SEC_GAP     = 10;
+var _TL_SEC_STEPS   = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
+var _TL_FRAME_STEPS = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30, 60];
+// Frame counts under one second for this rate: the ones that divide it, so every
+// second keeps its line (24 fps: 1 2 3 4 6 8 12), plus in-between counts where
+// that ladder jumps more than 2.5x (25 fps: 1 2 5 10), so the chosen step never
+// leaves the lines much further apart than the gap
+function _tlFrameSteps(fps) {
+  var R = Math.round(fps);
+  if (!(R > 1)) return [];
+  var divs = _TL_FRAME_STEPS.filter(function(d) { return d < R && R % d === 0; }).concat([R]);
+  function fill(a, b) { // counts between a and b, none more than 2.5x the one before
+    if (b / a <= 2.5) return [];
+    for (var i = 0; i < _TL_FRAME_STEPS.length; i++) {
+      var v = _TL_FRAME_STEPS[i];
+      if (v > a && v < b && v >= b / 2.5) return fill(a, v).concat([v]);
+    }
+    return [];
+  }
+  var out = [];
+  for (var i = 0; i < divs.length - 1; i++) out = out.concat([divs[i]], fill(divs[i], divs[i + 1]));
+  return out;
+}
+function _tlSecondXs(g, origin, fps) {
   var span = g.b - g.a, inner = g.W - 2 * _TL_PAD_X;
   if (!(span > 0) || !(inner > 0) || typeof origin !== 'number') return [];
   var pps = inner / span, step = 0;
-  for (var i = 0; i < _TL_SEC_STEPS.length; i++) {
-    if (_TL_SEC_STEPS[i] * pps >= _TL_SEC_GAP) { step = _TL_SEC_STEPS[i]; break; }
+  var steps = (fps > 0 ? _tlFrameSteps(fps).map(function(n) { return n / fps; }) : []).concat(_TL_SEC_STEPS);
+  for (var i = 0; i < steps.length; i++) {
+    if (steps[i] * pps >= _TL_SEC_GAP) { step = steps[i]; break; }
   }
   if (!step) return [];
   var xs = [];
-  var k0 = Math.ceil((g.a - origin) / step - 1e-9), k1 = Math.floor((g.b - origin) / step + 1e-9);
+  // Tolerance in steps: a frame step (n / fps) isn't exact in floating point
+  var k0 = Math.ceil((g.a - origin) / step - 1e-6), k1 = Math.floor((g.b - origin) / step + 1e-6);
   for (var k = k0; k <= k1; k++) {
     var x = Math.round(_tlX(origin + k * step, g));
     if (x >= 0 && x < g.W) xs.push(x);
@@ -3546,7 +3571,7 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
       sl.style.cssText = 'position:absolute;top:' + y + 'px;left:' + x + 'px;width:1px;height:' + h + 'px;background-image:' + fade + ';pointer-events:none;';
       els.wrap.insertBefore(sl, els.svg);
     });
-  }, _tlSecondXs(g, tl.clipStart));
+  }, _tlSecondXs(g, tl.clipStart, fps));
   params.forEach(function(p, i) {
     var top = g.y0 + i * laneH, cy = top + laneH / 2;
     // Same state logic as the row: green beats selection, selected is blue when the
@@ -3997,6 +4022,9 @@ function _tlInit() {
     try { svg.setPointerCapture(e.pointerId); } catch(_) {} // the release reaches us even if the SVG is rebuilt under the pointer
   });
   svg.addEventListener('pointerup', function(e) {
+    // Let go of the capture: UXP doesn't seem to on its own, and a held capture
+    // keeps sending every later move here instead of a pointerleave
+    try { svg.releasePointerCapture(e.pointerId); } catch(_) {}
     if (!down) return;
     var p = pos(e), moved = Math.abs(p.x - down.x) > 4 || Math.abs(p.y - down.y) > 4;
     down = null;
@@ -4007,7 +4035,14 @@ function _tlInit() {
     if (t) _jumpToParam({ jumpSec: t.sec });
   });
   svg.addEventListener('dblclick', function(e) { toggleLane(laneAt(pos(e).y)); });
+  // Over the visible lanes: across the SVG, and down the scroll box only (the SVG
+  // runs on beneath it while the rows are scrolled)
+  function overLanes(e) {
+    var r = svg.getBoundingClientRect(), b = _tlEls.scroll ? _tlEls.scroll.getBoundingClientRect() : r;
+    return e.clientX >= r.left && e.clientX < r.right && e.clientY >= b.top && e.clientY < b.bottom;
+  }
   svg.addEventListener('pointermove', function(e) {
+    if (!overLanes(e)) { leave(); return; } // a held capture sends moves from outside the lanes
     var p = pos(e), li = laneAt(p.y), t = target(p.x, li);
     var lane = li >= 0 ? _tlLanes[li] : null;
     _tlHighlightLane(lane ? lane.key : null);
@@ -4018,6 +4053,18 @@ function _tlInit() {
   function leave() { _tlHighlightLane(null); _tlRowHover(null); _tlShowReadout(null); _tlPlaceGhost(null); } // a press in flight is kept: a rebuild can fire this mid-press
   svg.addEventListener('pointerleave', leave);
   svg.addEventListener('mouseleave',   leave);
+  // The CCX left the ghost playhead (and the readout) up after the pointer left
+  // the lanes, so the lanes can't rely on pointerleave: while their hover state
+  // is up, a move anywhere else in the panel clears it too. This runs before a
+  // row's own handlers, so a row the pointer went straight onto gets its lane
+  // lit again.
+  document.addEventListener('pointermove', function(e) {
+    if (_tlGhostSec === null && !_tlHoverInfo && !_tlHoverKey) return;
+    if (overLanes(e)) return;
+    leave();
+    var row = e.target && e.target.closest ? e.target.closest('.prop-btn') : null;
+    if (row && row.dataset && row.dataset.key) _tlHighlightLane(row.dataset.key);
+  }, true);
   // Handle between the lanes and the property rows drags the rows' width (same
   // pattern as the sidebar handle; the lanes re-measure through the ResizeObserver)
   var handle = document.getElementById('tl-prop-handle');
