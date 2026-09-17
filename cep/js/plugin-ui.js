@@ -1425,6 +1425,7 @@ function _panelShortcut(e) {
     if (ub && !ub.classList.contains('btn-dim')) ub.click(); else _showCopyToast('Nothing to undo');
     return true;
   }
+  if (k === 'PageUp' || k === 'PageDown') { _presetPageStep(k === 'PageUp' ? -1 : 1); return true; }
   if (k === 'Escape') {
     if (_zoomPopHide && _zoomPopHide()) return true;
     if (_closeMenus && _closeMenus()) return true; // tile and mini context menus
@@ -1437,7 +1438,7 @@ function _pressPreset(i) {
   var list = document.getElementById('all-presets-list');
   if (!list) return;
   var tiles = Array.prototype.filter.call(list.querySelectorAll('.preset-btn'), function(b) {
-    return b.id !== '_update-notif';
+    return b.id !== '_update-notif' && b.style.display !== 'none'; // the page on show
   });
   if (tiles[i]) tiles[i].click();
 }
@@ -3347,7 +3348,7 @@ function initPanel() {
       _presetList = _presetList.filter(function(p) { return p.id !== t.preset.id; });
       _savePresetList(_presetList);
       if (t.btn && t.btn.parentNode) t.btn.parentNode.removeChild(t.btn);
-      _presetUpdateFade();
+      _applyPresetLayout(true); // re-pages
     });
   }, _icDelete);
   function _showCtxMenu(preset, btn, startRename, e) {
@@ -3513,6 +3514,46 @@ function initPanel() {
     var _dragGhost = null, _ghostW = 80, _ghostH = 60;
     var _dropHighlight = null;
     var _pendingPointerId = null;
+    var _flipTimer = null, _flipDir = 0, _lastX = 0, _lastY = 0;
+
+    // Floating ghost of the tile (grid and two-column list from the first move;
+    // the one-column list once a drag crosses pages). Its size never changes,
+    // so it is measured once here instead of reading offsetWidth/offsetHeight
+    // on every move (a read straight after a style write forces a layout).
+    function makeGhost(x, y) {
+      if (_dragGhost || !dragEl) return;
+      var rect = dragEl.getBoundingClientRect();
+      _ghostW = rect.width || 80;
+      _ghostH = rect.height || 60;
+      _dragGhost = dragEl.cloneNode(true);
+      _dragGhost.style.cssText = 'position:fixed;z-index:9999;pointer-events:none;opacity:0.6;transform:scale(0.85);width:' + rect.width + 'px;';
+      _dragGhost.style.left = (x - _ghostW / 2) + 'px';
+      _dragGhost.style.top = (y - _ghostH / 2) + 'px';
+      document.body.appendChild(_dragGhost);
+      dragEl.style.display = 'none';
+    }
+    function inRect(el, x, y) {
+      if (!el) return false;
+      var r = el.getBoundingClientRect();
+      return r.width > 0 && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    }
+    // Hovering a pager arrow while dragging flips the page after _PAGE_FLIP_MS
+    // (and again while the pointer stays); the tile follows as its ghost
+    function pagerCheck(x, y) {
+      var dir = inRect(document.getElementById('preset-pager-prev'), x, y) ? -1
+              : inRect(document.getElementById('preset-pager-next'), x, y) ? 1 : 0;
+      if (dir === _flipDir) return;
+      _flipDir = dir;
+      if (_flipTimer) { clearTimeout(_flipTimer); _flipTimer = null; }
+      if (!dir) return;
+      var tick = function() {
+        _flipTimer = null;
+        if (!dragEl || !_flipDir) return;
+        makeGhost(_lastX, _lastY);
+        if (_presetPageStep(_flipDir)) _flipTimer = setTimeout(tick, _PAGE_FLIP_MS);
+      };
+      _flipTimer = setTimeout(tick, _PAGE_FLIP_MS);
+    }
 
     container.addEventListener('pointerdown', function(e) {
       // Left button only: a right-press used to arm a drag and take pointer
@@ -3551,27 +3592,20 @@ function initPanel() {
         dropLine = document.createElement('div');
         dropLine.className = 'preset-drop-line';
         dragEl.classList.add('preset-dragging');
-        if (_presetCols > 1) {
-          // Floating ghost. Its size never changes, so it is measured once here
-          // instead of reading offsetWidth/offsetHeight on every move (a read
-          // straight after a style write forces a layout).
-          var rect = dragEl.getBoundingClientRect();
-          _ghostW = rect.width || 80;
-          _ghostH = rect.height || 60;
-          _dragGhost = dragEl.cloneNode(true);
-          _dragGhost.style.cssText = 'position:fixed;z-index:9999;pointer-events:none;opacity:0.6;transform:scale(0.85);width:' + rect.width + 'px;';
-          _dragGhost.style.left = (e.clientX - _ghostW / 2) + 'px';
-          _dragGhost.style.top = (e.clientY - _ghostH / 2) + 'px';
-          document.body.appendChild(_dragGhost);
-          dragEl.style.display = 'none';
-        }
+        if (_presetCols > 1) makeGhost(e.clientX, e.clientY);
       }
+      _lastX = e.clientX; _lastY = e.clientY;
       // Measure before writing anything this move, so the rect reads below don't
       // force a layout on the ghost's new position.
       var isGrid = _presetCols > 1; // grid, or the two-column list
       var items = Array.from(container.children).filter(function(c) {
-        return c !== dragEl && c !== dropLine;
+        return c !== dragEl && c !== dropLine && c.style.display !== 'none'; // this page's tiles
       });
+      // Nothing under the pointer: the drop goes after the page's last tile
+      // (before the next page's first), not at the end of the whole list
+      var endRef = items.length ? items[items.length - 1].nextSibling : null;
+      if (endRef === dropLine) endRef = dropLine.nextSibling;
+      pagerCheck(e.clientX, e.clientY);
       var after = null;
       if (isGrid) {
         // Insert before the tile the cursor is over (the dragged item takes its place)
@@ -3588,8 +3622,9 @@ function initPanel() {
           if (e.clientY < r2.top + r2.height / 2) { after = items[j]; break; }
         }
       }
+      if (!after) after = endRef;
       // Writes from here down
-      var wantHi = (isGrid && after && after !== dragEl) ? after : null;
+      var wantHi = (isGrid && after && after !== dragEl && after.style.display !== 'none') ? after : null;
       if (_dropHighlight !== wantHi) {
         if (_dropHighlight) _dropHighlight.style.outline = '';
         if (wantHi) wantHi.style.outline = '2px solid var(--accent)';
@@ -3611,6 +3646,8 @@ function initPanel() {
     function endDragSort() {
       if (!dragEl) return;
       _pendingPointerId = null;
+      if (_flipTimer) { clearTimeout(_flipTimer); _flipTimer = null; }
+      _flipDir = 0;
       if (moved && dropLine) {
         container.insertBefore(dragEl, dropLine);
         container.removeChild(dropLine);
@@ -3623,11 +3660,13 @@ function initPanel() {
       if (_dragGhost && _dragGhost.parentNode) { _dragGhost.parentNode.removeChild(_dragGhost); _dragGhost = null; }
       dragEl.style.display = '';
       dragEl.classList.remove('preset-dragging');
-      var didMove = moved;
+      var didMove = moved, dropped = dragEl;
       dragEl = null; dropLine = null; moved = false;
-      // Only after a real reorder: a plain click in grid view used to rewrite
+      // Only after a real reorder (it re-pages too): a plain click used to rewrite
       // every tile's inline styles, and each write relayouts the panel in UXP.
-      if (didMove && _presetCols > 1) _applyPresetLayout(true);
+      // Then show the page the tile landed on: a drop before the first tile of
+      // a page puts it at the end of the page before.
+      if (didMove) { _applyPresetLayout(true); _presetGoToTile(dropped); }
     }
 
     container.addEventListener('pointerup',     endDragSort);
@@ -3670,6 +3709,7 @@ function initPanel() {
     // Same order as init: render, then the update tile, then the inline layout
     // pass over the fresh tiles (UXP needs it inline; running it before the
     // rebuild, as the reset first did, left the new tiles unstyled)
+    _presetPage = 0;
     _renderPresets();
     _refreshUpdateNotification();
     _applyPresetLayout(true);
@@ -3678,11 +3718,13 @@ function initPanel() {
   _refreshUpdateNotification();
 
   _applyPresetLayout(true);
+  // The column, not the list: the pager row toggling changes the list's box
+  // but not the rows per page, which come from the column's height
   var _presetListEl = document.getElementById('all-presets-list');
-  if (_presetListEl && typeof ResizeObserver !== 'undefined') {
-    new ResizeObserver(_updateGridCols).observe(_presetListEl);
+  if (_presetListEl && _presetListEl.parentNode && typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(_updateGridCols).observe(_presetListEl.parentNode);
   }
-  if (_presetListEl) _presetListEl.addEventListener('scroll', _presetUpdateFade); // top/bottom edge fades
+  _presetPagerInit();
 
   // Parse a curve string → curve object or null. _curveFromText takes both forms
   // (cubic-bezier() and opencurve()) and clamps what it returns.
@@ -3703,6 +3745,7 @@ function initPanel() {
     var btn = _buildPresetBtn(preset);
     list.appendChild(btn);
     _applyPresetLayout(true);
+    _presetGoToTile(btn);
     if (btn._ocRename) btn._ocRename();
   }
 
@@ -3710,13 +3753,16 @@ function initPanel() {
   function _addPresetEntries(entries) {
     var list = document.getElementById('all-presets-list');
     if (!list || !entries.length) return;
+    var first = null;
     entries.forEach(function(p) {
       _presetList.push(p);
       var btn = _buildPresetBtn(p);
       list.appendChild(btn);
+      if (!first) first = btn;
     });
     _savePresetList(_presetList);
     _applyPresetLayout(true);
+    if (first) _presetGoToTile(first); // the page the new tiles start on
   }
   function _presetSig(p) { return p.name + '|' + _curveToText(p.curve); }
   // Starter set (see STARTER_PRESETS): only the names not already in the list are added
@@ -4041,6 +4087,7 @@ function initPanel() {
         var list = document.getElementById('all-presets-list');
         if (list) list.appendChild(btn);
         _applyPresetLayout(true);
+        _presetGoToTile(btn);
         if (btn._ocRename) btn._ocRename();
       });
     }
@@ -4300,11 +4347,18 @@ function _applyPresetLayout(force) {
   _presetCols = cols;
   var multi = cols > 1;
   var btnCount = list.querySelectorAll('.preset-btn').length;
-  var cacheKey = (isGrid ? 'g' : 'l') + cols + '_' + btnCount;
-  if (!force && _applyPresetLayout._lastKey === cacheKey) return;
+  var thumbSz = isGrid ? (cols >= 3 ? 40 : 42) : 28;
+  // Rows per page from the column's height (the pager row always reserved)
+  // and the tile height the styles below give; see the paging block after
+  // _updateGridCols. The list is a page, not a scroller.
+  var panel = list.parentNode, panelH = panel ? panel.clientHeight : 0;
+  var tileH = isGrid ? thumbSz + 34 : _TILE_H_LIST;
+  var rows = Math.max(1, Math.floor((panelH - _PAGER_H) / tileH));
+  _presetPerPage = rows * cols;
+  var cacheKey = (isGrid ? 'g' : 'l') + cols + '_' + btnCount + '_' + _presetPerPage;
+  if (!force && _applyPresetLayout._lastKey === cacheKey) { _presetPageApply(); return; }
   _applyPresetLayout._lastKey = cacheKey;
   var itemW = multi ? (100/cols).toFixed(3) + '%' : '100%';
-  var thumbSz = isGrid ? (cols >= 3 ? 40 : 42) : 28;
 
   if (multi) {
     list.style.display = 'flex';
@@ -4449,65 +4503,102 @@ function _applyPresetLayout(force) {
         btns.forEach(function(b) { b.style.alignSelf = 'flex-start'; });
         list.style.alignContent = 'flex-start';
         void list.offsetHeight;
-        _presetUpdateFade();
       }, 200);
     }
   }
-  _presetUpdateFade(); // tiles added, removed or resized
+  _presetPageApply(); // tiles added, removed or the rows per page changed
 }
 var _gridColsTimer = null;
 var _LIST_2COL_W = 340; // list view splits into two columns from this width
 var _presetCols = 1;    // columns the last _applyPresetLayout laid out
 function _updateGridCols() {
   if (_gridColsTimer) clearTimeout(_gridColsTimer);
-  _gridColsTimer = setTimeout(function() { _applyPresetLayout(); _presetUpdateFade(); }, 60); // a height change moves where the list ends
+  _gridColsTimer = setTimeout(function() { _applyPresetLayout(); }, 60); // a height change alters the rows per page
 }
 
-// Edge fades on the preset list, the same bands as the timeline's (#tl-fade):
-// the bottom one while the list can scroll further down, the top one while
-// tiles are scrolled up out of view. Same code as the UXP edition, where the
-// position has to come from scrollTop and only sizes from bounding rects (a
-// child's rect doesn't follow a scroll in the CCX). The list has no inner box,
-// so the content height runs from the first tile's top to the lowest of the
-// last three bottoms (the last grid row); the scrollbar's width is the list's
-// right edge less the tiles'. Called on scroll, after every layout pass, on a
-// list resize and when a tile goes. keep === 'keep' reuses the last measured
-// sizes (UXP calls it that way right after its scroller swap; CEP never does).
-var _presetFadeSize = null; // { over, right } from the last measured call
-function _presetUpdateFade(keep) {
-  var list = document.getElementById('all-presets-list'), fade = document.getElementById('preset-fade');
-  if (!list || !fade) return;
-  var size = _presetFadeSize, top = 0;
-  try { top = list.scrollTop; } catch(_) {}
-  if (keep !== 'keep' || !size) {
-    size = { over: 0, right: 0 };
-    try {
-      var kids = list.children, n = kids.length;
-      if (n) {
-        var lr = list.getBoundingClientRect(), fr = kids[0].getBoundingClientRect();
-        var bottom = fr.bottom, right = fr.right;
-        for (var i = Math.max(1, n - 3); i < n; i++) {
-          var r = kids[i].getBoundingClientRect();
-          if (r.bottom > bottom) bottom = r.bottom;
-          if (r.right  > right)  right  = r.right;
-        }
-        size.over = Math.max(0, Math.round(bottom - fr.top - lr.height)); // how far the list can scroll
-        if (size.over > 0) size.right = Math.max(0, Math.round(lr.right - right));
-      }
-    } catch(_) {}
-    _presetFadeSize = size;
+// Pages instead of scrolling (September 2026). The list never scrolls: it
+// shows as many whole rows as fit its height, and the pager row under it
+// (#preset-pager) flips through the rest. _applyPresetLayout works the rows
+// per page out from the column's height less the pager row (always reserved,
+// so showing the pager can't change the count) and the tile height its styles
+// give (45px list rows, thumbSz + 34 grid tiles; both border-box, so no
+// measuring), keeps it in _presetPerPage and calls _presetPageApply, which sets
+// the tiles' inline display and the pager's label and arrows, all change-only.
+// The page is session state, clamped on every apply. A tile being dragged is
+// left alone (the drag hides it behind its ghost and the layout pass after the
+// drop pages it). The pager arrows, PageUp/PageDown and the wheel (CEP; UXP
+// delivers no wheel events, and with no scroll view there is no post-scroll
+// input hold on the list, which is the point) flip pages; hovering an arrow
+// during a drag flips after _PAGE_FLIP_MS and keeps flipping while it stays.
+var _PAGER_H      = 26;   // the pager row's CSS height
+var _TILE_H_LIST  = 45;   // list row: 28px thumb + 16px padding + 1px border
+var _PAGE_FLIP_MS = 600;  // hover on a pager arrow while dragging a tile
+var _presetPage    = 0;
+var _presetPerPage = 1;
+var _presetPages   = 1;
+function _presetTiles() {
+  var list = document.getElementById('all-presets-list');
+  if (!list) return [];
+  return Array.prototype.slice.call(list.querySelectorAll('.preset-btn'));
+}
+function _presetPageApply() {
+  var tiles = _presetTiles(), per = Math.max(1, _presetPerPage);
+  var pages = Math.max(1, Math.ceil(tiles.length / per));
+  if (_presetPage > pages - 1) _presetPage = pages - 1;
+  if (_presetPage < 0) _presetPage = 0;
+  _presetPages = pages;
+  var from = _presetPage * per, to = from + per;
+  for (var i = 0; i < tiles.length; i++) {
+    var t = tiles[i];
+    if (t.classList.contains('preset-dragging')) continue;
+    var d = (i >= from && i < to) ? '' : 'none';
+    if (t.style.display !== d) t.style.display = d;
   }
-  // Change-only writes: this runs on every scroll event of the list
-  var right = size.right + 'px', ob = (size.over - top) > 1 ? '1' : '0', ot = top > 1 ? '1' : '0';
-  var fs = fade.style;
-  if (fs.right   !== right) fs.right   = right;
-  if (fs.opacity !== ob)    fs.opacity = ob;
-  var fadeTop = document.getElementById('preset-fade-top');
-  if (fadeTop) {
-    var ts = fadeTop.style;
-    if (ts.right   !== right) ts.right   = right;
-    if (ts.opacity !== ot)    ts.opacity = ot;
-  }
+  var pager = document.getElementById('preset-pager');
+  if (!pager) return;
+  var pd = pages > 1 ? 'flex' : 'none';
+  if (pager.style.display !== pd) pager.style.display = pd;
+  var lab = document.getElementById('preset-pager-label');
+  var txt = (_presetPage + 1) + ' / ' + pages;
+  if (lab && lab.textContent !== txt) lab.textContent = txt;
+  _presetPagerArrow('preset-pager-prev', _presetPage > 0);
+  _presetPagerArrow('preset-pager-next', _presetPage < pages - 1);
+}
+function _presetPagerArrow(id, on) {
+  var b = document.getElementById(id);
+  if (!b) return;
+  var op = on ? '' : '0.3', cur = on ? '' : 'default';
+  if (b.style.opacity !== op) b.style.opacity = op;
+  if (b.style.cursor  !== cur) b.style.cursor  = cur;
+}
+function _presetPageStep(d) {
+  var p = Math.max(0, Math.min(_presetPages - 1, _presetPage + d));
+  if (p === _presetPage) return false;
+  _presetPage = p;
+  _presetPageApply();
+  return true;
+}
+// Show the page a tile is on (a new preset about to be renamed)
+function _presetGoToTile(btn) {
+  var i = _presetTiles().indexOf(btn);
+  if (i < 0) return;
+  _presetPage = Math.floor(i / Math.max(1, _presetPerPage));
+  _presetPageApply();
+}
+var _presetWheelAt = 0;
+function _presetWheel(e) {
+  e.preventDefault();
+  var now = Date.now();
+  if (now - _presetWheelAt < 150) return; // a trackpad sends many small deltas per flick
+  _presetWheelAt = now;
+  if (e.deltaY > 0) _presetPageStep(1); else if (e.deltaY < 0) _presetPageStep(-1);
+}
+function _presetPagerInit() {
+  var prev = document.getElementById('preset-pager-prev'), next = document.getElementById('preset-pager-next');
+  if (prev) { prev.addEventListener('click', function() { _presetPageStep(-1); }); _attachTooltip(prev, 'Previous page (Page Up)'); }
+  if (next) { next.addEventListener('click', function() { _presetPageStep(1); });  _attachTooltip(next, 'Next page (Page Down)'); }
+  var list = document.getElementById('all-presets-list');
+  if (list) list.addEventListener('wheel', _presetWheel, { passive: false });
 }
 
 function _hexToRgba(hex, alpha) {
@@ -4568,7 +4659,7 @@ function _refreshUpdateNotification() {
   if (!list) return;
   var existing = document.getElementById('_update-notif');
   if (existing) existing.parentNode.removeChild(existing);
-  if (!_updateAvailable || _updateDismissed || !_updateNotifsOn) { if (existing) _presetUpdateFade(); return; }
+  if (!_updateAvailable || _updateDismissed || !_updateNotifsOn) { if (existing) _applyPresetLayout(true); return; }
 
   var notif = document.createElement('div');
   notif.id = '_update-notif';

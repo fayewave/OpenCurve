@@ -91,10 +91,12 @@
         </div>
         <div class="controls-panel">
           <div id="all-presets-list"></div>
-          <!-- Fades along the top and bottom edges while the list can scroll further that way
-               (_presetUpdateFade), the same bands as the timeline's #tl-fade -->
-          <div id="preset-fade-top" class="tl-fade tl-fade-top"><div style="background:rgba(17,17,17,0.86)"></div><div style="background:rgba(17,17,17,0.72)"></div><div style="background:rgba(17,17,17,0.58)"></div><div style="background:rgba(17,17,17,0.45)"></div><div style="background:rgba(17,17,17,0.32)"></div><div style="background:rgba(17,17,17,0.21)"></div><div style="background:rgba(17,17,17,0.12)"></div><div style="background:rgba(17,17,17,0.05)"></div></div>
-          <div id="preset-fade" class="tl-fade"><div style="background:rgba(17,17,17,0.05)"></div><div style="background:rgba(17,17,17,0.12)"></div><div style="background:rgba(17,17,17,0.21)"></div><div style="background:rgba(17,17,17,0.32)"></div><div style="background:rgba(17,17,17,0.45)"></div><div style="background:rgba(17,17,17,0.58)"></div><div style="background:rgba(17,17,17,0.72)"></div><div style="background:rgba(17,17,17,0.86)"></div></div>
+          <!-- Pager under the list: shown while the presets need more than one page (_presetPageApply) -->
+          <div id="preset-pager" class="preset-pager" style="display:none">
+            <div id="preset-pager-prev" class="pager-btn"><svg width="14" height="14" viewBox="0 0 12 12" fill="none"><path d="M7.5 2.5 L4 6 L7.5 9.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <span id="preset-pager-label" class="pager-label">1 / 1</span>
+            <div id="preset-pager-next" class="pager-btn"><svg width="14" height="14" viewBox="0 0 12 12" fill="none"><path d="M4.5 2.5 L8 6 L4.5 9.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          </div>
         </div>
       </div>
 

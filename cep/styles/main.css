@@ -125,14 +125,14 @@ input, textarea {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
-  position: relative; /* anchors the preset list's edge fades */
 }
 
+/* A page, not a scroller: _presetPageApply shows the tiles that fit and the
+   pager row below flips through the rest */
 #all-presets-list {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   contain: layout style;
   background: #111111; /* the same ground as the graph and the timeline */
 }
@@ -189,8 +189,7 @@ input, textarea {
 /* Fades at the bottom / top of the lanes + rows while they can scroll further
    that way. Eight bands of the strip's ground colour at rising opacity towards
    the edge (inline in the HTML). Opacity is set inline by _tlUpdateFade; the
-   right edge stops at the scrollbar. The preset list uses the same classes for
-   its own pair (#preset-fade, #preset-fade-top, _presetUpdateFade). */
+   right edge stops at the scrollbar. */
 .tl-fade {
   position: absolute;
   left: 0;
@@ -334,6 +333,7 @@ input, textarea {
 /* Icons sit dead centre in their buttons. As inline elements the SVGs sat on
    the text baseline, which in UXP pushed them down and right of centre. */
 .tool-btn svg,
+.pager-btn svg,
 .prop-pin svg,
 .prop-undo svg,
 .prop-curve svg,
@@ -481,6 +481,51 @@ input, textarea {
 .preset-delete:hover {
   color: var(--red);
   opacity: 1;
+}
+
+/* Pager under the preset list (shown by _presetPageApply while there is more
+   than one page): previous / next arrows around "n / N". The list itself never
+   scrolls; it shows the rows that fit and the pager flips through the rest. */
+.preset-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  flex-shrink: 0;
+  background: #111111;
+}
+
+.pager-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  background-color: rgba(255,255,255,0.08);
+  background-image: linear-gradient(to right, rgba(255,255,255,0.06), rgba(255,255,255,0));
+  color: #d4d4d4;
+  cursor: pointer;
+  user-select: none;
+  box-sizing: border-box;
+  position: relative;
+  transition: background 0.12s, color 0.12s;
+}
+
+.pager-btn:hover {
+  background-color: rgba(255,255,255,0.16);
+  background-image: linear-gradient(to right, rgba(255,255,255,0.09), rgba(255,255,255,0));
+  color: #ffffff;
+}
+
+.pager-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  min-width: 44px;
+  text-align: center;
+  margin: 0 6px;
+  user-select: none;
 }
 
 /* Text fields built by _mkTextField (numeric entry, paste, theme hex). The
