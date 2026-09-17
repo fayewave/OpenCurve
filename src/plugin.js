@@ -4642,8 +4642,18 @@ var _WHEEL_ON   = true;  // false = leave UXP's own per-notch scrolling alone
 function _smoothWheel(el) {
   if (!_WHEEL_ON || !el || el._ocWheel) return;
   el._ocWheel = true;
-  var target = null, raf = 0, lastTop = el.scrollTop, wrote = null, from = 0, t0 = 0;
-  function write(v) { wrote = v; lastTop = v; el.scrollTop = v; }
+  // UXP applies a notch to the position its view last painted, which can lag
+  // several frames behind the panel's writes when the main thread is busy
+  // (measured 2026-09-17: the ease had written 43 when the next notch landed at
+  // 7 + 7 = 14, then at 43 + 7 = 50 once the write was consumed). So a step is
+  // measured against whichever reference is nearest: UXP's own last position
+  // (lastUxp) or the panel's last write (lastWrite), and the panel's intended
+  // position is reasserted rather than followed back to the stale one.
+  var target = null, raf = 0, wrote = [], from = 0, t0 = 0;
+  var lastUxp = el.scrollTop, lastWrite = null, lastNotchAt = 0;
+  // Own writes are recognised by value; a list, since two writes can land
+  // before the first one's scroll event arrives
+  function write(v) { wrote.push({ v: v, t: Date.now() }); if (wrote.length > 8) wrote.shift(); lastWrite = v; el.scrollTop = v; }
   function finish() {
     if (raf) { cancelAnimationFrame(raf); raf = 0; }
     if (target !== null && el.scrollTop !== target) write(target);
@@ -4661,24 +4671,39 @@ function _smoothWheel(el) {
   }
   el.addEventListener('scroll', function() {
     var top = el.scrollTop;
-    if (top === wrote) { wrote = null; return; } // our own write landing
-    var d = top - lastTop;
-    lastTop = top;
+    var wi = -1, wnow = Date.now();
+    while (wrote.length && wnow - wrote[0].t > 300) wrote.shift(); // events coalesce, so old entries just expire
+    for (var k = 0; k < wrote.length; k++) if (wrote[k].v === top) { wi = k; break; }
+    if (wi >= 0) { wrote.splice(wi, 1); return; } // our own write landing
+    // Nearest reference: UXP's own last position, or our last write once consumed
+    var ref = lastUxp, d = top - lastUxp;
+    if (lastWrite !== null && Math.abs(top - lastWrite) < Math.abs(d)) { ref = lastWrite; d = top - lastWrite; }
+    lastUxp = top;
     if (!d) return;
-    var notches = d > 0 ? 1 : -1;
+    var now = Date.now();
     var max = el.scrollHeight - el.clientHeight;
-    if (Math.abs(d) > _UXP_NOTCH_MAX) {
+    if (Math.abs(d) > _UXP_NOTCH_MAX || _ocPtrDown) {
       // scrollbar drag or a jump: not the wheel, stop easing and follow it
-      if (_debugScroll) console.log('[OC-SCROLL] jump ' + (top - d) + ' -> ' + top + (target !== null ? ' (ease to ' + target + ' cancelled)' : ''));
+      if (_debugScroll) console.log('[OC-SCROLL] jump ' + ref + ' -> ' + top + (target !== null ? ' (ease to ' + target + ' cancelled)' : ''));
       if (raf) { cancelAnimationFrame(raf); raf = 0; }
-      target = null;
+      target = null; lastWrite = null; wrote = [];
       return;
     }
-    var base = target === null ? top - d : target;
-    target = Math.max(0, Math.min(max, Math.round(base + notches * _WHEEL_STEP)));
-    if (target === top) { target = null; return; }
+    var notches = d > 0 ? 1 : -1;
+    // Where the panel meant to be: the running ease's target, else the last
+    // write (UXP may not have painted it yet), else the position before the notch
+    var base = target !== null ? target : (lastWrite !== null && now - lastNotchAt < 1000 ? lastWrite : top - d);
+    lastNotchAt = now;
+    var want = Math.max(0, Math.min(max, Math.round(base + notches * _WHEEL_STEP)));
+    if (want === top) { target = null; return; }
+    if (_debugScroll && ref !== top - d) console.log('[OC-SCROLL] lagged notch ' + ref + ' -> ' + top + ', intended ' + base + ' -> ' + want);
+    target = want;
     if (_WHEEL_MS <= 0) { finish(); return; } // no easing: land in one write
-    from = top; t0 = Date.now();
+    // Ease from the intended position, not the stale one UXP just showed
+    from = (ref === lastWrite && lastWrite !== null) ? top : (lastWrite !== null ? lastWrite : top);
+    from = Math.max(0, Math.min(max, from));
+    if (from !== top) write(from);
+    t0 = now;
     if (!raf) raf = requestAnimationFrame(step);
   });
   // A press while easing: land now so the click hits what the user sees
