@@ -1345,7 +1345,7 @@ function setPresetActive(id) {
 function _undoBakeForKey(key) {
   var live = (getState().availableParams || []).filter(function(x){ return x.key === key; })[0];
   if (!live || !live.bakeIds || !live.bakeIds.length) return;
-  if (_bridge && _bridge.onUndoParam) _bridge.onUndoParam(live.bakeIds, live.displayName);
+  if (_bridge && _bridge.onUndoParam) _bridge.onUndoParam(live.bakeIds, live.label || live.displayName);
 }
 
 // Row curve button: the host attaches the curve its bake record used to the
@@ -1355,7 +1355,7 @@ function _loadBakedCurve(key) {
   if (!live || !live.bakeCurve) { _showCopyToast('No curve was recorded for this bake', '#f0a030'); return; }
   clearPresetActive();
   _animateToCurve(_cloneCurve(live.bakeCurve), function(cur) { if (_svgW > 0 && _svgH > 0) updateDynamicSVG(cur, _svgW, _svgH); });
-  _showCopyToast('Loaded the curve baked on ' + (live.displayName || 'this property'));
+  _showCopyToast('Loaded the curve baked on ' + (live.label || live.displayName || 'this property'));
 }
 
 // Status strip click while the playhead is outside every keyframe pair: the
@@ -1749,7 +1749,7 @@ function _tlRender(s, force) {
              s.tl ? Math.round((s.tl.clipStart || 0) * 1000) + '/' + (s.tl.fps || 0) : '',
              n === 0 ? s.status : ''].join('|');
   if (range) params.forEach(function(p) {
-    sig += '|' + p.key + ':' + p.displayName + ':' + (p.tlKf || []).map(function(t){ return Math.round(t * 1000); }).join(',')
+    sig += '|' + p.key + ':' + p.displayName + ':' + (p.label || '') + ':' + (p.tlKf || []).map(function(t){ return Math.round(t * 1000); }).join(',')
          + ':' + (p.tlOut ? 'o' : Math.round(p.tlKf0 * 1000) + '/' + Math.round(p.tlKf1 * 1000))
          + ':' + (p.tlSpans || []).map(function(sp){ return Math.round(sp[0] * 1000) + '~' + Math.round(sp[1] * 1000); }).join(',')
          + ':' + (sel.indexOf(p.key) >= 0 ? 's' : '') + (valid.indexOf(p.key) >= 0 ? 'v' : '') + (baked.indexOf(p.key) >= 0 ? 'b' : '');
@@ -1875,7 +1875,7 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
         fill: c.bar }));
     }
     // Diamonds: every keyframe except the ones inside a bar (its two ends are kept)
-    var lane = { key: p.key, name: p.displayName, bg: bg, fill: c.bg, hover: c.hover, kf: [] };
+    var lane = { key: p.key, name: p.displayName, label: p.label || p.displayName, bg: bg, fill: c.bg, hover: c.hover, kf: [] };
     var lastX = -Infinity;
     kf.forEach(function(t) {
       var x = _tlX(t, g);
@@ -2017,7 +2017,7 @@ function _tlComposeReadout() {
   if (h) {
     var s = getState(), fps = (s.tl && s.tl.fps) || 25;
     var rel = h.t.sec - (s.tl ? s.tl.clipStart : 0);
-    text = h.lane.name + (h.t.kf ? ' · keyframe' : '') + ' · ' + rel.toFixed(2) + 's · frame ' + Math.round(rel * fps)
+    text = (h.lane.label || h.lane.name) + (h.t.kf ? ' · keyframe' : '') + ' · ' + rel.toFixed(2) + 's · frame ' + Math.round(rel * fps)
          + (_tlValText ? ' · ' + _tlValText : '');
   }
   if (text === _tlHoverText) return;
@@ -2465,7 +2465,7 @@ function renderUI(s) {
     // swapping one effect for another can land a different property on the same
     // key and the row would keep the old label (the lanes already follow the name).
     // A key can never contain '~', so the two halves stay unambiguous.
-    var newKeys = params.map(function(p){ return p.key + '~' + (p.displayName || ''); }).join(',');
+    var newKeys = params.map(function(p){ return p.key + '~' + (p.label || p.displayName || ''); }).join(',');
     if (curKeys !== newKeys) {
       _hideTooltip(); // rows are being replaced; don't leave a tooltip for a removed pin
       propBtns.innerHTML = '';
@@ -2479,7 +2479,7 @@ function renderUI(s) {
         propDiamond.innerHTML = '<svg width="10" height="10" viewBox="-1 -1 10 10" fill="none"><polygon class="mk-diamond" points="4,0.9 7.1,4 4,7.1 0.9,4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path class="mk-tick" d="M0.7 4.4 L3.1 6.8 L7.4 1.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" opacity="0" visibility="hidden"/></svg>';
         var propLabel = document.createElement('span');
         propLabel.className = 'prop-label';
-        propLabel.textContent = p.displayName;
+        propLabel.textContent = p.label || p.displayName;
         btn.appendChild(propDiamond);
         btn.appendChild(propLabel);
         // Undo: remove the keyframes a bake added to this property. Hidden unless

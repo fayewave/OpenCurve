@@ -11,7 +11,10 @@
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
-// Known param display names (same as UXP version)
+// Internal property names (same as the UXP version). This is the panel's stable
+// identity for a property: bake records, the undo check and the Opacity clamp
+// match on it, so it stays English and never changes. The rows show the live name
+// from the user's own Premiere instead (_ocLiveNames below).
 var PARAM_NAMES = {
   'AE.ADBE Opacity':    { 0: 'Opacity' },
   'AE.ADBE Motion':     { 0: 'Position', 1: 'Scale', 2: 'Scale Width', 3: 'Scale Height', 4: 'Rotation', 5: 'Anchor Point', 6: 'Anti-flicker Filter', 7: 'Crop Left', 8: 'Crop Top', 9: 'Crop Right', 10: 'Crop Bottom' },
@@ -33,6 +36,79 @@ function _paramName(matchName, idx) {
   var map = PARAM_NAMES[matchName];
   if (map && map[idx] !== undefined) return map[idx];
   return matchName + ' ' + idx;
+}
+
+// Live property names from the user's own Premiere: every effect gets its real
+// name, third-party ones included, in the user's language, with no table. The
+// ExtendScript DOM has no name on a ComponentParam, but QE's getParamList() returns
+// every parameter name of a component, in the same order and count as
+// component.properties (checked on Premiere 26: every component aligned, and the
+// names match the UXP edition's ComponentParam.displayName exactly). An effect's
+// parameter list is the same on every clip, so a result is cached per effect for
+// the session and QE is only asked the first time an effect shows up.
+var _ocLiveNameCache = {};  // matchName + '|' + param count -> [names], or false: QE gave none
+var _ocLiveNameMiss  = {};  // clip + component QE couldn't be matched to; not re-walked
+function _ocLiveNames(clipInfo, compIdx, matchName, numProps) {
+  var ck = matchName + '|' + numProps;
+  if (matchName && _ocLiveNameCache.hasOwnProperty(ck)) return _ocLiveNameCache[ck] || null;
+  var mk = clipInfo.trackIdx + '|' + clipInfo.clipIdx + '|' + clipInfo.clipName + '|' + compIdx + '|' + matchName;
+  if (_ocLiveNameMiss[mk]) return null;
+  var qComp = null, names = null;
+  try {
+    if (typeof app.enableQE === 'function') app.enableQE();
+    var qs = (typeof qe !== 'undefined' && qe && qe.project) ? qe.project.getActiveSequence() : null;
+    var qt = qs ? qs.getVideoTrackAt(clipInfo.trackIdx) : null;
+    // QE lists gaps as 'Empty' items and the DOM doesn't: DOM clip n is the n-th non-empty QE item
+    var n = -1;
+    for (var i = 0; qt && i < qt.numItems; i++) {
+      var it = qt.getItemAt(i);
+      if (!it || it.type === 'Empty') continue;
+      if (++n !== clipInfo.clipIdx) continue;
+      if (it.name === clipInfo.clipName) {
+        var c = it.getComponentAt(compIdx);
+        if (c && c.matchName === matchName) qComp = c;
+      }
+      break;
+    }
+    if (!qComp) { _ocLiveNameMiss[mk] = true; return null; }
+    var list = qComp.getParamList();
+    if (list && list.length === numProps) {
+      names = [];
+      for (var j = 0; j < list.length; j++) names.push(String(list[j]).replace(/^ +| +$/g, ''));
+    }
+  } catch (e) {
+    if (!qComp) { _ocLiveNameMiss[mk] = true; return null; }
+    names = null;
+  }
+  if (matchName) _ocLiveNameCache[ck] = names || false;
+  return names;
+}
+// When no live name exists: the internal name, minus the "AE.ADBE " style prefix
+function _ocFallbackLabel(name) {
+  return String(name || '').replace(/^(AE|PR)[.]/, '').replace(/^ADBE /, '');
+}
+// Rows on one clip that share a name (Position on Motion and on Vector Motion)
+// get their effect's name after it; a clash within one effect is also numbered:
+// "Position (Motion)", "Random Seed 2 (Turbulent Displace)". Same rule as UXP.
+function _ocDisambiguate(list, components) {
+  var i, k, byName = {}, byFull = {}, seen = {};
+  for (i = 0; i < list.length; i++) byName[list[i].label] = (byName[list[i].label] || 0) + 1;
+  for (i = 0; i < list.length; i++) {
+    list[i]._effect = '';
+    if (byName[list[i].label] < 2) continue;
+    try { list[i]._effect = String(components[list[i].compIdx].displayName || ''); } catch (e) {}
+  }
+  for (i = 0; i < list.length; i++) {
+    k = list[i].label + '~' + list[i]._effect;
+    byFull[k] = (byFull[k] || 0) + 1;
+  }
+  for (i = 0; i < list.length; i++) {
+    var p = list[i];
+    k = p.label + '~' + p._effect;
+    seen[k] = (seen[k] || 0) + 1;
+    p.label = p.label + (byFull[k] > 1 && seen[k] > 1 ? ' ' + seen[k] : '') + (p._effect ? ' (' + p._effect + ')' : '');
+    delete p._effect;
+  }
 }
 
 // A JSON string literal. The old version escaped only backslash, quote and
@@ -148,7 +224,7 @@ var _ocTracksCount = -1;
 // brackets from these plain arrays instead of re-walking components and
 // properties, which was the ~80ms part of a scan. Refreshed after
 // _OC_PARAM_CACHE_MS, on any track re-walk, and dropped after bake/undo.
-var _ocParamCache = null;  // { key, at, trackIdx, clipIdx, entries: [{ compIdx, propIdx, prop, displayName, kfTimes, isCompound, vals }] }
+var _ocParamCache = null;  // { key, at, trackIdx, clipIdx, entries: [{ compIdx, propIdx, prop, displayName, label, kfTimes, isCompound, vals }] }
 var _OC_PARAM_CACHE_MS = 1800;
 
 function _ocCachedVal(e, t) {
@@ -195,6 +271,7 @@ function _ocParamsFromCache(cache, clips, ph, fps) {
     out.push({
       key: e.compIdx + '_' + e.propIdx,
       displayName: e.displayName,
+      label: e.label,
       trackIdx: info.trackIdx,
       clipIdx: info.clipIdx,
       compIdx: e.compIdx,
@@ -401,6 +478,7 @@ function detectContext() {
         var comp = components[compIdx];
         var matchName = '';
         try { matchName = comp.matchName; } catch(e) {}
+        var liveNames = null, liveAsked = false;
 
         var props = null;
         try { props = comp.properties; } catch(e) { continue; }
@@ -453,6 +531,8 @@ function detectContext() {
           }
 
           var displayName = _paramName(matchName, propIdx);
+          if (!liveAsked) { liveAsked = true; liveNames = _ocLiveNames(clipInfo, compIdx, matchName, numProps); }
+          var label = (liveNames && liveNames[propIdx]) || _ocFallbackLabel(displayName);
           var frameCount = Math.round((kf1Time - kf0Time) * fps);
 
           // Convert compound values to plain arrays for JSON
@@ -464,6 +544,7 @@ function detectContext() {
           qualifiedParams.push({
             key: compIdx + '_' + propIdx,
             displayName: displayName,
+            label: label,
             trackIdx: clipInfo.trackIdx,
             clipIdx: clipInfo.clipIdx,
             compIdx: compIdx,
@@ -490,10 +571,13 @@ function detectContext() {
           var vals = {};
           vals[String(kf0Time)] = serVal0;
           vals[String(kf1Time)] = serVal1;
-          cacheEntries.push({ compIdx: compIdx, propIdx: propIdx, prop: prop, displayName: displayName,
+          cacheEntries.push({ compIdx: compIdx, propIdx: propIdx, prop: prop, displayName: displayName, label: label,
                               kfTimes: kfSecs, isCompound: isCompound, vals: vals });
         }
       }
+
+      _ocDisambiguate(qualifiedParams, components);
+      for (var _li = 0; _li < qualifiedParams.length; _li++) cacheEntries[_li].label = qualifiedParams[_li].label;
 
       if (qualifiedParams.length > 0) {
         bestParams = qualifiedParams;
@@ -557,7 +641,7 @@ function detectContext() {
         }
       }
       var _jp = (p.kfSecs && p.kfSecs.length) ? _ocJumpPair(p.kfSecs, ph - p.seqOffset, p.fps) : null;
-      var _entry = { key: p.key, displayName: p.displayName, jumpSec: (_jp ? _jp.start : p.kf0Time) + p.seqOffset, bakeIds: bakeIds };
+      var _entry = { key: p.key, displayName: p.displayName, label: p.label, jumpSec: (_jp ? _jp.start : p.kf0Time) + p.seqOffset, bakeIds: bakeIds };
       // Mini timeline lane: keyframes and the bracket in sequence seconds (rounded to keep the JSON small)
       _entry.tlKf = [];
       for (var _tk = 0; _tk < (p.kfSecs || []).length; _tk++) _entry.tlKf.push(_r4(p.kfSecs[_tk] + p.seqOffset));

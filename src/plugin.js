@@ -1401,8 +1401,11 @@ async function _fps(sequence) {
   return fps;
 }
 
-// Known param display names: component matchName → { paramIndex: displayName }
-// getDisplayName() returns "" for params in this version of the UXP API.
+// Internal property names: component matchName → { paramIndex: name }. This is
+// the panel's stable identity for a property (bake records match on it, and the
+// Opacity clamp and the readout's units test it), so it stays English and never
+// changes. The rows show the live name from the user's own Premiere instead
+// (_liveParamName below); this table only fills in when that is blank.
 var PARAM_NAMES = {
   'AE.ADBE Opacity':    { 0: 'Opacity' },
   'AE.ADBE Motion':     { 0: 'Position', 1: 'Scale', 2: 'Scale Width', 3: 'Scale Height', 4: 'Rotation', 5: 'Anchor Point', 6: 'Anti-flicker Filter', 7: 'Crop Left', 8: 'Crop Top', 9: 'Crop Right', 10: 'Crop Bottom' },
@@ -1422,6 +1425,55 @@ var PARAM_NAMES = {
 function _paramName(compMatchName, idx, fallback) {
   var map = PARAM_NAMES[compMatchName];
   return (map && map[idx]) || fallback || ('Param ' + idx);
+}
+
+// Live property names, read from the user's own Premiere: every effect gets its
+// real name, third-party ones included, in the user's language, with no table.
+// ComponentParam carries displayName as a plain property; getDisplayName() is a
+// Component method, which is why this looked unavailable for so long. Cached per
+// effect for the session, since an effect's parameter list is the same on every
+// clip and each proxy read is an IPC round trip. Group headers and spacers come
+// back as ' ' or '', which the caller treats as no name.
+var _liveNameCache = {};   // matchName + '|' + index -> trimmed name ('' = none)
+var _compNameCache = {};   // matchName -> the effect's own display name
+function _liveParamName(matchName, idx, param) {
+  var k = matchName + '|' + idx;
+  if (matchName && _liveNameCache.hasOwnProperty(k)) return _liveNameCache[k];
+  var n = '';
+  try { n = param.displayName; } catch(_) {}
+  n = typeof n === 'string' ? n.trim() : '';
+  if (matchName) _liveNameCache[k] = n;
+  return n;
+}
+// When no live name exists: the internal name, minus the "AE.ADBE " style prefix
+function _fallbackLabel(name) {
+  return String(name || '').replace(/^(AE|PR)[.]/, '').replace(/^ADBE /, '');
+}
+// Rows on one clip that share a name (Position on Motion and on Vector Motion)
+// get their effect's name after it; a clash within one effect is also numbered:
+// "Position (Motion)", "Random Seed 2 (Turbulent Displace)".
+async function _disambiguateLabels(list) {
+  function tally(f) { var c = {}; list.forEach(function(p) { var k = f(p); c[k] = (c[k] || 0) + 1; }); return c; }
+  var byName = tally(function(p) { return p.label; });
+  for (var i = 0; i < list.length; i++) {
+    var p = list[i];
+    p._effect = '';
+    if (byName[p.label] < 2) continue;
+    var cn = p.matchName && _compNameCache.hasOwnProperty(p.matchName) ? _compNameCache[p.matchName] : null;
+    if (cn === null) {
+      cn = '';
+      try { cn = String((await _call(p.comp, 'getDisplayName')) || '').trim(); } catch(_) {}
+      if (p.matchName) _compNameCache[p.matchName] = cn;
+    }
+    p._effect = cn;
+  }
+  var byFull = tally(function(p) { return p.label + '~' + p._effect; }), seen = {};
+  list.forEach(function(p) {
+    var k = p.label + '~' + p._effect;
+    seen[k] = (seen[k] || 0) + 1;
+    p.label = p.label + (byFull[k] > 1 && seen[k] > 1 ? ' ' + seen[k] : '') + (p._effect ? ' (' + p._effect + ')' : '');
+    delete p._effect;
+  });
 }
 
 
@@ -1639,9 +1691,10 @@ async function _findQualifiedParams(chain, phLocal) {
       if (extracted === null) continue;
 
       var displayName = _paramName(matchName, j, matchName + ' ' + j);
+      var label = _liveParamName(matchName, j, param) || _fallbackLabel(displayName);
       var kfSecs = [];
       for (var ks = 0; ks < kfArr.length; ks++) kfSecs.push(kfArr[ks].seconds);
-      qualified.push({ key: i+'_'+j, displayName: displayName,
+      qualified.push({ key: i+'_'+j, displayName: displayName, label: label, matchName: matchName,
                        param: param, comp: comp, paramIdx: j,
                        // val0 is the value at kf0 this loop already read; the bake
                        // context below used to fetch the same value a second time
@@ -1649,6 +1702,7 @@ async function _findQualifiedParams(chain, phLocal) {
                        kf0: kf0, kf1: kf1, totalKf: kfArr.length, isOutside: isOutside, kfSecs: kfSecs });
     }
   }
+  await _disambiguateLabels(qualified);
   return qualified;
 }
 
@@ -2323,7 +2377,7 @@ async function _detectContextFull(project, sequence, ph, selItems) {
     // _param: live handle for the row undo button (a proxy kept from bake time can go stale)
     // _kf0/_kf1/_out: the playhead's bracket, so bake records only colour the row while it sits inside their span
     var jp = _jumpPair(p.kfSecs, ph - jumpOffset, fps);
-    var entry = { key: p.key, displayName: p.displayName, jumpSec: (jp ? jp.start : p.kf0.seconds) + jumpOffset,
+    var entry = { key: p.key, displayName: p.displayName, label: p.label, jumpSec: (jp ? jp.start : p.kf0.seconds) + jumpOffset,
                   _param: p.param, _kf: p.kfSecs, _kf0: p.kf0.seconds, _kf1: p.kf1.seconds, _out: !!p.isOutside,
                   _fc: Math.round((p.kf1.seconds - p.kf0.seconds) * fps),
                   // Mini timeline lane: keyframes and the bracket in sequence seconds
@@ -2576,7 +2630,7 @@ function _loadBakeRecords() {
     arr.forEach(function(r) {
       if (!r || typeof r.clipId !== 'string' || !Array.isArray(r.times)) return;
       _bakeRecords.push({
-        id: r.id || 0, batch: r.batch || 0, clipId: r.clipId, key: r.key, displayName: r.displayName || '',
+        id: r.id || 0, batch: r.batch || 0, clipId: r.clipId, key: r.key, displayName: r.displayName || '', label: r.label || '',
         param: null, project: null, fps: r.fps || 0, kf0Sec: r.kf0Sec, kf1Sec: r.kf1Sec,
         times: r.times, step: r.step || 1, curve: r.curve || null,
       });
@@ -2590,7 +2644,7 @@ function _saveBakeRecords() {
   try {
     var r6 = function(v) { return Math.round(v * 1e6) / 1e6; };
     var out = _bakeRecords.slice(-_BAKE_RECORDS_MAX).map(function(r) {
-      return { id: r.id, batch: r.batch, clipId: r.clipId, key: r.key, displayName: r.displayName, fps: r.fps,
+      return { id: r.id, batch: r.batch, clipId: r.clipId, key: r.key, displayName: r.displayName, label: r.label || '', fps: r.fps,
                kf0Sec: r.kf0Sec, kf1Sec: r.kf1Sec, times: r.times.map(r6), step: r.step || 1, curve: r.curve || null };
     });
     localStorage.setItem(_BAKE_RECORDS_KEY, JSON.stringify(out));
@@ -2620,7 +2674,7 @@ function _loadBakedCurve(key) {
   if (!rec || !rec.curve) { _showCopyToast('No curve was recorded for this bake', '#f0a030'); return; }
   clearPresetActive();
   _animateToCurve(_cloneCurve(rec.curve), function(cur) { if (_svgW > 0 && _svgH > 0) updateDynamicSVG(cur, _svgW, _svgH); });
-  _showCopyToast('Loaded the curve baked on ' + (rec.displayName || 'this property'));
+  _showCopyToast('Loaded the curve baked on ' + (rec.label || rec.displayName || 'this property'));
 }
 // Keys in `avail` that have a bake to undo on this clip
 // Guards against undoing the wrong thing:
@@ -2702,6 +2756,7 @@ function _recordBakes(s, keys, contexts, written) {
     _bakeRecords.push({
       id: ++_bakeSeq, batch: batchId, clipId: s.clipId, key: key,
       displayName: ap ? ap.displayName : key,
+      label: ap ? (ap.label || ap.displayName) : key,
       param: ctx.param, project: ctx.project, fps: ctx.fps,
       kf0Sec: ctx.kf0.seconds, kf1Sec: ctx.kf1.seconds, times: w.times,
       step: w.step || 1, curve: _cloneCurve(s.curve),
@@ -2733,7 +2788,7 @@ async function _undoBakeForKey(key) {
   var row  = (s.availableParams || []).filter(function(p){ return p.key === key; })[0];
   var recs = _bakesFor(s.clipId, key).filter(function(r){ return !row || (_recForRow(r, row) && _recHere(r, row)); });
   if (recs.length === 0) return;
-  await _undoRecords(recs, recs[0].displayName || 'property', key);
+  await _undoRecords(recs, (row && row.label) || recs[0].label || recs[0].displayName || 'property', key);
 }
 
 // Panel-wide Undo button: revert everything the most recent Go press wrote,
@@ -2748,7 +2803,7 @@ async function _undoLastBake() {
   for (var i = 0; i < mine.length; i++) if (mine[i].batch > last) last = mine[i].batch;
   var recs = mine.filter(function(r){ return r.batch === last; });
   var names = [];
-  recs.forEach(function(r){ if (names.indexOf(r.displayName) < 0) names.push(r.displayName); });
+  recs.forEach(function(r){ var n = r.label || r.displayName; if (names.indexOf(n) < 0) names.push(n); });
   await _undoRecords(recs, names.join(', '), null);
 }
 
@@ -3381,7 +3436,7 @@ function _tlRender(s, force) {
              s.tl ? Math.round((s.tl.clipStart || 0) * 1000) + '/' + (s.tl.fps || 0) : '',
              n === 0 ? s.status : ''].join('|');
   if (range) params.forEach(function(p) {
-    sig += '|' + p.key + ':' + p.displayName + ':' + (p.tlKf || []).map(function(t){ return Math.round(t * 1000); }).join(',')
+    sig += '|' + p.key + ':' + p.displayName + ':' + (p.label || '') + ':' + (p.tlKf || []).map(function(t){ return Math.round(t * 1000); }).join(',')
          + ':' + (p.tlOut ? 'o' : Math.round(p.tlKf0 * 1000) + '/' + Math.round(p.tlKf1 * 1000))
          + ':' + (p.tlSpans || []).map(function(sp){ return Math.round(sp[0] * 1000) + '~' + Math.round(sp[1] * 1000); }).join(',')
          + ':' + (sel.indexOf(p.key) >= 0 ? 's' : '') + (valid.indexOf(p.key) >= 0 ? 'v' : '') + (baked.indexOf(p.key) >= 0 ? 'b' : '');
@@ -3522,7 +3577,7 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
         fill: c.bar }));
     }
     // Diamonds: every keyframe except the ones inside a bar (its two ends are kept)
-    var lane = { key: p.key, name: p.displayName, bg: bg, fill: c.bg, hover: c.hover, kf: [] };
+    var lane = { key: p.key, name: p.displayName, label: p.label || p.displayName, bg: bg, fill: c.bg, hover: c.hover, kf: [] };
     var lastX = -Infinity;
     kf.forEach(function(t) {
       var x = _tlX(t, g);
@@ -3664,7 +3719,7 @@ function _tlComposeReadout() {
   if (h) {
     var s = getState(), fps = (s.tl && s.tl.fps) || 25;
     var rel = h.t.sec - (s.tl ? s.tl.clipStart : 0);
-    text = h.lane.name + (h.t.kf ? ' · keyframe' : '') + ' · ' + rel.toFixed(2) + 's · frame ' + Math.round(rel * fps)
+    text = (h.lane.label || h.lane.name) + (h.t.kf ? ' · keyframe' : '') + ' · ' + rel.toFixed(2) + 's · frame ' + Math.round(rel * fps)
          + (_tlValText ? ' · ' + _tlValText : '');
   }
   if (text === _tlHoverText) return;
@@ -4121,7 +4176,7 @@ function renderUI(s) {
     // swapping one effect for another can land a different property on the same
     // key and the row would keep the old label (the lanes already follow the name).
     // A key can never contain '~', so the two halves stay unambiguous.
-    var newKeys = params.map(function(p){ return p.key + '~' + (p.displayName || ''); }).join(',');
+    var newKeys = params.map(function(p){ return p.key + '~' + (p.label || p.displayName || ''); }).join(',');
     if (curKeys !== newKeys) {
       _hideTooltip(); // rows are being replaced; don't leave a tooltip for a removed pin
       propBtns.innerHTML = '';
@@ -4135,7 +4190,7 @@ function renderUI(s) {
         propDiamond.innerHTML = '<svg width="10" height="10" viewBox="-1 -1 10 10" fill="none"><polygon class="mk-diamond" points="4,0.9 7.1,4 4,7.1 0.9,4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path class="mk-tick" d="M0.7 4.4 L3.1 6.8 L7.4 1.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" opacity="0" visibility="hidden"/></svg>';
         var propLabel = document.createElement('span');
         propLabel.className = 'prop-label';
-        propLabel.textContent = p.displayName;
+        propLabel.textContent = p.label || p.displayName;
         btn.appendChild(propDiamond);
         btn.appendChild(propLabel);
         // Undo: remove the keyframes a bake added to this property. Hidden unless
@@ -6387,7 +6442,7 @@ window.__opencurvePoll = poll;
 // made through setState elsewhere is never left un-rendered.
 function _pollSig(u) {
   var ps = (u.availableParams || []).map(function(p) {
-    return p.key + ':' + p.displayName
+    return p.key + ':' + p.displayName + ':' + (p.label || '')
       + ':' + (p.tlOut ? 'o' : Math.round(p.tlKf0 * 1000) + '/' + Math.round(p.tlKf1 * 1000))
       + ':' + (p.tlKf || []).map(function(t) { return Math.round(t * 1000); }).join(',')
       + ':' + (p.tlSpans || []).map(function(sp) { return Math.round(sp[0] * 1000) + '~' + Math.round(sp[1] * 1000); }).join(',')
