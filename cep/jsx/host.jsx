@@ -87,16 +87,20 @@ function _ocLiveNames(clipInfo, compIdx, matchName, numProps) {
 function _ocFallbackLabel(name) {
   return String(name || '').replace(/^(AE|PR)[.]/, '').replace(/^ADBE /, '');
 }
-// Rows on one clip that share a name (Position on Motion and on Vector Motion)
-// get their effect's name after it; a clash within one effect is also numbered:
-// "Position (Motion)", "Random Seed 2 (Turbulent Displace)". Same rule as UXP.
-function _ocDisambiguate(list, components) {
-  var i, k, byName = {}, byFull = {}, seen = {};
-  for (i = 0; i < list.length; i++) byName[list[i].label] = (byName[list[i].label] || 0) + 1;
+// Every row names its effect after the property, "Scale (Vector Motion)", so the
+// rows say where each property lives. Left off when the property is named after
+// its effect ("Opacity" on Opacity) and on fallback labels, which already carry
+// the effect ("Turbulent Displace 7"). Rows still identical after that (one effect
+// with two params of one name) are numbered: "Random Seed 2 (Turbulent Displace)".
+// Same rule as the UXP edition's _finishLabels.
+function _ocFinishLabels(list, components) {
+  var i, k, byFull = {}, seen = {};
   for (i = 0; i < list.length; i++) {
     list[i]._effect = '';
-    if (byName[list[i].label] < 2) continue;
-    try { list[i]._effect = String(components[list[i].compIdx].displayName || ''); } catch (e) {}
+    if (!list[i].live) continue;
+    var cn = '';
+    try { cn = String(components[list[i].compIdx].displayName || '').replace(/^ +| +$/g, ''); } catch (e) {}
+    if (cn && cn.toLowerCase() !== list[i].label.toLowerCase()) list[i]._effect = cn;
   }
   for (i = 0; i < list.length; i++) {
     k = list[i].label + '~' + list[i]._effect;
@@ -532,7 +536,8 @@ function detectContext() {
 
           var displayName = _paramName(matchName, propIdx);
           if (!liveAsked) { liveAsked = true; liveNames = _ocLiveNames(clipInfo, compIdx, matchName, numProps); }
-          var label = (liveNames && liveNames[propIdx]) || _ocFallbackLabel(displayName);
+          var live  = liveNames ? liveNames[propIdx] : '';
+          var label = live || _ocFallbackLabel(displayName);
           var frameCount = Math.round((kf1Time - kf0Time) * fps);
 
           // Convert compound values to plain arrays for JSON
@@ -545,6 +550,7 @@ function detectContext() {
             key: compIdx + '_' + propIdx,
             displayName: displayName,
             label: label,
+            live: !!live,
             trackIdx: clipInfo.trackIdx,
             clipIdx: clipInfo.clipIdx,
             compIdx: compIdx,
@@ -576,7 +582,7 @@ function detectContext() {
         }
       }
 
-      _ocDisambiguate(qualifiedParams, components);
+      _ocFinishLabels(qualifiedParams, components);
       for (var _li = 0; _li < qualifiedParams.length; _li++) cacheEntries[_li].label = qualifiedParams[_li].label;
 
       if (qualifiedParams.length > 0) {

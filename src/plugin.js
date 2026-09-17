@@ -1449,29 +1449,30 @@ function _liveParamName(matchName, idx, param) {
 function _fallbackLabel(name) {
   return String(name || '').replace(/^(AE|PR)[.]/, '').replace(/^ADBE /, '');
 }
-// Rows on one clip that share a name (Position on Motion and on Vector Motion)
-// get their effect's name after it; a clash within one effect is also numbered:
-// "Position (Motion)", "Random Seed 2 (Turbulent Displace)".
-async function _disambiguateLabels(list) {
-  function tally(f) { var c = {}; list.forEach(function(p) { var k = f(p); c[k] = (c[k] || 0) + 1; }); return c; }
-  var byName = tally(function(p) { return p.label; });
+// Every row names its effect after the property, "Scale (Vector Motion)", so the
+// rows say where each property lives. Left off when the property is named after
+// its effect ("Opacity" on Opacity) and on fallback labels, which already carry
+// the effect ("Turbulent Displace 7"). Rows still identical after that (one effect
+// with two params of one name) are numbered: "Random Seed 2 (Turbulent Displace)".
+async function _finishLabels(list) {
   for (var i = 0; i < list.length; i++) {
     var p = list[i];
     p._effect = '';
-    if (byName[p.label] < 2) continue;
+    if (!p.live) continue;
     var cn = p.matchName && _compNameCache.hasOwnProperty(p.matchName) ? _compNameCache[p.matchName] : null;
     if (cn === null) {
       cn = '';
       try { cn = String((await _call(p.comp, 'getDisplayName')) || '').trim(); } catch(_) {}
       if (p.matchName) _compNameCache[p.matchName] = cn;
     }
-    p._effect = cn;
+    if (cn && cn.toLowerCase() !== p.label.toLowerCase()) p._effect = cn;
   }
-  var byFull = tally(function(p) { return p.label + '~' + p._effect; }), seen = {};
+  var total = {}, seen = {};
+  list.forEach(function(p) { var k = p.label + '~' + p._effect; total[k] = (total[k] || 0) + 1; });
   list.forEach(function(p) {
     var k = p.label + '~' + p._effect;
     seen[k] = (seen[k] || 0) + 1;
-    p.label = p.label + (byFull[k] > 1 && seen[k] > 1 ? ' ' + seen[k] : '') + (p._effect ? ' (' + p._effect + ')' : '');
+    p.label = p.label + (total[k] > 1 && seen[k] > 1 ? ' ' + seen[k] : '') + (p._effect ? ' (' + p._effect + ')' : '');
     delete p._effect;
   });
 }
@@ -1691,10 +1692,11 @@ async function _findQualifiedParams(chain, phLocal) {
       if (extracted === null) continue;
 
       var displayName = _paramName(matchName, j, matchName + ' ' + j);
-      var label = _liveParamName(matchName, j, param) || _fallbackLabel(displayName);
+      var live  = _liveParamName(matchName, j, param);
+      var label = live || _fallbackLabel(displayName);
       var kfSecs = [];
       for (var ks = 0; ks < kfArr.length; ks++) kfSecs.push(kfArr[ks].seconds);
-      qualified.push({ key: i+'_'+j, displayName: displayName, label: label, matchName: matchName,
+      qualified.push({ key: i+'_'+j, displayName: displayName, label: label, live: !!live, matchName: matchName,
                        param: param, comp: comp, paramIdx: j,
                        // val0 is the value at kf0 this loop already read; the bake
                        // context below used to fetch the same value a second time
@@ -1702,7 +1704,7 @@ async function _findQualifiedParams(chain, phLocal) {
                        kf0: kf0, kf1: kf1, totalKf: kfArr.length, isOutside: isOutside, kfSecs: kfSecs });
     }
   }
-  await _disambiguateLabels(qualified);
+  await _finishLabels(qualified);
   return qualified;
 }
 
