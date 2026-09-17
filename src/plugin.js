@@ -4578,6 +4578,11 @@ function _holdFixResume() {
 function _holdFixTry(el) {
   if (!el.parentNode) return;
   if (_ocPtrDown) { _ocHoldDeferred = el; return; }
+  // A wheel ease still running (its frames stalled behind a heavy poll, so the
+  // scroll events went quiet before it landed): swapping now would copy an
+  // intermediate position and let the rest of the ease run on the detached
+  // node, so the list stopped short or sat back where the notch began. Wait.
+  if (el._ocWheelActive && el._ocWheelActive()) { setTimeout(function() { _holdFixTry(el); }, _HOLD_FIX_MS); return; }
   var ae = document.activeElement;
   if (ae && ae !== document.body && el.contains(ae)) return; // a field inside (a rename) has focus
   _refreshScroller(el);
@@ -4593,6 +4598,7 @@ function _holdFixWatch(el) {
   });
 }
 function _refreshScroller(el) {
+  if (el._ocWheelFinish) el._ocWheelFinish(); // land any ease first, so the position carried over is the intended one
   var fresh = el.cloneNode(false), top = el.scrollTop; // same tag, attributes and inline style, no children
   // The swap takes the hovered element out of the document for an instant and
   // UXP drops the cursor to the arrow until the next mouse move; carry the
@@ -4663,6 +4669,7 @@ function _smoothWheel(el) {
     var max = el.scrollHeight - el.clientHeight;
     if (Math.abs(d) > _UXP_NOTCH_MAX) {
       // scrollbar drag or a jump: not the wheel, stop easing and follow it
+      if (_debugScroll) console.log('[OC-SCROLL] jump ' + (top - d) + ' -> ' + top + (target !== null ? ' (ease to ' + target + ' cancelled)' : ''));
       if (raf) { cancelAnimationFrame(raf); raf = 0; }
       target = null;
       return;
@@ -4676,6 +4683,9 @@ function _smoothWheel(el) {
   });
   // A press while easing: land now so the click hits what the user sees
   el.addEventListener('pointerdown', finish, true);
+  // _holdFixTry waits for a running ease; _refreshScroller lands it before a swap
+  el._ocWheelActive = function() { return target !== null; };
+  el._ocWheelFinish = finish;
 }
 
 // ─── Panel init ───────────────────────────────────────────────────────────
