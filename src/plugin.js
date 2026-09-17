@@ -6731,6 +6731,7 @@ function _applyPresetLayout(force) {
   var rows = Math.max(1, Math.floor((panelH - _PAGER_H) / tileH));
   _presetPerPage = rows * cols;
   _presetRows = rows; _presetPanelH = panelH; _presetTileH = tileH; // for the row stretch in _presetPageApply
+  _presetGridThumb = isGrid ? thumbSz : 0;
   var cacheKey = (isGrid ? 'g' : 'l') + cols + '_' + btnCount + '_' + _presetPerPage;
   if (!force && _applyPresetLayout._lastKey === cacheKey) { _presetPageApply(); return; }
   _applyPresetLayout._lastKey = cacheKey;
@@ -6936,6 +6937,8 @@ var _presetPage    = 0;
 var _presetPerPage = 1;
 var _presetPages   = 1;
 var _presetRows = 1, _presetPanelH = 0, _presetTileH = 45; // from the last layout pass
+var _presetGridThumb = 0;  // thumbnail size while in grid view, else 0
+var _GRID_NAME_H = 17;     // one line of the 14px name
 function _presetTiles() {
   var list = document.getElementById('all-presets-list');
   if (!list) return [];
@@ -6960,9 +6963,18 @@ function _presetPageApply() {
   // its tiles the size of the others. Unknown height (first render): none set.
   var listH = pages > 1 ? _presetPanelH - _PAGER_H : _presetPanelH;
   var rowsFit = pages > 1 ? _presetRows : Math.max(1, Math.floor(_presetPanelH / _presetTileH));
-  var rowH = listH > 0 ? (listH / rowsFit).toFixed(2) + 'px' : '';
+  var rowPx = listH > 0 ? listH / rowsFit : 0;
+  var rowH = rowPx ? rowPx.toFixed(2) + 'px' : '';
+  // Grid: centre the thumbnail + name in the stretched row through the top
+  // padding (UXP's flex justify-content left them at the top)
+  var pad = '';
+  if (_presetGridThumb) {
+    var content = _presetGridThumb + 4 + _GRID_NAME_H;
+    pad = Math.max(4, rowPx ? (rowPx - content) / 2 : 4).toFixed(2) + 'px 4px 4px';
+  }
   for (var j = 0; j < tiles.length; j++) {
     if (tiles[j].style.height !== rowH) tiles[j].style.height = rowH;
+    if (pad && tiles[j].style.padding !== pad) tiles[j].style.padding = pad;
   }
   var pager = document.getElementById('preset-pager');
   if (!pager) return;
