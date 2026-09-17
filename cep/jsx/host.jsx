@@ -88,8 +88,8 @@ function _ocFallbackLabel(name) {
   return String(name || '').replace(/^(AE|PR)[.]/, '').replace(/^ADBE /, '');
 }
 // Every row names its effect after the property, "Scale (Vector Motion)", so the
-// rows say where each property lives. Left off when the property is named after
-// its effect ("Opacity" on Opacity) and on fallback labels, which already carry
+// rows say where each property lives, including "Opacity (Opacity)", which reads
+// clearer than a bare "Opacity". Left off on fallback labels, which already carry
 // the effect ("Turbulent Displace 7"). Rows still identical after that (one effect
 // with two params of one name) are numbered: "Random Seed 2 (Turbulent Displace)".
 // Same rule as the UXP edition's _finishLabels.
@@ -100,7 +100,7 @@ function _ocFinishLabels(list, components) {
     if (!list[i].live) continue;
     var cn = '';
     try { cn = String(components[list[i].compIdx].displayName || '').replace(/^ +| +$/g, ''); } catch (e) {}
-    if (cn && cn.toLowerCase() !== list[i].label.toLowerCase()) list[i]._effect = cn;
+    list[i]._effect = cn;
   }
   for (i = 0; i < list.length; i++) {
     k = list[i].label + '~' + list[i]._effect;

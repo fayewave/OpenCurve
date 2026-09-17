@@ -1450,8 +1450,8 @@ function _fallbackLabel(name) {
   return String(name || '').replace(/^(AE|PR)[.]/, '').replace(/^ADBE /, '');
 }
 // Every row names its effect after the property, "Scale (Vector Motion)", so the
-// rows say where each property lives. Left off when the property is named after
-// its effect ("Opacity" on Opacity) and on fallback labels, which already carry
+// rows say where each property lives, including "Opacity (Opacity)", which reads
+// clearer than a bare "Opacity". Left off on fallback labels, which already carry
 // the effect ("Turbulent Displace 7"). Rows still identical after that (one effect
 // with two params of one name) are numbered: "Random Seed 2 (Turbulent Displace)".
 async function _finishLabels(list) {
@@ -1465,7 +1465,7 @@ async function _finishLabels(list) {
       try { cn = String((await _call(p.comp, 'getDisplayName')) || '').trim(); } catch(_) {}
       if (p.matchName) _compNameCache[p.matchName] = cn;
     }
-    if (cn && cn.toLowerCase() !== p.label.toLowerCase()) p._effect = cn;
+    p._effect = cn;
   }
   var total = {}, seen = {};
   list.forEach(function(p) { var k = p.label + '~' + p._effect; total[k] = (total[k] || 0) + 1; });
