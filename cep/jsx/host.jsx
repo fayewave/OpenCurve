@@ -983,6 +983,7 @@ function _ocUndoInfo(sequence, info) {
     // one, so a record that went through JSON (restored, or any rounding) still
     // names the exact tick Premiere holds. A time with no live key is skipped
     // rather than counted: removeKey does not throw on a miss.
+    var toRemove = [];
     for (var t = 0; t < info.times.length; t++) {
       var want = info.times[t], hit = -1;
       if (liveKeys) {
@@ -991,9 +992,27 @@ function _ocUndoInfo(sequence, info) {
         }
         if (hit < 0) continue;
       }
+      toRemove.push(hit >= 0 ? liveSecs[hit] : want);
+    }
+    for (var r = 0; r < toRemove.length; r++) {
       try {
-        prop.removeKey(hit >= 0 ? liveSecs[hit] : want);
+        // updateUI on the last removal, as the bake does on its last write;
+        // the docs list only removeKey(time) but the host accepts the flag
+        prop.removeKey(toRemove[r], r === toRemove.length - 1);
         removed++;
+      } catch(e) {}
+    }
+    // Scripted edits don't reach Premiere's undo stack, and the Effect Controls
+    // panel only repainted the removals once it was clicked (the UXP transaction
+    // repaints on commit). setValueAtKey's updateUI flag is the documented
+    // repaint trigger, so re-set the pair's first keyframe with its own value.
+    if (removed > 0) {
+      try {
+        var kf0 = info.kf0Time, k0 = -1;
+        for (var ki = 0; ki < liveSecs.length; ki++) {
+          if (Math.abs(liveSecs[ki] - kf0) < 0.0001) { k0 = ki; break; }
+        }
+        if (k0 >= 0) prop.setValueAtKey(liveSecs[k0], prop.getValueAtKey(liveSecs[k0]), 1);
       } catch(e) {}
     }
   } catch(e) { return { removed: removed, skipped: 1 }; }
