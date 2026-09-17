@@ -4557,7 +4557,7 @@ function _sdInit() {
 // a function stored as el._ocRewire and run again on the replacement.
 // Skipped while a press is in progress (drag-sort, a scrollbar drag) or a
 // field inside the scroller has focus (a rename).
-var _HOLD_FIX    = true;
+var _HOLD_FIX    = false; // off 2026-09-17 to try UXP's default scroll feel; true = swap the scroller after each burst
 var _HOLD_FIX_MS = 40; // after the last scroll event; the amplification's own writes count, so its ease runs first
 var _ocPtrDown   = false;
 var _ocHoldDeferred = null; // scroller whose refresh was skipped because a press was in progress
@@ -4638,7 +4638,7 @@ function _refreshScroller(el) {
 var _UXP_NOTCH_MAX = 24; // any scroll step up to this is taken as one wheel notch (UXP moved 9px per notch, later 11px)
 var _WHEEL_STEP = 90;
 var _WHEEL_MS   = 0;   // ease duration; 0 = one write per notch, no easing (110 until 2026-09-17: each eased frame was a chance for UXP to apply a notch to a stale position)
-var _WHEEL_ON   = true;  // false = leave UXP's own per-notch scrolling alone
+var _WHEEL_ON   = false; // off 2026-09-17 to try UXP's default scroll feel; true = amplify each notch to _WHEEL_STEP
 function _smoothWheel(el) {
   if (!_WHEEL_ON || !el || el._ocWheel) return;
   el._ocWheel = true;
