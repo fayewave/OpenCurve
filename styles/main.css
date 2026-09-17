@@ -187,6 +187,11 @@ html, body {
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.15s;
+  /* Above the scroller whatever order UXP paints in: #all-presets-list is its own
+     layer (contain), and in the CCX its fades vanished after the first scroll,
+     most likely under the fresh element _refreshScroller swaps in (2026-09-17). Also lifts the timeline's
+     fades over #tl-svg (z-index 1 in UXP), as CEP already draws them. */
+  z-index: 2;
 }
 
 .tl-fade-top {
