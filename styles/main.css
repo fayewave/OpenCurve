@@ -968,6 +968,7 @@ html, body {
 /* Go button specific states */
 #go-btn {
   color: var(--accent);
+  font-weight: 600; /* was on .btn-primary, removed 2026-09-16; .btn is 500 */
   flex: 1;
   height: 32px;
   padding: 0 10px;

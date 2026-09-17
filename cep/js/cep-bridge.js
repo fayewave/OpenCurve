@@ -374,7 +374,7 @@
       // Nothing changed since the last poll — the host skipped the full scan.
       // Keep the current UI state untouched (no setState, no re-render).
       if (result.status === 'unchanged') {
-        if (result.ph !== undefined) { if (_lastPh !== null && result.ph !== _lastPh) _phMovedAt = Date.now(); _lastPh = result.ph; }
+        if (typeof result.ph === 'number') { if (_lastPh !== null && result.ph !== _lastPh) _phMovedAt = Date.now(); _lastPh = result.ph; }
         if (_debugTiming) _dbgRecord(_dbgK, _tDet, result, _t0, 0, result.ph);
         return;
       }

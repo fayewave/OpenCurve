@@ -3455,6 +3455,12 @@ function initPanel() {
 
   // Drag-to-reorder
   function _initDragSort(container) {
+    // Once per element: _renderPresets wires the list it fills, and Reset All
+    // Settings renders again into the same element. A second wiring stacked a
+    // full set of handlers (two drop lines, two ghosts, double saves). A
+    // _refreshScroller replacement is a fresh node with no flag, so it re-wires.
+    if (container._ocDragSort) return;
+    container._ocDragSort = true;
     var dragEl = null, dropLine = null, startY = 0, startX = 0, moved = false;
     var _dragGhost = null, _ghostW = 80, _ghostH = 60;
     var _dropHighlight = null;
@@ -3481,6 +3487,12 @@ function initPanel() {
 
     container.addEventListener('pointermove', function(e) {
       if (!dragEl) return;
+      // Capture is only taken once a drag starts, so a press released outside
+      // the list never reaches endDragSort and dragEl stayed armed: the next
+      // buttonless hover with 5px of travel began a drag. No button held, no drag.
+      if (!moved && typeof e.buttons === 'number' && (e.buttons & 1) === 0) {
+        dragEl = null; _pendingPointerId = null; return;
+      }
       if (!moved && Math.abs(e.clientY - startY) < 5) return;
       if (!moved) {
         if (_pendingPointerId != null) {
@@ -3607,7 +3619,12 @@ function initPanel() {
     }).concat(_starterPresetEntries());
     _savePresetList(_presetList);
     clearPresetActive();
+    // Same order as init: render, then the update tile, then the inline layout
+    // pass over the fresh tiles (UXP needs it inline; running it before the
+    // rebuild, as the reset first did, left the new tiles unstyled)
     _renderPresets();
+    _refreshUpdateNotification();
+    _applyPresetLayout(true);
   };
   _renderPresets();
   _refreshUpdateNotification();

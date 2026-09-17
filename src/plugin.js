@@ -1497,7 +1497,10 @@ async function _clipIdentity(item, trackIdx) {
 // snapshot below both need them, and used to fetch the selection again for each).
 async function _selIdentities(selItems) {
   if (!selItems || !selItems.length) return [];
-  return await Promise.all(selItems.map(function(it) { return _clipIdentity(it); }));
+  // Array.prototype.map.call: a Premiere list may be array-like (this file wraps
+  // keyframe lists with Array.from for that reason) and the old code only ever
+  // indexed these, so a bare .map would have been an unproven assumption
+  return await Promise.all(Array.prototype.map.call(selItems, function(it) { return _clipIdentity(it); }));
 }
 
 // Returns ALL clips at the playhead across all video tracks (topmost first)
@@ -1523,7 +1526,7 @@ async function _clipsViaTrackScan(sequence, ph) {
     // clip after another cost two sequential round trips per clip on every
     // moved playhead: 400+ on a 200-clip sequence, continuously during playback.
     var infos = [];
-    try { infos = await Promise.all(all.map(function(it) { return _clipInfo(it, t); })); } catch(_) { continue; }
+    try { infos = await Promise.all(Array.prototype.map.call(all, function(it) { return _clipInfo(it, t); })); } catch(_) { continue; }
 
     for (var i = 0; i < all.length; i++) {
       try {
@@ -5466,6 +5469,12 @@ function initPanel() {
 
   // Drag-to-reorder (pointer events)
   function _initDragSort(container) {
+    // Once per element: _renderPresets wires the list it fills, and Reset All
+    // Settings renders again into the same element. A second wiring stacked a
+    // full set of handlers (two drop lines, two ghosts, double saves). A
+    // _refreshScroller replacement is a fresh node with no flag, so it re-wires.
+    if (container._ocDragSort) return;
+    container._ocDragSort = true;
     var dragEl = null, dropLine = null, startY = 0, startX = 0, moved = false;
     var _dragGhost = null, _ghostW = 80, _ghostH = 60;
     var _dropHighlight = null;
@@ -5492,6 +5501,12 @@ function initPanel() {
 
     container.addEventListener('pointermove', function(e) {
       if (!dragEl) return;
+      // Capture is only taken once a drag starts, so a press released outside
+      // the list never reaches endDragSort and dragEl stayed armed: the next
+      // buttonless hover with 5px of travel began a drag. No button held, no drag.
+      if (!moved && typeof e.buttons === 'number' && (e.buttons & 1) === 0) {
+        dragEl = null; _pendingPointerId = null; return;
+      }
       if (!moved && Math.abs(e.clientY - startY) < 5) return;
       if (!moved) {
         if (_pendingPointerId != null) {
@@ -5619,7 +5634,12 @@ function initPanel() {
     }).concat(_starterPresetEntries());
     _savePresetList(_presetList);
     clearPresetActive();
+    // Same order as init: render, then the update tile, then the inline layout
+    // pass over the fresh tiles (UXP needs it inline; running it before the
+    // rebuild, as the reset first did, left the new tiles unstyled)
     _renderPresets();
+    _refreshUpdateNotification();
+    _applyPresetLayout(true);
   };
   _renderPresets();
   _refreshUpdateNotification();

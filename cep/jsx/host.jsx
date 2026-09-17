@@ -741,10 +741,10 @@ function bakeKeyframes(argsJSON) {
           try {
             prop.addKey(timeSec);
             prop.setValueAtKey(timeSec, value, doUpdate);
-            // Rounded to 1e-6, well inside the 1e-4 tolerance every comparison
-            // uses. Full doubles made the exported records several times larger
-            // than they need to be, and the export runs after every bake.
-            addedTimes.push(Math.round(timeSec * 1e6) / 1e6);
+            // The exact value addKey received: _ocUndoInfo removes by matching
+            // these against the live keys, and a rounded copy risked missing
+            // the tick Premiere stored (rounding for size can happen at export).
+            addedTimes.push(timeSec);
             totalActions++;
           } catch(e) { if (!firstErr) firstErr = label + ': ' + (e.message || String(e)); }
         }
@@ -889,9 +889,20 @@ function _ocUndoInfo(sequence, info) {
     } catch(e) { liveKeys = null; }
     if (liveKeys && !_ocBakeAlive(info, liveSecs)) return { removed: 0, skipped: 0 };
 
+    // Remove by the live key's own time, found within tolerance of the recorded
+    // one, so a record that went through JSON (restored, or any rounding) still
+    // names the exact tick Premiere holds. A time with no live key is skipped
+    // rather than counted: removeKey does not throw on a miss.
     for (var t = 0; t < info.times.length; t++) {
+      var want = info.times[t], hit = -1;
+      if (liveKeys) {
+        for (var li = 0; li < liveSecs.length; li++) {
+          if (Math.abs(liveSecs[li] - want) < 0.0001) { hit = li; break; }
+        }
+        if (hit < 0) continue;
+      }
       try {
-        prop.removeKey(info.times[t]);
+        prop.removeKey(hit >= 0 ? liveSecs[hit] : want);
         removed++;
       } catch(e) {}
     }
@@ -1111,9 +1122,12 @@ function undoBake() {
       return _jsonStringify({ success: false, error: 'Could not undo — the original clip may have moved or changed. Select it and try again.', remaining: _ocSessionBatches() });
     }
 
-    // Part of the batch was undone; whatever could not be reached goes back on
-    // the stack so the next press (or the row button) can still undo it.
-    if (kept.length) _undoStack.push(kept);
+    // Part of the batch was undone; whatever could not be reached is kept for
+    // the row buttons, but below the session floor like a restored batch. On
+    // top of the stack a record whose clip has been deleted can never resolve,
+    // so every later press would fail on it and the older session batches
+    // behind it could no longer be undone with this button.
+    if (kept.length) { _undoStack.unshift(kept); _ocSessionFloor++; }
 
     return _jsonStringify({ success: true, removed: removed, skipped: skipped, remaining: _ocSessionBatches() });
   } catch(err) {
