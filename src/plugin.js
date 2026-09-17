@@ -3459,15 +3459,21 @@ function _tlRender(s, force) {
 // Edge fades: the bottom one while the lanes + rows can scroll further down,
 // the top one while there is content scrolled up out of view; both gone when
 // nothing scrolls. Sizes come from bounding rects, which UXP reports reliably;
-// they stop short of the scrollbar so that stays crisp.
+// they stop short of the scrollbar so that stays crisp. The scroll position
+// comes from scrollTop, not from where the inner box's rect sits: in the CCX,
+// once renders stopped calling this (58e1cd4, so only scroll events do), the
+// fades stuck as they were at the bottom after a scroll back up (2026-09-17).
+// The likeliest reason is that a scroll change doesn't dirty UXP's layout, so
+// that rect keeps the offset of the last relayout; scrollTop is always current.
 function _tlUpdateFade() {
   var els = _tlEls;
   if (!els || !els.fade || !els.scroll || !els.inner) return;
   var showBottom = false, showTop = false, rightInset = 0;
   try {
     var sr = els.scroll.getBoundingClientRect(), ir = els.inner.getBoundingClientRect();
-    showBottom = (ir.bottom - sr.bottom) > 1; // content still hidden under the bottom edge
-    showTop    = (sr.top - ir.top) > 1;       // content scrolled up past the top edge
+    var top = els.scroll.scrollTop, over = Math.max(0, ir.height - sr.height);
+    showBottom = (over - top) > 1; // content still hidden under the bottom edge
+    showTop    = top > 1;          // content scrolled up past the top edge
     var props = document.getElementById('prop-btns');
     var pr = (props && _tlVisible) ? props.getBoundingClientRect() : null;
     var rr = els.root.getBoundingClientRect();
@@ -3905,12 +3911,16 @@ function _tlInit() {
              empty: document.getElementById('tl-empty'),
              fade: document.getElementById('tl-fade'), fadeTop: document.getElementById('tl-fade-top') };
   function _wireTlScroll(el) {
+    var swapped = _tlEls.scroll && _tlEls.scroll !== el;
     _tlEls.scroll = el;
     el.addEventListener('scroll', _tlUpdateFade);
     _smoothWheel(el);           // UXP: proper wheel steps with easing
     _sdWatch(el, 'timeline box');
     _holdFixWatch(el);          // fresh element after each scroll burst
     el._ocRewire = _wireTlScroll;
+    // The swap's scrollTop restore can land before this listener exists (or
+    // fire nothing at 0), so settle the fades once on the replacement
+    if (swapped) _tlUpdateFade();
   }
   if (_tlEls.scroll) _wireTlScroll(_tlEls.scroll);
   var svg = _tlEls.svg;
