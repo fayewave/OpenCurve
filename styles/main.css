@@ -110,6 +110,7 @@ html, body {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  position: relative; /* anchors the preset list's edge fades */
 }
 
 #all-presets-list {
@@ -173,7 +174,8 @@ html, body {
 /* Fades at the bottom / top of the lanes + rows while they can scroll further
    that way. Eight bands of the strip's ground colour at rising opacity towards
    the edge (inline in the HTML). Opacity is set inline by _tlUpdateFade; the
-   right edge stops at the scrollbar. */
+   right edge stops at the scrollbar. The preset list uses the same classes for
+   its own pair (#preset-fade, #preset-fade-top, _presetUpdateFade). */
 .tl-fade {
   position: absolute;
   left: 0;

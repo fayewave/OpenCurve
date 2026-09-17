@@ -4755,6 +4755,8 @@ function initPanel() {
   // wired again on the fresh element _refreshScroller swaps in after a scroll
   var _presetRO = null;
   function _wirePresetList(el, replacement) {
+    el.addEventListener('scroll', _presetUpdateFade); // top/bottom edge fades
+    if (replacement) _presetUpdateFade('keep');       // sizes from before the swap (see _presetUpdateFade)
     _smoothWheel(el);           // UXP: proper wheel steps with easing
     _sdWatch(el, 'preset list');
     _holdFixWatch(el);
@@ -5420,6 +5422,7 @@ function initPanel() {
       _presetList = _presetList.filter(function(p) { return p.id !== t.preset.id; });
       _savePresetList(_presetList);
       if (t.btn && t.btn.parentNode) t.btn.parentNode.removeChild(t.btn);
+      _presetUpdateFade();
     });
   }, _icDelete);
   function _showCtxMenu(preset, btn, startRename, e) {
@@ -6791,9 +6794,11 @@ function _applyPresetLayout(force) {
         btns.forEach(function(b) { b.style.alignSelf = 'flex-start'; });
         list.style.alignContent = 'flex-start';
         void list.offsetHeight;
+        _presetUpdateFade();
       }, 200);
     }
   }
+  _presetUpdateFade(); // tiles added, removed or resized
 }
 var _gridColsTimer = null;
 var _LIST_2COL_W = 340; // list view splits into two columns from this width
@@ -6808,7 +6813,56 @@ function _updateGridCols(entries) {
     _gridColsSize = sz;
   }
   if (_gridColsTimer) clearTimeout(_gridColsTimer);
-  _gridColsTimer = setTimeout(_applyPresetLayout, 60);
+  _gridColsTimer = setTimeout(function() { _applyPresetLayout(); _presetUpdateFade(); }, 60); // a height change moves where the list ends
+}
+
+// Edge fades on the preset list, the same bands as the timeline's (#tl-fade):
+// the bottom one while the list can scroll further down, the top one while
+// tiles are scrolled up out of view. As in _tlUpdateFade the position comes
+// from scrollTop and only sizes from bounding rects, since a child's rect
+// doesn't follow a scroll in the CCX. The list has no inner box, so the content
+// height runs from the first tile's top to the lowest of the last three bottoms
+// (the last grid row), which a scroll offsets alike; the scrollbar's width is
+// the list's right edge less the tiles' (offsetWidth - clientWidth reads 0 in
+// UXP). Called on scroll, after every layout pass, on a list resize and when a
+// tile goes. keep === 'keep' (right after a _refreshScroller swap) reuses the
+// last measured sizes: measuring the just-inserted element flashed the
+// timeline's bottom fade.
+var _presetFadeSize = null; // { over, right } from the last measured call
+function _presetUpdateFade(keep) {
+  var list = document.getElementById('all-presets-list'), fade = document.getElementById('preset-fade');
+  if (!list || !fade) return;
+  var size = _presetFadeSize, top = 0;
+  try { top = list.scrollTop; } catch(_) {}
+  if (keep !== 'keep' || !size) {
+    size = { over: 0, right: 0 };
+    try {
+      var kids = list.children, n = kids.length;
+      if (n) {
+        var lr = list.getBoundingClientRect(), fr = kids[0].getBoundingClientRect();
+        var bottom = fr.bottom, right = fr.right;
+        for (var i = Math.max(1, n - 3); i < n; i++) {
+          var r = kids[i].getBoundingClientRect();
+          if (r.bottom > bottom) bottom = r.bottom;
+          if (r.right  > right)  right  = r.right;
+        }
+        size.over = Math.max(0, Math.round(bottom - fr.top - lr.height)); // how far the list can scroll
+        if (size.over > 0) size.right = Math.max(0, Math.round(lr.right - right));
+      }
+    } catch(_) {}
+    _presetFadeSize = size;
+  }
+  // Change-only writes: this runs on every scroll event of the list
+  var right = size.right + 'px', ob = (size.over - top) > 1 ? '1' : '0', ot = top > 1 ? '1' : '0';
+  var fs = fade.style;
+  if (fs.right   !== right) fs.right   = right;
+  if (fs.opacity !== ob)    fs.opacity = ob;
+  var fadeTop = document.getElementById('preset-fade-top');
+  if (fadeTop) {
+    var ts = fadeTop.style;
+    if (ts.right   !== right) ts.right   = right;
+    if (ts.opacity !== ot)    ts.opacity = ot;
+  }
 }
 
 function _hexToRgba(hex, alpha) {
@@ -6870,7 +6924,7 @@ function _refreshUpdateNotification() {
   if (!list) return;
   var existing = document.getElementById('_update-notif');
   if (existing) existing.parentNode.removeChild(existing);
-  if (!_updateAvailable || _updateDismissed || !_updateNotifsOn) return;
+  if (!_updateAvailable || _updateDismissed || !_updateNotifsOn) { if (existing) _presetUpdateFade(); return; }
 
   var notif = document.createElement('div');
   notif.id = '_update-notif';
