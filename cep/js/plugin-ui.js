@@ -4743,7 +4743,7 @@ function _showWelcome() {
 
   var title = document.createElement('div');
   title.textContent = 'What\u2019s New in 2.0.0';
-  title.style.cssText = 'color:#e4e4e4;font-size:14px;font-weight:600;margin-bottom:12px;text-align:center;';
+  title.style.cssText = 'color:#e4e4e4;font-size:14px;margin-bottom:12px;text-align:center;';
   box.appendChild(title);
 
   var list = document.createElement('div');
@@ -4782,8 +4782,28 @@ function _showWelcome() {
   okBtn.style.cssText = 'background:rgba(74,158,255,0.15);color:#6cb8ff;border:none;font-size:13px;padding:6px 26px;cursor:pointer;font-weight:600;';
   okBtn.addEventListener('mouseenter', function() { okBtn.style.backgroundColor = 'rgba(74,158,255,0.28)'; });
   okBtn.addEventListener('mouseleave', function() { okBtn.style.backgroundColor = 'rgba(74,158,255,0.15)'; });
+  // Vertical fit: the width caps itself through max-width, but a short panel
+  // would clip the card, so it is scaled down as a whole (transform) to fit
+  // the panel's height with a little air, and re-fitted when the panel is
+  // resized while it is up. Measured at scale 1 each time, since the rect
+  // of a scaled element is the scaled one. Writes only when the scale moves.
+  var _fitScale = 1;
+  function fit() {
+    if (!overlay.parentNode) return;
+    var vh = document.documentElement.clientHeight || document.body.clientHeight || 0;
+    if (!vh) return;
+    if (_fitScale !== 1) box.style.transform = 'none';
+    var h = box.getBoundingClientRect().height || box.offsetHeight || 0;
+    var s = h > vh - 16 ? Math.max(0.4, (vh - 16) / h) : 1;
+    s = Math.round(s * 1000) / 1000;
+    if (s !== 1 || _fitScale !== 1) box.style.transform = s === 1 ? 'none' : 'scale(' + s + ')';
+    _fitScale = s;
+  }
+  box.style.transformOrigin = 'center center';
+  var ro = null;
   function close() {
     try { localStorage.setItem(_WELCOME_KEY, _WELCOME_FOR); } catch(_) {}
+    if (ro) { try { ro.disconnect(); } catch(_) {} ro = null; }
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
   }
   okBtn.addEventListener('click', close);
@@ -4793,6 +4813,11 @@ function _showWelcome() {
 
   overlay.appendChild(box);
   document.body.appendChild(overlay);
+  fit();
+  setTimeout(fit, 0); // UXP: the first rect can be measured before the wordmark and text have laid out
+  if (typeof ResizeObserver === 'function') {
+    try { ro = new ResizeObserver(function() { fit(); }); ro.observe(document.body); } catch(_) { ro = null; }
+  }
   return true;
 }
 
