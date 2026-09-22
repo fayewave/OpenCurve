@@ -2,6 +2,7 @@ CLAUDE.md
 
 # Working notes that belong to the local checkout, not the repo
 CODE-REVIEW-*.md
+RELEASE-NOTES-*.md
 
 # Build artifacts & tooling — never commit these (they bloat .git, which then
 # bloats every packaged .ccx since UXP packaging includes the whole folder).
