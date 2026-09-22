@@ -2912,9 +2912,9 @@ var PRESETS = {
 };
 
 var BUILT_IN_PRESETS = [
+  { id: 'cubic-in-out', name: 'Cubic In-Out', curve: PRESETS['cubic-in-out'], builtIn: true },
   { id: 'cubic-in',     name: 'Cubic In',     curve: PRESETS['cubic-in'],     builtIn: true },
   { id: 'cubic-out',    name: 'Cubic Out',    curve: PRESETS['cubic-out'],    builtIn: true },
-  { id: 'cubic-in-out', name: 'Cubic In-Out', curve: PRESETS['cubic-in-out'], builtIn: true },
 ];
 
 // Frame count of the selected keyframe pairs for the status strip: "24 frames",
