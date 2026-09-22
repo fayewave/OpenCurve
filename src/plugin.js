@@ -7472,6 +7472,7 @@ function _confirmReset() {
     }
     if (_resetPresetsRef) _resetPresetsRef();
     _showCopyToast('Reset all settings');
+    _showWelcome(); // the key was cleared above; CEP gets this from its reload, UXP does not reload
   });
 }
 
