@@ -56,7 +56,6 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 **Presets**
 - Hover a preset to preview its motion
 - Export and import preset files
-- Starter pack of 17 eases, including Back and Bounce
 
 **Interface & performance**
 - Hugely improved response time and keyframe detection across both `.zxp` and `.ccx` versions

@@ -1245,43 +1245,6 @@ var BUILT_IN_PRESETS = [
   { id: 'cubic-in-out', name: 'Cubic In-Out', curve: PRESETS['cubic-in-out'], builtIn: true },
 ];
 
-// Starter set: seeded after the built-ins on a fresh install and by Reset All
-// Settings. The other Penner-style families as cubic-beziers (Cubic is the
-// built-in set), plus Back (overshoot: a handle y outside 0..1, which the bake
-// follows as-is) and Bounce (a multi-point chain of parabolas, corners at the
-// touches). Bounce In is Bounce Out flipped.
-var _BOUNCE_OUT = {
-  p1x: 0.1212, p1y: 0, p2x: 0.9697, p2y: 0.9792,
-  pts: [
-    { x: 0.3636, y: 1, ix: 0.2424, iy: 0.3333, ox: 0.4848, oy: 0.6667, smooth: false },
-    { x: 0.7273, y: 1, ix: 0.6061, iy: 0.6667, ox: 0.7879, oy: 0.9167, smooth: false },
-    { x: 0.9091, y: 1, ix: 0.8485, iy: 0.9167, ox: 0.9394, oy: 0.9792, smooth: false },
-  ],
-};
-var STARTER_PRESETS = [
-  { name: 'Ease In',      curve: { p1x: 0.42, p1y: 0,     p2x: 1,    p2y: 1    } },
-  { name: 'Ease Out',     curve: { p1x: 0,    p1y: 0,     p2x: 0.58, p2y: 1    } },
-  { name: 'Ease In-Out',  curve: { p1x: 0.42, p1y: 0,     p2x: 0.58, p2y: 1    } },
-  { name: 'Quint In',     curve: { p1x: 0.64, p1y: 0,     p2x: 0.78, p2y: 0    } },
-  { name: 'Quint Out',    curve: { p1x: 0.22, p1y: 1,     p2x: 0.36, p2y: 1    } },
-  { name: 'Quint In-Out', curve: { p1x: 0.83, p1y: 0,     p2x: 0.17, p2y: 1    } },
-  { name: 'Expo In',      curve: { p1x: 0.7,  p1y: 0,     p2x: 0.84, p2y: 0    } },
-  { name: 'Expo Out',     curve: { p1x: 0.16, p1y: 1,     p2x: 0.3,  p2y: 1    } },
-  { name: 'Expo In-Out',  curve: { p1x: 0.87, p1y: 0,     p2x: 0.13, p2y: 1    } },
-  { name: 'Back In',      curve: { p1x: 0.36, p1y: 0,     p2x: 0.66, p2y: -0.56 } },
-  { name: 'Back Out',     curve: { p1x: 0.34, p1y: 1.56,  p2x: 0.64, p2y: 1    } },
-  { name: 'Back In-Out',  curve: { p1x: 0.68, p1y: -0.6,  p2x: 0.32, p2y: 1.6  } },
-  { name: 'Bounce Out',   curve: _BOUNCE_OUT },
-  { name: 'Bounce In',    curve: _flipCurve(_BOUNCE_OUT) },
-];
-// Fresh preset entries for the starter set (new ids each time; names are what dedupes them)
-function _starterPresetEntries() {
-  var seq = Date.now();
-  return STARTER_PRESETS.map(function(p, i) {
-    return { id: 's' + seq + '_' + i, name: p.name, curve: _cloneCurve(p.curve) };
-  });
-}
-
 // Frame count of the selected keyframe pairs for the status strip: "24 frames",
 // or "18–24 frames" when the selected properties span different pairs.
 function _frameSpan(s, keys) {
@@ -3263,8 +3226,8 @@ function initPanel() {
 
   var _stored = _loadPresetList();
   var _presetList = _stored || BUILT_IN_PRESETS.map(function(p) {
-    return { id: p.id, name: p.name, curve: p.curve, builtIn: true };
-  }).concat(_starterPresetEntries()); // fresh install: the starter set comes along
+    return { id: p.id, name: p.name, curve: _cloneCurve(p.curve), builtIn: true };
+  }); // fresh install: the built-ins only
   if (!_stored) _savePresetList(_presetList);
 
   // ── Context menu ──────────────────────────────────────────────
@@ -3381,7 +3344,7 @@ function initPanel() {
 
   // ── Thumbnails ────────────────────────────────────────────────
   // Thumbnail mapping: the 0..1 box, stretched to the curve's y extent when it
-  // overshoots (Back / Bounce presets), so the shape isn't clipped
+  // overshoots (Back / Bounce style curves), so the shape isn't clipped
   function _thumbMap(c) {
     var W = 28, H = 28, pad = 3, gW = W - 2*pad, gH = H - 2*pad;
     var b = _peakMode ? { lo: 0, hi: 1 } : _curveYBounds(c), span = b.hi - b.lo;
@@ -3659,7 +3622,7 @@ function initPanel() {
   _resetPresetsRef = function() {
     _presetList = BUILT_IN_PRESETS.map(function(p) {
       return { id: p.id, name: p.name, curve: _cloneCurve(p.curve), builtIn: true };
-    }).concat(_starterPresetEntries());
+    });
     _savePresetList(_presetList);
     clearPresetActive();
     // Same order as init: render, then the update tile, then the inline layout
