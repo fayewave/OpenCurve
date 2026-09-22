@@ -484,53 +484,6 @@
     }
   });
 
-  // ─── Splash screen (first launch only) ──────────────────────────────────
-  var SPLASH_KEY = 'opencurve-cep-splash-seen';
-
-  function showSplash() {
-    if (localStorage.getItem(SPLASH_KEY)) return;
-
-    var overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
-
-    var card = document.createElement('div');
-    card.style.cssText = 'background:#1c1c1c;border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:28px 32px 24px;max-width:340px;width:90%;text-align:center;font-family:system-ui,sans-serif;';
-
-    var logo = document.createElement('img');
-    // Same pre-rendered 1x/2x/3x files as the Settings header, shown at their exact size
-    var _dpr = window.devicePixelRatio || 1;
-    logo.src = 'img/OpenCurve2_Wordmark_small' + (_dpr >= 2.5 ? '@3x' : _dpr >= 1.5 ? '@2x' : '') + '.png';
-    logo.style.cssText = 'width:145px;height:22px;margin-bottom:20px;opacity:0.9;';
-    card.appendChild(logo);
-
-    var text = document.createElement('div');
-    text.style.cssText = 'color:#ccc;font-size:12.5px;line-height:1.65;margin-bottom:22px;';
-    text.innerHTML =
-      'You have installed the <strong style="color:#e4e4e4">.zxp</strong> version of OpenCurve.<br><br>' +
-      'This version has limitations:' +
-      '<ul style="text-align:left;margin:8px 0 0;padding-left:20px;">' +
-      '<li>Slower scanning speed.</li>' +
-      '<li>Dedicated Undo button instead of shortcuts.</li>' +
-      '<li>Keyframes won\u2019t appear until the effects panel is selected.</li>' +
-      '</ul><br>' +
-      'Install the <strong style="color:#e4e4e4">.ccx</strong> version of OpenCurve for the full featureset.';
-    card.appendChild(text);
-
-    var btn = document.createElement('div');
-    btn.textContent = 'Got it';
-    btn.style.cssText = 'display:inline-block;padding:7px 28px;background:rgba(74,158,255,0.15);color:#6cb8ff;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer;transition:background 0.15s;';
-    btn.addEventListener('mouseenter', function() { btn.style.background = 'rgba(74,158,255,0.28)'; });
-    btn.addEventListener('mouseleave', function() { btn.style.background = 'rgba(74,158,255,0.15)'; });
-    btn.addEventListener('click', function() {
-      localStorage.setItem(SPLASH_KEY, '1');
-      overlay.remove();
-    });
-    card.appendChild(btn);
-
-    overlay.appendChild(card);
-    document.body.appendChild(overlay);
-  }
-
   // ─── Init ────────────────────────────────────────────────────────────────
   function init() {
     console.log('[OC-CEP] Initializing panel');
@@ -542,8 +495,11 @@
       OpenCurve.attachTooltip(undoBtn, function() { return undoBtn.classList.contains('btn-dim') ? 'Nothing to undo' : 'Undo last bake'; });
     }
 
-    // Show first-launch splash
-    showSplash();
+    // First launch of a 2.x build: the welcome card (shared, in plugin-ui.js).
+    // It replaced this edition's first-run warning about the .zxp's limits,
+    // whose key is dropped here. The card stands in for the update toast.
+    localStorage.removeItem('opencurve-cep-splash-seen');
+    var _welcomed = OpenCurve.showWelcome();
 
     // Check for post-update toast
     // "Updated to vX" toast. Nothing in the CEP edition ever set the
@@ -555,7 +511,7 @@
       var _verKey = 'opencurve-cep-version';
       var _seen = localStorage.getItem(_verKey);
       var _now  = OpenCurve.CURRENT_VERSION;
-      if (_seen && _now && _seen !== _now) {
+      if (_seen && _now && _seen !== _now && !_welcomed) {
         setTimeout(function() {
           OpenCurve.showCopyToast('Updated to v' + _now, '#3ddc84');
         }, 500);

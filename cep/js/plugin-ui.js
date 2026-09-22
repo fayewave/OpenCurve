@@ -2837,7 +2837,7 @@ function initPanel() {
     if (_isField(e.target)) return;
     var modal = !!(document.getElementById('settings-modal') || document.getElementById('oc-confirm')
                 || document.getElementById('oc-numeric') || document.getElementById('_paste-box')
-                || document.getElementById('oc-rename'));
+                || document.getElementById('oc-rename') || document.getElementById('oc-welcome'));
     var isEnter = e.key === 'Enter' || e.keyCode === 13 || e.which === 13 || e.code === 'Enter' || e.code === 'NumpadEnter';
     if (isEnter) {
       if (e.repeat || modal) return;
@@ -4707,6 +4707,91 @@ function _checkForUpdates(silent) {
 
 // Modal confirmation: title, message, a red action button and Cancel.
 // onOk runs after the dialog has closed. Used by reset-all and preset delete.
+// ─── Welcome to v2 (first launch of a 2.x build) ─────────────────────────
+// A one-time card listing what 2.0 brought, shown the first time any 2.x
+// build runs: a fresh install and an upgrade from 1.x both get it. The key
+// stores the major version it was shown for, so a future 3.0 can show its
+// own by bumping _WELCOME_FOR. Returns true when it was shown, so the bridge
+// / panel create can skip the "Updated to vX" toast that same launch.
+// Replaced the CEP edition's first-run warning about the .zxp's limitations.
+var _WELCOME_KEY = 'opencurve-welcome-seen';
+var _WELCOME_FOR = '2';
+var _WELCOME_ITEMS = [
+  ['Multi-point curves', 'add points to build complex motion in a single ease'],
+  ['A-curve mode', 'shape the ease as a speed graph by dragging the peak'],
+  ['Mini timeline', 'every keyframed property at a glance, click to jump, hover to read values'],
+  ['Per-property undo', 'undo one property, or load its baked curve back onto the graph, even after restarting Premiere'],
+  ['Starter presets and shortcuts', '17 new eases, preset export/import, playback preview and keyboard shortcuts']
+];
+
+function _showWelcome() {
+  try { if (localStorage.getItem(_WELCOME_KEY) === _WELCOME_FOR) return false; } catch(_) {}
+  if (document.getElementById('oc-welcome')) return false;
+
+  var overlay = document.createElement('div');
+  overlay.id = 'oc-welcome';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.65);z-index:99998;display:flex;align-items:center;justify-content:center;';
+
+  var box = document.createElement('div');
+  box.style.cssText = 'background:#1c1c1c;border:1px solid rgba(255,255,255,0.18);padding:22px 24px 20px;width:300px;max-width:90%;font-family:system-ui,sans-serif;box-sizing:border-box;';
+
+  var logo = document.createElement('img');
+  var _dpr = window.devicePixelRatio || 1;
+  logo.src = 'img/OpenCurve2_Wordmark_small' + (_dpr >= 2.5 ? '@3x' : _dpr >= 1.5 ? '@2x' : '') + '.png';
+  logo.style.cssText = 'display:block;width:145px;height:22px;margin:0 auto 14px;opacity:0.9;';
+  box.appendChild(logo);
+
+  var title = document.createElement('div');
+  title.textContent = 'Welcome to OpenCurve 2';
+  title.style.cssText = 'color:#e4e4e4;font-size:14px;font-weight:600;margin-bottom:6px;text-align:center;';
+  box.appendChild(title);
+
+  var sub = document.createElement('div');
+  sub.textContent = 'A big update. Here is what is new:';
+  sub.style.cssText = 'color:#888;font-size:12.5px;margin-bottom:12px;text-align:center;';
+  box.appendChild(sub);
+
+  var list = document.createElement('div');
+  list.style.cssText = 'margin-bottom:16px;';
+  _WELCOME_ITEMS.forEach(function(it) {
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:flex-start;margin-bottom:7px;';
+    var dot = document.createElement('div');
+    dot.style.cssText = 'width:5px;height:5px;border-radius:3px;background:' + _curveColor + ';margin:6px 9px 0 1px;flex:0 0 5px;';
+    var txt = document.createElement('div');
+    txt.style.cssText = 'color:#888;font-size:12.5px;line-height:1.45;';
+    var strong = document.createElement('span');
+    strong.textContent = it[0];
+    strong.style.cssText = 'color:#e4e4e4;font-weight:600;';
+    txt.appendChild(strong);
+    txt.appendChild(document.createTextNode(' — ' + it[1]));
+    row.appendChild(dot);
+    row.appendChild(txt);
+    list.appendChild(row);
+  });
+  box.appendChild(list);
+
+  var btns = document.createElement('div');
+  btns.style.cssText = 'display:flex;justify-content:center;';
+  var okBtn = document.createElement('div');
+  okBtn.textContent = 'Let’s go';
+  okBtn.style.cssText = 'background:rgba(74,158,255,0.15);color:#6cb8ff;border:none;font-size:13px;padding:6px 26px;cursor:pointer;font-weight:600;';
+  okBtn.addEventListener('mouseenter', function() { okBtn.style.backgroundColor = 'rgba(74,158,255,0.28)'; });
+  okBtn.addEventListener('mouseleave', function() { okBtn.style.backgroundColor = 'rgba(74,158,255,0.15)'; });
+  function close() {
+    try { localStorage.setItem(_WELCOME_KEY, _WELCOME_FOR); } catch(_) {}
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+  }
+  okBtn.addEventListener('click', close);
+  overlay.addEventListener('click', function(e) { if (e.target === overlay) close(); });
+  btns.appendChild(okBtn);
+  box.appendChild(btns);
+
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  return true;
+}
+
 function _confirmDialog(titleText, msgText, okLabel, onOk) {
   var overlay = document.createElement('div');
   overlay.id = 'oc-confirm';
@@ -4822,7 +4907,7 @@ function _confirmReset() {
   _confirmDialog('Reset All Settings', 'This will clear all saved presets, the graph line colour, and reset the curve. This cannot be undone.', 'Reset', function() {
     // Bake records are deliberately kept: they are a record of work done on the
     // project, not a setting, and the dialog does not offer to clear them.
-    ['opencurve-presets-v10', 'opencurve-sidebar-width', 'opencurve-cep-splash-seen',
+    ['opencurve-presets-v10', 'opencurve-sidebar-width', _WELCOME_KEY,
      _CURVE_COLOR_KEY, _GRID_KEY, _LAYOUT_KEY, _ANIM_KEY, _UPDATE_NOTIF_KEY, _GRAPH_KEY,
      _PEAK_KEY, _DRAG_GHOST_KEY, _DENSITY_KEY, _TL_KEY, _TL_ZOOM_KEY, _TL_PROPS_KEY, _TL_H_KEY
     ].forEach(function(k) { try { localStorage.removeItem(k); } catch(_) {} });
@@ -4831,7 +4916,8 @@ function _confirmReset() {
     // the panel kept the deleted presets and the old layout while the flags said
     // otherwise, and the next preset edit wrote the stale list straight back to
     // storage, undoing the reset. The panel now resets itself; CEP still reloads
-    // afterwards so the first-run splash comes back (the UXP edition does not).
+    // afterwards so the welcome card comes back (the UXP edition shows it
+    // again on its next panel create).
     _bakeDensity    = 1;
     _gridSize       = 8;
     _presetLayout   = 'list';
@@ -5527,6 +5613,7 @@ return {
   checkForUpdates: _checkForUpdates,
   showSettingsModal: _showSettingsModal,
   showCopyToast: _showCopyToast,
+  showWelcome: _showWelcome,
   attachTooltip: _attachTooltip,
 
   // isDragging flag (read by bridge poll loop)
