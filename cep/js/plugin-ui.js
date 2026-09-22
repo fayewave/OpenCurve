@@ -1245,11 +1245,10 @@ var BUILT_IN_PRESETS = [
   { id: 's-curve',  name: 'S-Curve', curve: PRESETS['s-curve'],  builtIn: true },
 ];
 
-// Starter set: seeded on a fresh install and added on demand from the preset
-// list's context menu (Add Starter Presets). The Penner-style families as
-// cubic-beziers, plus Back (overshoot: a handle y outside 0..1, which the bake
-// follows as-is) and Bounce (a multi-point chain of parabolas, corners at the
-// touches). Bounce In is Bounce Out flipped.
+// Starter set: seeded on a fresh install and by Reset All Settings. The
+// Penner-style families as cubic-beziers, plus Back (overshoot: a handle y
+// outside 0..1, which the bake follows as-is) and Bounce (a multi-point chain
+// of parabolas, corners at the touches). Bounce In is Bounce Out flipped.
 var _BOUNCE_OUT = {
   p1x: 0.1212, p1y: 0, p2x: 0.9697, p2y: 0.9792,
   pts: [
@@ -3105,15 +3104,14 @@ function initPanel() {
 
   // Icons for the preset bar's menu
   var _icPaste = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><rect x="3" y="2" width="8" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path fill="none" d="M5.5 2V1.5a1 1 0 011-1h1a1 1 0 011 1V2" stroke="currentColor" stroke-width="1.3"/><line x1="5.5" y1="6" x2="8.5" y2="6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="5.5" y1="8.5" x2="8.5" y2="8.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
-  var _icStar   = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M7 1.6l1.6 3.4 3.7.5-2.7 2.6.7 3.7L7 10l-3.3 1.8.7-3.7L1.7 5.5l3.7-.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>';
   var _icExport = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2 9.5v2.5h10V9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 9V1.5M4.2 4.3L7 1.5l2.8 2.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   var _icImport = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2 9.5v2.5h10V9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 1.5V9M4.2 6.2L7 9l2.8-2.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
   // Preset toolbar menu (#preset-tools-menu, the hamburger at the left): always
-  // shown, its dropdown lists Paste Preset, Add Starter Presets and Export /
-  // Import Presets. Once the bar is too narrow for the Menu/New/List group and
-  // the Graph/Timeline/Settings group to sit apart, every other tool but
-  // Settings hides and the dropdown lists them too, like the graph bar's menu.
+  // shown, its dropdown lists Paste Preset and Export / Import Presets. Once
+  // the bar is too narrow for the Menu/New/List group and the
+  // Graph/Timeline/Settings group to sit apart, every other tool but Settings
+  // hides and the dropdown lists them too, like the graph bar's menu.
   // Elements are looked up by id at use time.
   var ptb      = document.getElementById('preset-toolbar');
   var pMenuBtn = document.getElementById('preset-tools-menu');
@@ -3177,7 +3175,6 @@ function initPanel() {
     }
     function svgOf(id, sel) { var b = document.getElementById(id); return b ? b.querySelector(sel || 'svg') : null; }
     item('Paste Preset', _icPaste, function() { _pasteCoordinates(); });
-    item('Add Starter Presets', _icStar, function() { _addStarterPresets(); });
     item('Export Presets\u2026', _icExport, function() { _exportPresetsToFile(); });
     item('Import Presets\u2026', _icImport, function() { _importPresetsFromFile(); });
     if (_ptbCollapsed) {
@@ -3216,7 +3213,7 @@ function initPanel() {
     setTimeout(function() { if (_ptbDismiss === pd) window.addEventListener('pointerdown', pd); }, 0);
   }
   if (pMenuBtn) {
-    _attachTooltip(pMenuBtn, 'Preset menu: paste, starter presets, export and import');
+    _attachTooltip(pMenuBtn, 'Preset menu: paste, export and import');
     pMenuBtn.addEventListener('click', function() {
       if (document.getElementById('_preset-tools-menu')) _hidePresetMenu(); else _showPresetMenu();
     });
@@ -3706,7 +3703,7 @@ function initPanel() {
     if (btn._ocRename) btn._ocRename();
   }
 
-  // Add presets in bulk (starter set, file import): tiles go in before the New tile
+  // Add presets in bulk (file import): tiles go in before the New tile
   function _addPresetEntries(entries) {
     var list = document.getElementById('all-presets-list');
     if (!list || !entries.length) return;
@@ -3719,14 +3716,6 @@ function initPanel() {
     _applyPresetLayout(true);
   }
   function _presetSig(p) { return p.name + '|' + _curveToText(p.curve); }
-  // Starter set (see STARTER_PRESETS): only the names not already in the list are added
-  function _addStarterPresets() {
-    var have = {};
-    _presetList.forEach(function(p) { have[p.name] = true; });
-    var add = _starterPresetEntries().filter(function(p) { return !have[p.name]; });
-    _addPresetEntries(add);
-    _showCopyToast(add.length ? 'Added ' + add.length + ' starter preset' + (add.length === 1 ? '' : 's') : 'All starter presets are already in the list', '#3ddc84');
-  }
   // Export / Import Presets: a JSON file { opencurve: 1, presets: [{ name, curve }] }.
   // Built-ins stay out of the file; imports skip entries already in the list.
   function _exportPresetsToFile() {
