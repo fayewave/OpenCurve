@@ -4716,12 +4716,17 @@ function _checkForUpdates(silent) {
 // Replaced the CEP edition's first-run warning about the .zxp's limitations.
 var _WELCOME_KEY = 'opencurve-welcome-seen';
 var _WELCOME_FOR = '2';
-var _WELCOME_ITEMS = [
-  ['Improved performance', 'much faster response and keyframe detection'],
-  ['Multi-point curves and A-curve mode', 'add points for complex motion in a single ease, or shape it as a speed graph'],
-  ['Mini timeline', 'every keyframed property at a glance, click to jump, hover to read values'],
-  ['Per-property undo', 'undo one property, or load its baked curve back onto the graph, even after restarting Premiere'],
-  ['Playhead jump buttons', 'step through every keyframed area on a clip from its property row']
+var _WELCOME_ITEMS = [ // titles only, split over two columns
+  'Improved performance',
+  'Multi-point curves',
+  'A-curve (speed graph) mode',
+  'Mini timeline',
+  'Per-property undo',
+  'Playhead jump buttons',
+  'Starter presets, export and import',
+  'Keyboard shortcuts and playback preview',
+  'Numeric entry, flip and invert',
+  'Full-screen graph and keyframe spacing'
 ];
 
 function _showWelcome() {
@@ -4757,18 +4762,12 @@ function _showWelcome() {
   var half = Math.ceil(_WELCOME_ITEMS.length / 2);
   _WELCOME_ITEMS.forEach(function(it, i) {
     var row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:flex-start;margin-bottom:9px;';
+    row.style.cssText = 'display:flex;align-items:flex-start;margin-bottom:6px;';
     var dot = document.createElement('div');
     dot.style.cssText = 'width:5px;height:5px;border-radius:3px;background:' + _curveColor + ';margin:6px 9px 0 1px;flex:0 0 5px;';
     var txt = document.createElement('div');
-    txt.style.cssText = 'color:#888;font-size:12.5px;line-height:1.45;';
-    var strong = document.createElement('div');
-    strong.textContent = it[0];
-    strong.style.cssText = 'color:#e4e4e4;font-weight:600;';
-    var desc = document.createElement('div');
-    desc.textContent = it[1];
-    txt.appendChild(strong);
-    txt.appendChild(desc);
+    txt.textContent = it;
+    txt.style.cssText = 'color:#e4e4e4;font-size:12.5px;line-height:1.45;';
     row.appendChild(dot);
     row.appendChild(txt);
     (i < half ? colL : colR).appendChild(row);
