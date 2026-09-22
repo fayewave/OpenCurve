@@ -7266,14 +7266,9 @@ function _showWelcome() {
   box.appendChild(logo);
 
   var title = document.createElement('div');
-  title.textContent = 'Welcome to OpenCurve 2';
-  title.style.cssText = 'color:#e4e4e4;font-size:14px;font-weight:600;margin-bottom:6px;text-align:center;';
+  title.textContent = 'What\u2019s New:';
+  title.style.cssText = 'color:#e4e4e4;font-size:14px;font-weight:600;margin-bottom:12px;text-align:center;';
   box.appendChild(title);
-
-  var sub = document.createElement('div');
-  sub.textContent = 'A big update. Here is what is new:';
-  sub.style.cssText = 'color:#888;font-size:12.5px;margin-bottom:12px;text-align:center;';
-  box.appendChild(sub);
 
   var list = document.createElement('div');
   list.style.cssText = 'margin-bottom:16px;';
