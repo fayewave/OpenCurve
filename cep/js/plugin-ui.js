@@ -22,7 +22,7 @@ var state = {
   errorMessage:     '',
   hint:             '',
   isBaking:         false,
-  curve: { p1x: 0.625, p1y: 0.000, p2x: 0.375, p2y: 1.000 },
+  curve: { p1x: 0.65, p1y: 0, p2x: 0.35, p2y: 1 },
 };
 var stateListeners = [];
 
@@ -1234,21 +1234,22 @@ function initGraphEditor(svg) {
 
 // ─── UI ───────────────────────────────────────────────────────────────────
 var PRESETS = {
-  'ease-in':  { p1x:0.42, p1y:0,    p2x:1,    p2y:1   },
-  'ease-out': { p1x:0,    p1y:0,    p2x:0.58, p2y:1   },
-  's-curve':  { p1x:0.625, p1y:0.000, p2x:0.375, p2y:1.000 },
-  'linear':   { p1x:0,    p1y:0,    p2x:1,    p2y:1   },
+  'cubic-in':     { p1x: 0.32, p1y: 0, p2x: 0.67, p2y: 0 },
+  'cubic-out':    { p1x: 0.33, p1y: 1, p2x: 0.68, p2y: 1 },
+  'cubic-in-out': { p1x: 0.65, p1y: 0, p2x: 0.35, p2y: 1 },
 };
 
 var BUILT_IN_PRESETS = [
-  { id: 'linear',   name: 'Linear',  curve: PRESETS['linear'],   builtIn: true },
-  { id: 's-curve',  name: 'S-Curve', curve: PRESETS['s-curve'],  builtIn: true },
+  { id: 'cubic-in',     name: 'Cubic In',     curve: PRESETS['cubic-in'],     builtIn: true },
+  { id: 'cubic-out',    name: 'Cubic Out',    curve: PRESETS['cubic-out'],    builtIn: true },
+  { id: 'cubic-in-out', name: 'Cubic In-Out', curve: PRESETS['cubic-in-out'], builtIn: true },
 ];
 
-// Starter set: seeded on a fresh install and by Reset All Settings. The
-// Penner-style families as cubic-beziers, plus Back (overshoot: a handle y
-// outside 0..1, which the bake follows as-is) and Bounce (a multi-point chain
-// of parabolas, corners at the touches). Bounce In is Bounce Out flipped.
+// Starter set: seeded after the built-ins on a fresh install and by Reset All
+// Settings. The other Penner-style families as cubic-beziers (Cubic is the
+// built-in set), plus Back (overshoot: a handle y outside 0..1, which the bake
+// follows as-is) and Bounce (a multi-point chain of parabolas, corners at the
+// touches). Bounce In is Bounce Out flipped.
 var _BOUNCE_OUT = {
   p1x: 0.1212, p1y: 0, p2x: 0.9697, p2y: 0.9792,
   pts: [
@@ -1261,9 +1262,6 @@ var STARTER_PRESETS = [
   { name: 'Ease In',      curve: { p1x: 0.42, p1y: 0,     p2x: 1,    p2y: 1    } },
   { name: 'Ease Out',     curve: { p1x: 0,    p1y: 0,     p2x: 0.58, p2y: 1    } },
   { name: 'Ease In-Out',  curve: { p1x: 0.42, p1y: 0,     p2x: 0.58, p2y: 1    } },
-  { name: 'Cubic In',     curve: { p1x: 0.32, p1y: 0,     p2x: 0.67, p2y: 0    } },
-  { name: 'Cubic Out',    curve: { p1x: 0.33, p1y: 1,     p2x: 0.68, p2y: 1    } },
-  { name: 'Cubic In-Out', curve: { p1x: 0.65, p1y: 0,     p2x: 0.35, p2y: 1    } },
   { name: 'Quint In',     curve: { p1x: 0.64, p1y: 0,     p2x: 0.78, p2y: 0    } },
   { name: 'Quint Out',    curve: { p1x: 0.22, p1y: 1,     p2x: 0.36, p2y: 1    } },
   { name: 'Quint In-Out', curve: { p1x: 0.83, p1y: 0,     p2x: 0.17, p2y: 1    } },
@@ -4160,7 +4158,7 @@ function initPanel() {
   // State → UI
   stateListeners.push(renderUI);
   renderUI(getState());
-  setPresetActive('s-curve');
+  setPresetActive('cubic-in-out');
 }
 
 // ─── Settings / shared variables ─────────────────────────────────────────
@@ -4966,7 +4964,7 @@ function _confirmReset() {
     _applyPresetLayout(true);
     _styleLayoutBtn();
     _applyCurveColor('#38fbb2');
-    setState({ curve: { p1x: 0.625, p1y: 0.000, p2x: 0.375, p2y: 1.000 } });
+    setState({ curve: { p1x: 0.65, p1y: 0, p2x: 0.35, p2y: 1 } });
     if (_svgW > 0 && _svgH > 0) {
       updateStaticSVG(_svgW, _svgH); // the grid size changed back to 8
       updateDynamicSVG(getState().curve, _svgW, _svgH);
