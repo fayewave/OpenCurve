@@ -4733,7 +4733,15 @@ function _showWelcome() {
   overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.65);z-index:99998;display:flex;align-items:center;justify-content:center;';
 
   var box = document.createElement('div');
-  box.style.cssText = 'background:#1c1c1c;border:1px solid rgba(255,255,255,0.18);padding:22px 24px 20px;width:300px;max-width:90%;font-family:system-ui,sans-serif;box-sizing:border-box;';
+  // Scrolls when the panel is shorter than the card. A pixel max-height from
+  // the panel's own height, like the Settings modal, since UXP can't be
+  // trusted with a percentage against the fixed overlay.
+  var vh = document.documentElement.clientHeight || document.body.clientHeight || 400;
+  box.style.cssText = 'background:#1c1c1c;border:1px solid rgba(255,255,255,0.18);padding:22px 24px 20px;width:300px;max-width:90%;max-height:' + Math.max(80, vh - 24) + 'px;overflow-y:auto;font-family:system-ui,sans-serif;box-sizing:border-box;';
+  if (typeof _smoothWheel === 'function') { // UXP: wheel easing and the post-scroll hold workaround, re-run on the swapped-in element
+    var _wireBox = function(b) { _smoothWheel(b); _holdFixWatch(b); b._ocRewire = _wireBox; };
+    _wireBox(box);
+  }
 
   var logo = document.createElement('img');
   var _dpr = window.devicePixelRatio || 1;
