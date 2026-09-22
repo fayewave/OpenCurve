@@ -4717,11 +4717,11 @@ function _checkForUpdates(silent) {
 var _WELCOME_KEY = 'opencurve-welcome-seen';
 var _WELCOME_FOR = '2';
 var _WELCOME_ITEMS = [
+  ['Improved performance', 'much faster response and keyframe detection'],
   ['Multi-point curves', 'add points to build complex motion in a single ease'],
   ['A-curve mode', 'shape the ease as a speed graph by dragging the peak'],
   ['Mini timeline', 'every keyframed property at a glance, click to jump, hover to read values'],
-  ['Per-property undo', 'undo one property, or load its baked curve back onto the graph, even after restarting Premiere'],
-  ['Improved performance', 'much faster response and keyframe detection']
+  ['Per-property undo', 'undo one property, or load its baked curve back onto the graph, even after restarting Premiere']
 ];
 
 function _showWelcome() {
