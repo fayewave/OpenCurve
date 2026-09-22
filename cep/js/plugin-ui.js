@@ -4767,7 +4767,7 @@ function _showWelcome() {
     dot.style.cssText = 'width:5px;height:5px;border-radius:3px;background:' + _curveColor + ';margin:6px 9px 0 1px;flex:0 0 5px;';
     var txt = document.createElement('div');
     txt.textContent = it;
-    txt.style.cssText = 'color:#e4e4e4;font-size:12.5px;line-height:1.45;';
+    txt.style.cssText = 'color:#e4e4e4;font-size:12.5px;font-weight:600;line-height:1.45;';
     row.appendChild(dot);
     row.appendChild(txt);
     (i < half ? colL : colR).appendChild(row);
