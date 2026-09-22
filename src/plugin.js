@@ -7275,27 +7275,32 @@ function _showWelcome() {
   title.style.cssText = 'color:#e4e4e4;font-size:14px;margin-bottom:12px;text-align:center;';
   box.appendChild(title);
 
+  // Two columns built as paired rows (item i beside item i + half), so a
+  // title that wraps pushes both sides down together and the columns stay
+  // level; two independent columns drifted apart when one side wrapped.
   var list = document.createElement('div');
-  list.style.cssText = 'display:flex;align-items:flex-start;margin-bottom:12px;';
-  var colL = document.createElement('div');
-  var colR = document.createElement('div');
-  colL.style.cssText = 'flex:1;min-width:0;';
-  colR.style.cssText = 'flex:1;min-width:0;margin-left:16px;';
-  list.appendChild(colL);
-  list.appendChild(colR);
+  list.style.cssText = 'margin-bottom:12px;';
   var half = Math.ceil(_WELCOME_ITEMS.length / 2);
-  _WELCOME_ITEMS.forEach(function(it, i) {
-    var row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:flex-start;margin-bottom:6px;';
+  function item(text, right) {
+    var cell = document.createElement('div');
+    cell.style.cssText = 'flex:1;min-width:0;display:flex;align-items:flex-start;' + (right ? 'margin-left:16px;' : '');
+    if (text == null) return cell; // empty cell keeps an odd count level
     var dot = document.createElement('div');
     dot.style.cssText = 'width:5px;height:5px;border-radius:3px;background:' + _curveColor + ';margin:6px 9px 0 1px;flex:0 0 5px;';
     var txt = document.createElement('div');
-    txt.textContent = it;
+    txt.textContent = text;
     txt.style.cssText = 'color:#e4e4e4;font-size:12.5px;font-weight:600;line-height:1.45;';
-    row.appendChild(dot);
-    row.appendChild(txt);
-    (i < half ? colL : colR).appendChild(row);
-  });
+    cell.appendChild(dot);
+    cell.appendChild(txt);
+    return cell;
+  }
+  for (var i = 0; i < half; i++) {
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:flex-start;margin-bottom:6px;';
+    row.appendChild(item(_WELCOME_ITEMS[i], false));
+    row.appendChild(item(i + half < _WELCOME_ITEMS.length ? _WELCOME_ITEMS[i + half] : null, true));
+    list.appendChild(row);
+  }
   box.appendChild(list);
 
   var btns = document.createElement('div');
