@@ -4718,10 +4718,10 @@ var _WELCOME_KEY = 'opencurve-welcome-seen';
 var _WELCOME_FOR = '2';
 var _WELCOME_ITEMS = [
   ['Improved performance', 'much faster response and keyframe detection'],
-  ['Multi-point curves', 'add points to build complex motion in a single ease'],
-  ['A-curve mode', 'shape the ease as a speed graph by dragging the peak'],
+  ['Multi-point curves and A-curve mode', 'add points for complex motion in a single ease, or shape it as a speed graph'],
   ['Mini timeline', 'every keyframed property at a glance, click to jump, hover to read values'],
-  ['Per-property undo', 'undo one property, or load its baked curve back onto the graph, even after restarting Premiere']
+  ['Per-property undo', 'undo one property, or load its baked curve back onto the graph, even after restarting Premiere'],
+  ['Playhead jump buttons', 'step through every keyframed area on a clip from its property row']
 ];
 
 function _showWelcome() {
@@ -4742,7 +4742,7 @@ function _showWelcome() {
   box.appendChild(logo);
 
   var title = document.createElement('div');
-  title.textContent = 'What\u2019s New:';
+  title.textContent = 'What\u2019s New in 2.0.0';
   title.style.cssText = 'color:#e4e4e4;font-size:14px;font-weight:600;margin-bottom:12px;text-align:center;';
   box.appendChild(title);
 
