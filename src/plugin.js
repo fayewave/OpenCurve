@@ -7247,10 +7247,10 @@ var _WELCOME_ITEMS = [ // titles only, split over two columns
   'Mini timeline',
   'Per-property undo',
   'Playhead jump buttons',
-  'Starter presets, export and import',
-  'Keyboard shortcuts and playback preview',
+  'Preset export and import',
+  'Keyboard shortcuts',
   'Numeric entry, flip and invert',
-  'Full-screen graph and keyframe spacing'
+  'Full-screen graph'
 ];
 
 function _showWelcome() {
