@@ -7274,16 +7274,18 @@ function _showWelcome() {
   list.style.cssText = 'margin-bottom:16px;';
   _WELCOME_ITEMS.forEach(function(it) {
     var row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:flex-start;margin-bottom:7px;';
+    row.style.cssText = 'display:flex;align-items:flex-start;margin-bottom:9px;';
     var dot = document.createElement('div');
     dot.style.cssText = 'width:5px;height:5px;border-radius:3px;background:' + _curveColor + ';margin:6px 9px 0 1px;flex:0 0 5px;';
     var txt = document.createElement('div');
     txt.style.cssText = 'color:#888;font-size:12.5px;line-height:1.45;';
-    var strong = document.createElement('span');
+    var strong = document.createElement('div');
     strong.textContent = it[0];
     strong.style.cssText = 'color:#e4e4e4;font-weight:600;';
+    var desc = document.createElement('div');
+    desc.textContent = it[1];
     txt.appendChild(strong);
-    txt.appendChild(document.createTextNode(' — ' + it[1]));
+    txt.appendChild(desc);
     row.appendChild(dot);
     row.appendChild(txt);
     list.appendChild(row);
