@@ -177,6 +177,7 @@ function _animateToCurve(target, onUpdate) {
   // for rather than an intermediate (which would also carry the padding anchors).
   // It saves the ~9 renderUI passes a per-frame setState used to fan out.
   setState({ curve: _cloneCurve(target) });
+  if (!_graphVisible) { _graphDirty = true; return; } // nothing to see: skip the frames, the state is already the target
   function easeInOut(t) { return t < 0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
   function step(ts) {
     if (!start) start = ts;
@@ -982,6 +983,7 @@ function _makeLine(id, stroke) {
 }
 
 function updateStaticSVG(W, H) {
+  if (!_graphVisible) { _graphDirty = true; return; }
   // Full background (outer area when zoomed out)
   var bg = document.getElementById('sg-bg');
   if (bg) { bg.setAttribute('width', W); bg.setAttribute('height', H); }
@@ -1098,6 +1100,7 @@ function _setTimelineVisible(on) {
 }
 
 function updateDynamicSVG(curve, W, H) {
+  if (!_graphVisible) { _graphDirty = true; return; }
   if (_peakMode) { _updatePeakSVG(curve, W, H); return; }
   var hc = _animVis || curve; // handles and points; the path always follows curve
   var p0 = normToSVG(0, 0, W, H);
@@ -1339,6 +1342,7 @@ function initGraphEditor(svg) {
     if (w < 40 || h < 40) return;
     if (_svgW === w && _svgH === h) return;
     _svgW = w; _svgH = h;
+    _graphDirty = false;
     updateStaticSVG(w, h);
     updateDynamicSVG(liveCurve || getState().curve, w, h);
     _updateContentTransform();
@@ -6577,6 +6581,11 @@ var _presetLayout       = localStorage.getItem(_LAYOUT_KEY) || 'list';
 var _GRAPH_KEY          = 'opencurve-graph-visible';
 // Defaults to On — only hidden when the user has explicitly disabled the graph.
 var _graphVisible       = localStorage.getItem(_GRAPH_KEY) !== 'off';
+// Set when a graph redraw was skipped because the column is hidden (the SVG
+// keeps its last visible size, so every redraw path would otherwise still
+// write the whole SVG into the display:none column). _applyGraphVisibility
+// redraws once when the graph comes back; the resize observer clears it too.
+var _graphDirty         = false;
 var _DENSITY_KEY        = 'opencurve-bake-density';
 try { localStorage.removeItem('opencurve-preview-after-go'); } catch(_) {} // a setting that existed briefly during 2.0 development
 // Keyframe spacing when baking, in frames: 1 (every frame, exact), 2 or 4.
@@ -6600,6 +6609,12 @@ function _applyGraphVisibility() {
   if (_graphVisible) {
     leftCol.style.display = '';
     if (handle) handle.style.display = '';
+    if (_graphDirty && _svgW > 0 && _svgH > 0) { // redraws skipped while hidden (the observer covers a size change)
+      _graphDirty = false;
+      updateStaticSVG(_svgW, _svgH);
+      updateDynamicSVG(getState().curve, _svgW, _svgH);
+      _updateContentTransform();
+    }
     var savedW = _sidebarSavedW();
     rightCol.style.width    = savedW ? savedW + 'px' : '';
     rightCol.style.maxWidth = '';
