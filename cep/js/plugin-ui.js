@@ -4721,7 +4721,7 @@ var _WELCOME_ITEMS = [
   ['A-curve mode', 'shape the ease as a speed graph by dragging the peak'],
   ['Mini timeline', 'every keyframed property at a glance, click to jump, hover to read values'],
   ['Per-property undo', 'undo one property, or load its baked curve back onto the graph, even after restarting Premiere'],
-  ['Starter presets and shortcuts', '17 new eases, preset export/import, playback preview and keyboard shortcuts']
+  ['Improved performance', 'much faster response and keyframe detection']
 ];
 
 function _showWelcome() {
