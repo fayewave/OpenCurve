@@ -42,17 +42,7 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 
 ### Installation
 
-#### Premiere 2025 or newer:
-1. Download the `.ccx` file in the [latest release](https://github.com/fayewave/OpenCurve/releases/latest)
-2. Open the `.ccx` file
-3. Creative Cloud will prompt you to confirm — click **Install**
-4. Open Premiere Pro and find OpenCurve under **Window → UXP Plugins**
-
-#### Premiere 2024 or older:
-1. Download the `.zxp` file in the [latest release](https://github.com/fayewave/OpenCurve/releases/latest)
-2. Install the `.zxp` file using [aescripts ZXP Installer](https://aescripts.com/learn/zxp-installer/) (free).
-4. Open Premiere Pro and find OpenCurve under **Window → Extensions**
-> ⚠️Warning: The `.zxp` version uses a dedicated Undo button (next to Go) instead of Ctrl+Z/Command+Z due to Premiere limitations.
+**Download the** [**latest release.**](https://github.com/fayewave/OpenCurve/releases/latest) 
 
 ---
 
