@@ -7050,7 +7050,7 @@ function _showCopyToast(msg, color) {
 }
 
 // Opens a link in the browser, falling back to copying it. The Exchange build
-// has no launchProcess permission, so scripts/build-exchange.js strips the browser
+// has no launchProcess permission, so scripts/build.js exchange strips the browser
 // half and it always copies.
 function _openUrl(url) {
   function copy() {
