@@ -49,5 +49,3 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 
 - Adobe Premiere 2020+
 - Mac & PC compatible
-
----
