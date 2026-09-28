@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ExtensionManifest Version="6.0" ExtensionBundleId="com.fayelab.opencurve.cep"
-    ExtensionBundleVersion="2.0.0" ExtensionBundleName="OpenCurve"
+    ExtensionBundleVersion="2.0.0" ExtensionBundleName="OpenCurve 2"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 
   <ExtensionList>
