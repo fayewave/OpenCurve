@@ -541,11 +541,11 @@ function _mkPtEls() {
   // Both live in the group and _updatePtsSVG shows one (opacity + visibility
   // attributes, as UXP ignores display/class changes on SVG).
   var a = document.createElementNS(NS, 'g');
-  var inner = _mkCircle(4, '#1e1e1e', _curveColor || '#38fbb2', 2);
+  var inner = _mkCircle(4, '#1e1e1e', _curveColor || '#ffffff', 2);
   var sq = document.createElementNS(NS, 'rect');
   sq.setAttribute('x', -4); sq.setAttribute('y', -4); sq.setAttribute('width', 8); sq.setAttribute('height', 8);
   sq.setAttribute('rx', 1); sq.setAttribute('fill', '#1e1e1e');
-  sq.setAttribute('stroke', _curveColor || '#38fbb2'); sq.setAttribute('stroke-width', 2);
+  sq.setAttribute('stroke', _curveColor || '#ffffff'); sq.setAttribute('stroke-width', 2);
   sq.setAttribute('opacity', '0'); sq.setAttribute('visibility', 'hidden');
   a.appendChild(inner); a.appendChild(sq);
   return { li: line(), lo: line(), hi: handle(), ho: handle(), a: a, inner: inner, sq: sq };
@@ -922,7 +922,7 @@ function _showDragGhost(curve, W, H) {
         function(y) { return normToSVG(0, y, W, H).cy; })
     : _curvePathD(curve, W, H);
   g.setAttribute('d', d);
-  g.setAttribute('stroke', _curveColor || '#38fbb2');
+  g.setAttribute('stroke', _curveColor || '#ffffff');
   _svgShow('sg-drag-ghost', true);
 }
 function _hideDragGhost() { _svgShow('sg-drag-ghost', false); }
@@ -4131,7 +4131,7 @@ function initPanel() {
 // ─── Settings / shared variables ─────────────────────────────────────────
 var CURRENT_VERSION     = '2.0.0';
 var _CURVE_COLOR_KEY    = 'opencurve-line-color';
-var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#38fbb2';
+var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#ffffff';
 var _updateAvailable    = false;
 var _latestVersion      = null;
 var _updateDismissed    = false;
@@ -4941,7 +4941,7 @@ function _confirmReset() {
     _tlApplyPropsWidth();
     _applyPresetLayout(true);
     _styleLayoutBtn();
-    _applyCurveColor('#38fbb2');
+    _applyCurveColor('#ffffff');
     setState({ curve: { p1x: 0.65, p1y: 0, p2x: 0.35, p2y: 1 } });
     if (_svgW > 0 && _svgH > 0) {
       updateStaticSVG(_svgW, _svgH); // the grid size changed back to 8
@@ -5206,7 +5206,7 @@ function _showSettingsModal() {
   colorSection.appendChild(colorLabel);
 
   // The default green first; red and orange are the property panel's --red / --amber tones
-  var swatchColors = ['#38fbb2','#4a9eff','#ff9090','#f0a030','#c97ff0','#ff6eb4','#ffffff','#aaaaaa'];
+  var swatchColors = ['#ffffff','#4a9eff','#ff9090','#f0a030','#c97ff0','#ff6eb4','#38fbb2','#aaaaaa'];
   var swatchRow = document.createElement('div');
   swatchRow.style.cssText = 'display:flex;margin-bottom:4px;flex-wrap:wrap;'; // spacing via swatch margins (UXP ignores flex gap)
   swatchColors.forEach(function(col) {
