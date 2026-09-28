@@ -73,12 +73,14 @@ try {
           initPanel();
           _applyCurveColor(_curveColor);
           var _welcomed = _showWelcome(); // first launch of a 2.x build; stands in for the toast
+          // [exchange-strip]
           if (localStorage.getItem('opencurve-post-update') === '1') {
             localStorage.removeItem('opencurve-post-update');
             if (!_welcomed) setTimeout(function() {
               _showCopyToast('Updated to v' + CURRENT_VERSION, '#3ddc84');
             }, 500);
           }
+          // [/exchange-strip]
         },
         show: function() {
           console.log('[FS] panel show — starting poll');
@@ -88,7 +90,7 @@ try {
           // interval running for the session, polling at twice the rate
           if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
           if (_POLL_ON) pollTimer = setInterval(poll, POLL_MS); // _POLL_ON: scroll-freeze elimination switch
-          if (_updateNotifsOn) _checkForUpdates(true);
+          if (_updateNotifsOn) _checkForUpdates(true); // [exchange-strip-line]
         },
         hide: function() {
           console.log('[FS] panel hide — stopping poll');
@@ -99,7 +101,7 @@ try {
         },
         menuItems: [
           { id: 'options',       label: 'Settings' },
-          { id: 'check-updates', label: 'Check for Updates' },
+          { id: 'check-updates', label: 'Check for Updates' }, // [exchange-strip-line]
           { id: 'dump-comps',    label: 'Dump Components (Debug)' },
           { id: 'poll-timing',   label: 'Poll Timing (Debug)' },
           { id: 'scroll-debug',  label: 'Scroll Debug' },
@@ -108,7 +110,7 @@ try {
         ],
         invokeMenu: function(id) {
           if (id === 'options')       _showSettingsModal();
-          if (id === 'check-updates') _checkForUpdates();
+          if (id === 'check-updates') _checkForUpdates(); // [exchange-strip-line]
           if (id === 'dump-comps')    _dumpComponents();
           if (id === 'poll-timing')   _toggleDebugTiming();
           if (id === 'scroll-debug')  _toggleDebugScroll();
@@ -5798,11 +5800,11 @@ function initPanel() {
     // rebuild, as the reset first did, left the new tiles unstyled)
     _presetPage = 0;
     _renderPresets();
-    _refreshUpdateNotification();
+    _refreshUpdateNotification(); // [exchange-strip-line]
     _applyPresetLayout(true);
   };
   _renderPresets();
-  _refreshUpdateNotification();
+  _refreshUpdateNotification(); // [exchange-strip-line]
 
   _applyPresetLayout(true);
   // The column, not the list: the pager row toggling changes the list's box
@@ -6561,13 +6563,15 @@ function _pollSig(u) {
 var CURRENT_VERSION     = '2.0.0';
 var _CURVE_COLOR_KEY    = 'opencurve-line-color';
 var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#38fbb2';
+// [exchange-strip]
 var _updateAvailable    = false;
 var _latestVersion      = null;
 var _updateDismissed    = false;
 var _lastUpdateCheckAt  = 0;       // throttles the silent check (see _checkForUpdates)
 var _UPDATE_CHECK_MS    = 3600000; // an hour between silent checks
-var _UPDATE_NOTIF_KEY   = 'opencurve-update-notif';
-var _updateNotifsOn     = localStorage.getItem(_UPDATE_NOTIF_KEY) !== 'off';
+// [/exchange-strip]
+var _UPDATE_NOTIF_KEY   = 'opencurve-update-notif'; // kept in the Exchange build: Reset still clears it
+var _updateNotifsOn     = localStorage.getItem(_UPDATE_NOTIF_KEY) !== 'off'; // [exchange-strip-line]
 var _ANIM_KEY           = 'opencurve-animations';
 var _animationsOn       = localStorage.getItem(_ANIM_KEY) !== 'off';
 // 2.0.0: "Scan During Playback" is always on (the toggle only made the panel
@@ -6818,6 +6822,7 @@ function _applyPresetLayout(force) {
     }
   });
 
+  // [exchange-strip]
   // Update notif — compact in grid mode
   var notifEl = document.getElementById('_update-notif');
   if (notifEl) {
@@ -6848,6 +6853,7 @@ function _applyPresetLayout(force) {
       notifDel.style.marginLeft = '';
     }
   }
+  // [/exchange-strip]
 
   // UXP may ignore inline styles on first render — force reflow,
   // then re-assert align-self on each tile after a delay (no full re-call)
@@ -7043,6 +7049,31 @@ function _showCopyToast(msg, color) {
   setTimeout(function() { if (wrap.parentNode) wrap.parentNode.removeChild(wrap); }, delay + 400);
 }
 
+// Opens a link in the browser, falling back to copying it. The Exchange build
+// has no launchProcess permission, so scripts/build-exchange.js strips the browser
+// half and it always copies.
+function _openUrl(url) {
+  function copy() {
+    navigator.clipboard.writeText(url).then(function() {
+      _showCopyToast('Link copied — paste in browser', '#4a9eff');
+    }, function(e) {
+      console.error('[OC] clipboard write failed:', e);
+      _showCopyToast('Could not open ' + url, '#ff9090');
+    });
+  }
+  // [exchange-strip]
+  try {
+    require('uxp').shell.openExternal(url).catch(function(e) {
+      console.error('[OC] openExternal failed:', e);
+      copy();
+    });
+  } catch(e) { console.error('[OC] openExternal failed:', e); copy(); }
+  return;
+  // [/exchange-strip]
+  copy();
+}
+
+// [exchange-strip]
 function _refreshUpdateNotification() {
   var list = document.getElementById('all-presets-list');
   if (!list) return;
@@ -7193,6 +7224,7 @@ function _checkForUpdates(silent) {
     })
     .catch(function() { if (!silent) _showCopyToast('Could not reach GitHub'); });
 }
+// [/exchange-strip]
 
 // Modal confirmation: title, message, a red action button and Cancel.
 // onOk runs after the dialog has closed. Used by reset-all and preset delete.
@@ -7443,7 +7475,7 @@ function _confirmReset() {
     _gridSize       = 8;
     _presetLayout   = 'list';
     _animationsOn   = true;
-    _updateNotifsOn = true;
+    _updateNotifsOn = true; // [exchange-strip-line]
     _tlZoomKeys     = false;
     _tlUserH        = null;
     _peakMode       = false;
@@ -7812,6 +7844,7 @@ function _showSettingsModal() {
   hexRow.appendChild(hexTf.wrap);
   hexRow.appendChild(hexPreview);
   colorSection.appendChild(hexRow);
+  // [exchange-strip]
   // Check for updates row
   var updatesRow = document.createElement('div');
   updatesRow.id = '_updates-row';
@@ -7841,8 +7874,10 @@ function _showSettingsModal() {
   notifLabel.textContent = 'Update Notifications';
   var notifCheck = document.createElement('span');
   notifCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
+  // [/exchange-strip]
   var _svgCheck = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><polyline points="1.5,6 4.5,9 10.5,3" stroke="#3ddc84" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   var _svgCross = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><line x1="2" y1="2" x2="10" y2="10" stroke="#ff9090" stroke-width="1.8" stroke-linecap="round"/><line x1="10" y1="2" x2="2" y2="10" stroke="#ff9090" stroke-width="1.8" stroke-linecap="round"/></svg>';
+  // [exchange-strip]
   function _updateNotifCheck() {
     notifCheck.innerHTML = _updateNotifsOn ? _svgCheck : _svgCross;
     notifLabel.textContent = 'Update Notifications ' + (_updateNotifsOn ? 'On' : 'Off');
@@ -7864,6 +7899,7 @@ function _showSettingsModal() {
     _refreshUpdateNotification();
   });
   rowsCol.appendChild(notifRow);
+  // [/exchange-strip]
 
   // Graph visibility toggle row
   var graphRow = document.createElement('div');
@@ -8037,7 +8073,7 @@ function _showSettingsModal() {
   ghLink.addEventListener('mouseenter', function() { ghLink.style.color = '#4a9eff'; });
   ghLink.addEventListener('mouseleave', function() { ghLink.style.color = '#555'; });
   ghLink.addEventListener('click', function() {
-    try { require('uxp').shell.openExternal('https://github.com/fayewave/OpenCurve'); } catch(e) {}
+    _openUrl('https://github.com/fayewave/OpenCurve');
   });
   footerLeft.appendChild(madeBy);
   footerLeft.appendChild(ghLink);
@@ -8065,8 +8101,7 @@ function _showSettingsModal() {
   issueRow.addEventListener('mouseenter', function() { _tint(issueRow, 'rgba(74,158,255,0.15)', 0.09); });
   issueRow.addEventListener('mouseleave', function() { _tint(issueRow, 'rgba(74,158,255,0.08)', 0.06); });
   issueRow.addEventListener('click', function() {
-    var url = 'https://github.com/fayewave/OpenCurve/issues';
-    try { require('uxp').shell.openExternal(url); } catch(e) { console.error('[OC] openExternal failed:', e); }
+    _openUrl('https://github.com/fayewave/OpenCurve/issues');
   });
 
   var footerRight = document.createElement('div');
