@@ -40,33 +40,6 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 
 ---
 
-### What's new in 2.0
-
-**Curves**
-- Multi-point curves
-- A-curve (speed graph) mode
-- Flip, invert and numeric entry
-- Full-screen graph mode for precise editing
-
-**Workflow**
-- New mini timeline with keyframe lanes for each property with keyframes. Click to instantly move the playhead
-- Per-property undo
-- Baked curves are remembered and can be reloaded, even after restarting Premiere
-- Playhead jump buttons that step through every keyframed area on a clip
-- Playback preview and a full set of keyboard shortcuts
-- Choose keyframe spacing (every 1, 2 or 4 frames)
-
-**Presets**
-- Hover a preset to preview its motion
-- Export and import preset files
-
-**Interface & performance**
-- Hugely improved response time and keyframe detection across both `.zxp` and `.ccx` versions
-- Redesigned UI with a cleaner more intuitive interface
-- Hide the graph and/or timeline to fit any panel size
-
----
-
 ### Installation
 
 #### Premiere 2025 or newer:
