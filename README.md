@@ -11,6 +11,10 @@ A free bezier curve editor plugin to add custom easing to your keyframes in Adob
 
 **Also available on** [**Adobe Exchange.**](https://exchange.adobe.com/apps/cc/3ecc7304/opencurve)
 
+<a href="https://www.buymeacoffee.com/fayewave">
+  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="60" />
+</a>
+
 ---
 
 ![OpenCurve screenshot](img/v2-dev-3.png)
@@ -27,12 +31,11 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 - **Auto-detects keyframes** — Finds keyframes on clips automatically
 - **Multi-point curves** — Add points to build complex motion in a single ease, with smooth or broken handles
 - **A-curve mode** — Shape the ease as a speed graph: drag the peak to where the motion is fastest
-- **Numeric entry** — Type exact handle values, or paste a `cubic-bezier()`
 - **Presets** — Save, rename and reorder your curves, and export/import them to share
-- **Mini timeline** — See every keyframed property at a glance, click to jump, hover to read values
+- **Mini timeline** — See every keyframed property at a glance
 - **Per-property undo** — Undo a single property's ease, or load its baked curve back onto the graph, even after reopening the project
 - **Undo and redo** — Supports Premiere's history system for full undo/redo support (`.ccx` version only)
-- **Customization** — Themes, grid size, list/grid presets, resizable layout and a full-screen graph
+- **Customization** — Themes, grid size, list/grid presets, resizable layout, full-screen graph mode, numeric entry, and more
 - **Free forever** — No bloat, no logins.
 
 ---
@@ -43,10 +46,10 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 - Multi-point curves
 - A-curve (speed graph) mode
 - Flip, invert and numeric entry
-- Square graph, full-screen mode
+- Full-screen graph mode for precise editing
 
 **Workflow**
-- New mini timeline with keyframe lanes, click-to-jump and live value readout
+- New mini timeline with keyframe lanes for each property with keyframes. Click to instantly move the playhead
 - Per-property undo
 - Baked curves are remembered and can be reloaded, even after restarting Premiere
 - Playhead jump buttons that step through every keyframed area on a clip
@@ -60,7 +63,7 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 **Interface & performance**
 - Hugely improved response time and keyframe detection across both `.zxp` and `.ccx` versions
 - Redesigned UI with a cleaner more intuitive interface
-- Show or hide the graph and/or timeline to fit any panel size
+- Hide the graph and/or timeline to fit any panel size
 
 ---
 
@@ -86,8 +89,3 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 - Mac & PC compatible
 
 ---
-
-<a href="https://www.buymeacoffee.com/fayewave">
-  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="60" />
-</a>
-
