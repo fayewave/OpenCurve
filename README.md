@@ -7,17 +7,16 @@
 
 A free bezier curve editor plugin to add custom easing to your keyframes in Adobe Premiere Pro.
 
-**Download the** [**latest release.**](https://github.com/fayewave/OpenCurve/releases/latest) 
-
-**Also available on** [**Adobe Exchange.**](https://exchange.adobe.com/apps/cc/3ecc7304/opencurve)
-
-<a href="https://www.buymeacoffee.com/fayewave">
-  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="50" />
-</a>
+### [**Download here.**](https://github.com/fayewave/OpenCurve/releases/latest) 
+### **Also available on** [**Adobe Exchange.**](https://exchange.adobe.com/apps/cc/3ecc7304/opencurve)
 
 ---
 
 ![OpenCurve screenshot](img/v2-dev-3.png)
+
+<a href="https://www.buymeacoffee.com/fayewave">
+  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="50" />
+</a>
 
 ---
 
