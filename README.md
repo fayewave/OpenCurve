@@ -49,3 +49,33 @@ Place your playhead between 2 keyframes, select a property (position, opacity, s
 
 - Adobe Premiere 2020+
 - Mac & PC compatible
+
+---
+
+### Keyboard shortcuts:
+
+| Key | Action |
+|---|---|
+| Enter | Go (bake) |
+| U | Undo last bake |
+| Space | Play / stop |
+| J / K / L | Reverse / stop / forward |
+| P | Preview the keyframe pair |
+| ← → ↑ ↓ | Nudge handle (Shift = grid step) |
+| F | Flip curve |
+| I | Invert curve |
+| A | A-curve mode |
+| G | Ghost |
+| N | Numeric entry |
+| 1–9 | Apply preset 1–9 |
+| Page Up / Down | Change preset page (.ccx only) |
+| Esc | Close menu / stop preview / exit full screen |
+
+**Graph mouse modifiers**
+- **Shift-drag**: snap to grid
+- **Alt-drag**: keep handles in line, but each keeps its own length
+- **Ctrl/Cmd-drag**: move one handle on its own (breaks the point)
+
+Double-click a timeline lane to select that property for baking.
+
+In the .ccx, Space/J/K/L step the playhead without audio, because the UXP API can't play the sequence.
