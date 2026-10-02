@@ -163,7 +163,7 @@ var targets = {
     var passFile = path.join(ROOT, 'dist', 'opencurve-cert.password');
     var pass = process.env.OPENCURVE_ZXP_PASS || (fs.existsSync(passFile) ? fs.readFileSync(passFile, 'utf8').trim() : '');
     if (!pass) fail('no signing password: set OPENCURVE_ZXP_PASS or write it to dist/opencurve-cert.password');
-    ['cep/js/plugin-ui.js', 'cep/js/cep-bridge.js', 'cep/js/CSInterface.js'].forEach(function(f) {
+    ['cep/js/pointer-shim.js', 'cep/js/plugin-ui.js', 'cep/js/cep-bridge.js', 'cep/js/CSInterface.js'].forEach(function(f) {
       cp.execFileSync(process.execPath, ['--check', path.join(ROOT, f)], { stdio: 'inherit' });
     });
 
