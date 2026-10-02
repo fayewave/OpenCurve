@@ -7,17 +7,16 @@
 
 A free bezier curve editor plugin to add custom easing to your keyframes in Adobe Premiere Pro.
 
-**Download the** [**latest release.**](https://github.com/fayewave/OpenCurve/releases/latest) 
-
-**Also available on** [**Adobe Exchange.**](https://exchange.adobe.com/apps/cc/3ecc7304/opencurve)
-
-<a href="https://www.buymeacoffee.com/fayewave">
-  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="60" />
-</a>
+### [**Download here.**](https://github.com/fayewave/OpenCurve/releases/latest) 
+### **Also available on** [**Adobe Exchange.**](https://exchange.adobe.com/apps/cc/3ecc7304/opencurve)
 
 ---
 
 ![OpenCurve: picking presets, then shaping the curve by its handles](img/readme/hero.webp)
+
+<a href="https://www.buymeacoffee.com/fayewave">
+  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="50" />
+</a>
 
 ---
 
@@ -26,7 +25,8 @@ A free bezier curve editor plugin to add custom easing to your keyframes in Adob
 2. Tick the properties to ease.
 3. Press Go. OpenCurve writes the bezier handles onto the keyframes.
 
-<img src="img/readme/how-it-works.webp" width="700" alt="OpenCurve beside Premiere's Effect Controls: a curve is picked, Position and Scale ticked, Go pressed, and keyframes fill in between the two">
+
+<img src="img/readme/how-it-works.webp" width="720" alt="OpenCurve beside Premiere's Effect Controls: a curve is picked, Position and Scale ticked, Go pressed, and keyframes fill in between the two">
 
 ---
 
@@ -53,46 +53,9 @@ A free bezier curve editor plugin to add custom easing to your keyframes in Adob
 
 ---
 
-### What's new in 2.0
-
-**Curves**
-- Multi-point curves
-- A-curve (speed graph) mode
-- Flip, invert and numeric entry
-- Full-screen graph mode for precise editing
-
-**Workflow**
-- New mini timeline with keyframe lanes for each property with keyframes. Click to instantly move the playhead
-- Per-property undo
-- Baked curves are remembered and can be reloaded, even after restarting Premiere
-- Playhead jump buttons that step through every keyframed area on a clip
-- Playback preview and a full set of keyboard shortcuts
-- Choose keyframe spacing (every 1, 2 or 4 frames)
-
-**Presets**
-- Hover a preset to preview its motion
-- Export and import preset files
-
-**Interface & performance**
-- Hugely improved response time and keyframe detection across both `.zxp` and `.ccx` versions
-- Redesigned UI with a cleaner more intuitive interface
-- Hide the graph and/or timeline to fit any panel size
-
----
-
 ### Installation
 
-#### Premiere 2025 or newer:
-1. Download the `.ccx` file in the [latest release](https://github.com/fayewave/OpenCurve/releases/latest)
-2. Open the `.ccx` file
-3. Creative Cloud will prompt you to confirm — click **Install**
-4. Open Premiere Pro and find OpenCurve under **Window → UXP Plugins**
-
-#### Premiere 2024 or older:
-1. Download the `.zxp` file in the [latest release](https://github.com/fayewave/OpenCurve/releases/latest)
-2. Install the `.zxp` file using [aescripts ZXP Installer](https://aescripts.com/learn/zxp-installer/) (free).
-4. Open Premiere Pro and find OpenCurve under **Window → Extensions**
-> ⚠️Warning: The `.zxp` version uses a dedicated Undo button (next to Go) instead of Ctrl+Z/Command+Z due to Premiere limitations.
+**Download the** [**latest release.**](https://github.com/fayewave/OpenCurve/releases/latest) 
 
 ---
 
@@ -102,3 +65,31 @@ A free bezier curve editor plugin to add custom easing to your keyframes in Adob
 - Mac & PC compatible
 
 ---
+
+### Keyboard shortcuts:
+
+| Key | Action |
+|---|---|
+| Enter | Go (bake) |
+| U | Undo last bake |
+| Space | Play / stop |
+| J / K / L | Reverse / stop / forward |
+| P | Preview the keyframe pair |
+| ← → ↑ ↓ | Nudge handle (Shift = grid step) |
+| F | Flip curve |
+| I | Invert curve |
+| A | A-curve mode |
+| G | Ghost |
+| N | Numeric entry |
+| 1–9 | Apply preset 1–9 |
+| Page Up / Down | Change preset page (.ccx only) |
+| Esc | Close menu / stop preview / exit full screen |
+
+**Graph mouse modifiers**
+- **Shift-drag**: snap to grid
+- **Alt-drag**: keep handles in line, but each keeps its own length
+- **Ctrl/Cmd-drag**: move one handle on its own (breaks the point)
+
+Double-click a timeline lane to select that property for baking.
+
+In the .ccx, Space/J/K/L step the playhead without audio, because the UXP API can't play the sequence.
