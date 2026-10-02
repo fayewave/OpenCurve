@@ -21,7 +21,10 @@ A free bezier curve editor plugin to add custom easing to your keyframes in Adob
 ---
 
 ### How it works
-Place your playhead between 2 keyframes, select a property (position, opacity, scale, etc.), and apply your curve. OpenCurve writes the bezier handles directly to your keyframes.
+1. Put the playhead between two keyframes.
+2. Tick the properties to ease.
+3. Press Go. OpenCurve writes the bezier handles onto the keyframes.
+
 
 <img src="img/readme/how-it-works.webp" width="720" alt="OpenCurve beside Premiere's Effect Controls: a curve is picked, Position and Scale ticked, Go pressed, and keyframes fill in between the two">
 
