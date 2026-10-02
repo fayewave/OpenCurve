@@ -17,16 +17,29 @@ A free bezier curve editor plugin to add custom easing to your keyframes in Adob
 
 ---
 
-![OpenCurve screenshot](img/v2-dev-3.png)
+![OpenCurve: picking presets, then shaping the curve by its handles](img/readme/hero.webp)
 
 ---
 
 ### How it works
-Place your playhead between 2 keyframes, select a property (position, opacity, scale, etc.), and apply your curve. OpenCurve writes the bezier handles directly to your keyframes.
+1. Put the playhead between two keyframes.
+2. Tick the properties to ease.
+3. Press Go. OpenCurve writes the bezier handles onto the keyframes.
+
+<img src="img/readme/how-it-works.webp" width="700" alt="OpenCurve beside Premiere's Effect Controls: a curve is picked, Position and Scale ticked, Go pressed, and keyframes fill in between the two">
 
 ---
 
 ### Features
+
+<p>
+  <img src="img/readme/customize-your-curve.gif" width="350" hspace="1" alt="Customize your curve">
+  <img src="img/readme/mini-timeline.gif" width="350" hspace="1" alt="A mini timeline of every keyframe">
+  <img src="img/readme/jump-to-keyframe.gif" width="350" hspace="1" alt="Jump to the next keyframe">
+  <img src="img/readme/presets.gif" width="350" hspace="1" alt="Presets, saved and shared">
+  <img src="img/readme/per-property-undo.gif" width="350" hspace="1" alt="Undo, one property at a time">
+</p>
+
 - **Works anywhere** — Use on clips, nests, graphics, the Transform effect and Adjustment Layers
 - **Auto-detects keyframes** — Finds keyframes on clips automatically
 - **Multi-point curves** — Add points to build complex motion in a single ease, with smooth or broken handles
