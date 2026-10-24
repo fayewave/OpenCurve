@@ -80,12 +80,17 @@
             // Show undo button
             _showUndoBtn(true);
             _saveBakeRecords();
+            if (res.warning) OpenCurve.showCopyToast(res.warning, '#ff9090');
             setTimeout(function() {
               _lastStatus = '';
               OpenCurve.setState({ status: 'idle' });
             }, OpenCurve.DONE_DISPLAY_MS);
           } else {
             _skipPollUntil = Date.now() + OpenCurve.ERROR_DISPLAY_MS;
+            if (res.undoAvailable) {
+              _showUndoBtn(true);
+              _saveBakeRecords();
+            }
             OpenCurve.setState({
               isBaking: false,
               status: 'error',
@@ -114,7 +119,11 @@
           if (res.success) {
             if (!res.remaining) _showUndoBtn(false);
             _saveBakeRecords();
-            OpenCurve.showCopyToast('Undone: ' + res.removed + ' keyframes removed from ' + (name || 'property'), '#f0a030');
+            OpenCurve.showCopyToast(
+              'Undone: ' + res.removed + ' keyframes removed from ' + (name || 'property')
+                + (res.warning ? '. ' + res.warning : ''),
+              res.warning ? '#ff9090' : '#f0a030'
+            );
           } else {
             OpenCurve.showCopyToast(res.error || 'Undo failed', '#ff9090');
           }
@@ -245,7 +254,11 @@
           // green row and showed "Open a project and select a clip" until the
           // next poll. The host dropped its cache, so a scan now repaints it.
           poll();
-          OpenCurve.showCopyToast('Undone (' + res.removed + ' keyframes removed)', '#f0a030');
+          OpenCurve.showCopyToast(
+            'Undone (' + res.removed + ' keyframes removed)'
+              + (res.warning ? '. ' + res.warning : ''),
+            res.warning ? '#ff9090' : '#f0a030'
+          );
         } else {
           OpenCurve.showCopyToast(res.error || 'Undo failed', '#ff9090');
         }

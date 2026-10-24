@@ -369,7 +369,33 @@ function _ocReturn(jsonStr) {
 // FPS rarely changes within a session — cache per sequence instead of
 // re-reading getSettings() on every poll.
 function _ocSeqId(sequence) {
-  try { return String(sequence.sequenceID || sequence.name || ''); } catch(e) { return ''; }
+  return _ocSeqIdentity(sequence).seqId;
+}
+function _ocSeqIdentity(sequence) {
+  if (!sequence) return { seqId: '', seqIdType: '' };
+  try {
+    var id = sequence.sequenceID;
+    if (id !== undefined && id !== null && String(id) !== '') {
+      return { seqId: String(id), seqIdType: 'sequenceID' };
+    }
+  } catch(e) {}
+  try {
+    var name = String(sequence.name || '');
+    return { seqId: name, seqIdType: name ? 'name' : '' };
+  } catch(e) { return { seqId: '', seqIdType: '' }; }
+}
+function _ocSeqMatches(info, sequence) {
+  if (!info || !info.seqId || !sequence) return false;
+  var current = _ocSeqIdentity(sequence);
+  if (!current.seqId) return false;
+  if (info.seqIdType === 'sequenceID') {
+    return current.seqIdType === 'sequenceID' && info.seqId === current.seqId;
+  }
+  if (info.seqIdType === 'name') {
+    return current.seqIdType === 'name' && info.seqId === current.seqId;
+  }
+  // Legacy records did not identify whether seqId came from sequenceID or name.
+  return info.seqId === current.seqId;
 }
 function _fpsCached(sequence, seqId) {
   if (seqId === undefined) seqId = _ocSeqId(sequence);
@@ -618,8 +644,8 @@ function detectContext() {
         for (var _bj = _bb.length - 1; _bj >= 0; _bj--) {
           var _inf = _bb[_bj];
           if (_inf.compIdx !== p.compIdx || _inf.propIdx !== p.propIdx) continue;
-          // Restored records carry their sequence id; never match another sequence's clips
-          if (_inf.seqId && seqId && _inf.seqId !== seqId) continue;
+          // Never associate a bake record with a different active sequence.
+          if (!_ocSeqMatches(_inf, sequence)) continue;
           // Same clip? nodeId is stable when the clip is moved; fall back to name + start
           if (_inf.nodeId && p.nodeId) {
             if (_inf.nodeId !== p.nodeId) continue;
@@ -745,7 +771,7 @@ function bakeKeyframes(argsJSON) {
     var curve = args.curve;
     // Keyframe spacing from the panel's Settings (1, 2 or 4 frames)
     var stepReq = Math.max(1, parseInt(args.step, 10) || 1);
-    var bSeqId = '';
+    var bSeqIdentity = null;
 
     var project = app.project;
     var sequence = project.activeSequence;
@@ -754,8 +780,10 @@ function bakeKeyframes(argsJSON) {
     if (!sequence) return _jsonStringify({ success: false, error: 'No active sequence' });
     var totalActions = 0;
     var firstErr = null;
+    var cleanupErr = null;
 
     var undoInfo = [];
+    var undoPushed = false;
 
     // Premiere's ExtendScript `app` has no beginUndoGroup/endUndoGroup (that's
     // an After Effects API), so only use it if present. Undo is handled by the
@@ -778,7 +806,7 @@ function bakeKeyframes(argsJSON) {
       }
     }
 
-    try { bSeqId = String(sequence.sequenceID || sequence.name || ''); } catch(e) {}
+    bSeqIdentity = _ocSeqIdentity(sequence);
     var _hasUndoGroup = (typeof app.beginUndoGroup === 'function' && typeof app.endUndoGroup === 'function');
     if (_hasUndoGroup) app.beginUndoGroup('OpenCurve bake');
     try {
@@ -828,15 +856,32 @@ function bakeKeyframes(argsJSON) {
           // would defeat the batching speed-up.
           var doUpdate = (f + step >= totalFrames);
 
+          var keyAdded = false;
           try {
             prop.addKey(timeSec);
+            keyAdded = true;
             prop.setValueAtKey(timeSec, value, doUpdate);
             // The exact value addKey received: _ocUndoInfo removes by matching
             // these against the live keys, and a rounded copy risked missing
             // the tick Premiere stored (rounding for size can happen at export).
             addedTimes.push(timeSec);
             totalActions++;
-          } catch(e) { if (!firstErr) firstErr = label + ': ' + (e.message || String(e)); }
+          } catch(e) {
+            var writeError = e.message || String(e);
+            if (!firstErr) firstErr = label + ': ' + writeError;
+            if (keyAdded) {
+              try {
+                prop.removeKey(timeSec, doUpdate);
+              } catch(removeError) {
+                // Keep the failed key in the record so it remains undoable.
+                addedTimes.push(timeSec);
+                if (!cleanupErr) {
+                  cleanupErr = label + ': keyframe cleanup failed after setValueAtKey error ('
+                    + writeError + '): ' + (removeError.message || String(removeError));
+                }
+              }
+            }
+          }
         }
 
         // Capture a stable clip/component identity alongside the indices so
@@ -847,7 +892,7 @@ function bakeKeyframes(argsJSON) {
         var bMatchName = ''; try { bMatchName = comp.matchName; } catch(e) {}
         var bNodeId = '';    try { bNodeId = String(clip.nodeId || ''); } catch(e) {}
 
-        undoInfo.push({
+        if (addedTimes.length) undoInfo.push({
           id: ++_ocBakeSeq,          // referenced by the panel's per-row undo button
           kf0Time: ref.kf0Time,      // range the bake filled, for spotting an external undo
           kf1Time: ref.kf1Time,
@@ -863,7 +908,8 @@ function bakeKeyframes(argsJSON) {
           times: addedTimes,
           step: step,                // keyframe spacing used, so a wider pair inside the span means an outside undo
           curve: curve,              // for the row's "load baked curve" button
-          seqId: bSeqId,             // records are restored across sessions; never match another sequence's clips
+          seqId: bSeqIdentity.seqId,
+          seqIdType: bSeqIdentity.seqIdType,
         });
       }
     } finally {
@@ -875,12 +921,37 @@ function bakeKeyframes(argsJSON) {
     _ocCacheKey = null; _ocParamCache = null;
 
     if (totalActions === 0) {
-      return _jsonStringify({ success: false, error: firstErr || 'No keyframes were written.' });
+      if (undoInfo.length) {
+        _undoStack.push(undoInfo);
+        undoPushed = true;
+      }
+      var failedMessage = firstErr || 'No keyframes were written.';
+      if (cleanupErr) failedMessage += '; ' + cleanupErr;
+      return _jsonStringify({
+        success: false,
+        error: failedMessage,
+        warning: cleanupErr,
+        undoAvailable: undoInfo.length > 0
+      });
     }
 
     _undoStack.push(undoInfo);
-    return _jsonStringify({ success: true, actions: totalActions, warning: firstErr });
+    undoPushed = true;
+    var warning = firstErr || '';
+    if (cleanupErr) warning += (warning ? '; ' : '') + cleanupErr;
+    return _jsonStringify({ success: true, actions: totalActions, warning: warning || null });
   } catch(err) {
+    if (undoInfo && undoInfo.length && !undoPushed) {
+      _undoStack.push(undoInfo);
+      var errorMessage = err.message || String(err);
+      if (cleanupErr) errorMessage += '; ' + cleanupErr;
+      return _jsonStringify({
+        success: false,
+        error: errorMessage,
+        warning: cleanupErr,
+        undoAvailable: true
+      });
+    }
     return _jsonStringify({ success: false, error: err.message || String(err) });
   }
 }
@@ -945,6 +1016,9 @@ function importBakeRecords(json) {
 function _ocUndoInfo(sequence, info) {
   var removed = 0;
   try {
+    if (!_ocSeqMatches(info, sequence)) {
+      return { removed: 0, skipped: 1, reason: 'sequence-mismatch' };
+    }
     var clip = null;
     if (info.nodeId) {
       // The clip may have been moved since the bake: find it by its stable id
@@ -1022,7 +1096,7 @@ function _ocUndoInfo(sequence, info) {
 // Locate a clip anywhere in the sequence by its stable nodeId (cached
 // structure first, then a live walk in case the cache is behind).
 function _ocClipByNodeId(sequence, nodeId) {
-  if (_ocTracks) {
+  if (_ocTracks && _ocTracksSeq === _ocSeqId(sequence)) {
     for (var ti = 0; ti < _ocTracks.length; ti++) {
       var items = _ocTracks[ti].items;
       for (var i = 0; i < items.length; i++) {
@@ -1140,7 +1214,11 @@ function undoBakeParam(idsStr) {
   try {
     var ids = String(idsStr).split(',');
     var sequence = app.project.activeSequence;
+    if (!sequence) {
+      return _jsonStringify({ success: false, error: 'No active sequence; the bake record was kept for retry.', remaining: _ocSessionBatches() });
+    }
     var removed = 0, skipped = 0, found = 0;
+    var sequenceSkipped = 0;
 
     var _hasUndoGroup = (typeof app.beginUndoGroup === 'function' && typeof app.endUndoGroup === 'function');
     if (_hasUndoGroup) app.beginUndoGroup('OpenCurve undo bake');
@@ -1151,6 +1229,7 @@ function undoBakeParam(idsStr) {
         found++;
         var r = _ocUndoInfo(sequence, loc.batch[loc.index]);
         removed += r.removed; skipped += r.skipped;
+        if (r.reason === 'sequence-mismatch') sequenceSkipped++;
         // Keep the record if the clip moved, so the user can reselect and retry
         if (r.skipped === 0) loc.batch.splice(loc.index, 1);
       }
@@ -1169,9 +1248,16 @@ function undoBakeParam(idsStr) {
       var why = skipped > 0
         ? 'Could not undo \u2014 the clip may have moved or changed. Select it and try again.'
         : 'Nothing to undo: those keyframes are already gone';
+      if (sequenceSkipped) why = 'Could not undo — the active sequence differs from the sequence where these keyframes were baked. Switch back to that sequence and retry.';
       return _jsonStringify({ success: false, error: why, remaining: _ocSessionBatches() });
     }
-    return _jsonStringify({ success: true, removed: removed, skipped: skipped, remaining: _ocSessionBatches() });
+    return _jsonStringify({
+      success: true,
+      removed: removed,
+      skipped: skipped,
+      warning: sequenceSkipped ? 'Some records belong to a different sequence and were kept for retry.' : null,
+      remaining: _ocSessionBatches()
+    });
   } catch(err) {
     return _jsonStringify({ success: false, error: err.message || String(err) });
   }
@@ -1200,10 +1286,14 @@ function undoBake() {
       return _jsonStringify({ success: false, error: 'Nothing to undo from this session' });
     }
 
-    var batch = _undoStack.pop();
     var sequence = app.project.activeSequence;
+    if (!sequence) {
+      return _jsonStringify({ success: false, error: 'No active sequence; the bake record was kept for retry.', remaining: _ocSessionBatches() });
+    }
+    var batch = _undoStack.pop();
     var removed = 0;
     var skipped = 0;
+    var sequenceSkipped = 0;
     var kept = []; // records whose clip could not be found: keep them for a retry
 
     var _hasUndoGroup = (typeof app.beginUndoGroup === 'function' && typeof app.endUndoGroup === 'function');
@@ -1212,6 +1302,7 @@ function undoBake() {
       for (var i = 0; i < batch.length; i++) {
         var r = _ocUndoInfo(sequence, batch[i]);
         removed += r.removed; skipped += r.skipped;
+        if (r.reason === 'sequence-mismatch') sequenceSkipped++;
         // undoBakeParam keeps a skipped record for the same reason: dropping it
         // strands keyframes that are still on the clip with no record to undo
         // them, so the row loses its green state and its undo button for good.
@@ -1228,7 +1319,10 @@ function undoBake() {
       // Removed nothing — most likely the clip moved/changed since baking.
       // Put the batch back so the user can retry after reselecting the clip.
       _undoStack.push(batch);
-      return _jsonStringify({ success: false, error: 'Could not undo — the original clip may have moved or changed. Select it and try again.', remaining: _ocSessionBatches() });
+      var undoError = sequenceSkipped > 0
+        ? 'Could not undo — the active sequence differs from the sequence where this bake occurred. Switch back to that sequence and retry.'
+        : 'Could not undo — the original clip may have moved or changed. Select it and try again.';
+      return _jsonStringify({ success: false, error: undoError, remaining: _ocSessionBatches() });
     }
 
     // Part of the batch was undone; whatever could not be reached is kept for
@@ -1238,7 +1332,13 @@ function undoBake() {
     // behind it could no longer be undone with this button.
     if (kept.length) { _undoStack.unshift(kept); _ocSessionFloor++; }
 
-    return _jsonStringify({ success: true, removed: removed, skipped: skipped, remaining: _ocSessionBatches() });
+    return _jsonStringify({
+      success: true,
+      removed: removed,
+      skipped: skipped,
+      warning: sequenceSkipped ? 'Some records belong to a different sequence and were kept for retry.' : null,
+      remaining: _ocSessionBatches()
+    });
   } catch(err) {
     return _jsonStringify({ success: false, error: err.message || String(err) });
   }
