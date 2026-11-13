@@ -1565,9 +1565,9 @@ async function _selIdentities(selItems) {
 
 // Returns ALL clips at the playhead on the video tracks (topmost first), or with
 // `audio` on the audio tracks (A1 first). The audio tracks are only scanned when
-// no video clip at the playhead has a keyframed property, so a video clip still
-// wins over the audio under it and timelines with no audio keyframes pay nothing
-// extra (issue #12: audio Level keyframes were never offered).
+// no video clip at the playhead has a keyframe pair around it, so a video clip
+// still wins over the audio under it and a playhead inside a video pair costs
+// nothing extra (issue #12: audio Level keyframes were never offered).
 async function _clipsViaTrackScan(sequence, ph, audio) {
   var results = [];
   await _scanTracksAt(sequence, ph, !!audio, results);
@@ -1615,18 +1615,24 @@ async function _scanTracksAt(sequence, ph, audio, results) {
   }
 }
 
-// Every selected clip with a component chain, video ones first. A linked clip
-// selects its video and its audio together: the video is tried first and the
-// audio is used when the video has no keyframed property (issue #12; until
-// 2.0.1 audio items were skipped outright).
-async function _clipsViaSelection(sequence, selItems) {
+// The selected clips as scan candidates: `here` holds the selected clips under
+// the playhead, video first (a linked clip selects its video and its audio
+// together: the video is tried first, the audio when the video has no keyframed
+// property; until 2.0.1 audio items were skipped outright, issue #12). With
+// none under the playhead, `elsewhere` is the first selected video clip, which
+// is what the panel always showed for a selection away from the playhead.
+// Name, start and end of every selected item are read in one parallel batch and
+// only the clips under the playhead are looked at further, so a big selection
+// (Ctrl+A) doesn't cost several round trips per clip on every scan.
+async function _selCandidates(sequence, selItems, ph) {
   // selItems is passed in by detectContext, which fetched it for this poll
   if (!selItems) { try { selItems = await _getSelectionItems(sequence); } catch(_) { selItems = null; } }
-  var video = [], audio = [];
-  for (var si = 0; si < (selItems || []).length; si++) {
+  var items = Array.prototype.slice.call(selItems || []);
+  var infos = await Promise.all(items.map(function(it) { return _clipInfo(it).catch(function() { return null; }); }));
+  async function describe(i) {
     try {
-      var ch = await selItems[si].getComponentChain();
-      if (!ch) continue;
+      var ch = await items[i].getComponentChain();
+      if (!ch) return null;
       // Audio chains hold audio-only components ("Internal Volume Mono" and so on)
       var cc = 0; try { cc = await _call(ch, 'getComponentCount'); } catch(_) {}
       var isAudio = false;
@@ -1635,17 +1641,35 @@ async function _clipsViaSelection(sequence, selItems) {
         var mn = ''; try { mn = await _call(firstComp, 'getMatchName'); } catch(_) {}
         isAudio = mn.indexOf('Internal') === 0;
       }
-      // One read for name, start and end instead of three separate passes
-      var info = await _clipInfo(selItems[si]);
-      var trackIdx = -1; try { trackIdx = await selItems[si].getTrackIndex(); } catch(_) {}
-      (isAudio ? audio : video).push({ clip: selItems[si], chain: ch, clipStart: info.start >= 0 ? info.start : 0,
-               clipEnd: info.end, viaSelection: true, identity: info.id, isAudio: isAudio, trackIdx: trackIdx });
-    } catch(_) {}
+      var trackIdx = -1; try { trackIdx = await items[i].getTrackIndex(); } catch(_) {}
+      var info = infos[i];
+      return { clip: items[i], chain: ch, clipStart: info.start >= 0 ? info.start : 0, clipEnd: info.end,
+               viaSelection: true, identity: info.id, isAudio: isAudio, trackIdx: trackIdx };
+    } catch(_) { return null; }
   }
-  return video.concat(audio);
+  var here = [];
+  for (var i = 0; i < items.length; i++) {
+    var inf = infos[i];
+    if (!inf || inf.start < 0 || inf.end < 0 || ph < inf.start || ph >= inf.end) continue;
+    var c = await describe(i);
+    if (c) here.push(c);
+  }
+  here.sort(function(a, b) { return (a.isAudio ? 1 : 0) - (b.isAudio ? 1 : 0); });
+  var elsewhere = null;
+  if (!here.length) {
+    for (var j = 0; j < items.length && !elsewhere; j++) {
+      if (!infos[j]) continue;
+      var d = await describe(j);
+      if (d && !d.isAudio) elsewhere = d;
+    }
+  }
+  return { here: here, elsewhere: elsewhere };
 }
 async function _clipViaSelection(sequence, selItems) {
-  return (await _clipsViaSelection(sequence, selItems))[0] || null;
+  var ph = 0;
+  try { ph = (await sequence.getPlayerPosition()).seconds; } catch(_) {}
+  var s = await _selCandidates(sequence, selItems, ph);
+  return s.here[0] || s.elsewhere || null;
 }
 
 // How a clip's keyframe times (source media seconds) map to sequence time.
@@ -2367,6 +2391,7 @@ function _jumpPair(kfSecs, phLocal, fps) {
 async function _detectContextFull(project, sequence, ph, selItems) {
   var bestQualified = null;
   var bestFound     = null;
+  var recFloor      = _bakeSeq; // records newer than this scan aren't judged by it
 
   // In-point, media in-point and speed of a candidate clip, then its keyframed
   // properties around the playhead's media time
@@ -2396,28 +2421,31 @@ async function _detectContextFull(project, sequence, ph, selItems) {
     if (!fallback) fallback = { qp: qp, c: c };
     return false;
   }
-  var sels = [];
-  try { sels = await _clipsViaSelection(sequence, selItems); } catch(_) {}
+  var selc = { here: [], elsewhere: null };
+  try { selc = await _selCandidates(sequence, selItems, ph); } catch(_) {}
+  var sels = selc.here.length ? selc.here : (selc.elsewhere ? [selc.elsewhere] : []);
   for (var si = 0; si < sels.length; si++) {
     if (await consider(sels[si])) break;
   }
-  var sel = sels[0] || null;
+  // A selected VIDEO clip is respected: no other clip's keyframes are shown. A
+  // selected audio clip alone isn't: a music bed left selected would otherwise
+  // hide every keyframed video clip, so the clips under the playhead are still
+  // scanned and the selected audio only goes first.
+  var respectSel = sels.some(function(c) { return !c.isAudio; });
 
-  // 2. Fall back to track scan only if NO clip is selected.
-  // When a clip IS selected but has no qualifying params, respect
-  // that selection — don't show another clip's keyframes.
+  // 2. Track scan: video tracks, then audio tracks only when no video clip at
+  // the playhead has a pair around it (selected clips already tried are skipped)
   var scanned = [];
-  if (!bestQualified && !sel) {
-    try { scanned = await _clipsViaTrackScan(sequence, ph, false); } catch(_) {}
-    // Audio clips only when nothing on the video tracks qualifies
+  if (!bestQualified && !respectSel) {
+    var tried = function(c) {
+      return sels.some(function(s) { return !!s.isAudio === !!c.isAudio && String(c.identity).indexOf(s.identity + '|') === 0; });
+    };
     for (var pass = 0; pass < 2 && !bestQualified; pass++) {
-      var list = scanned;
-      if (pass === 1) {
-        list = [];
-        try { list = await _clipsViaTrackScan(sequence, ph, true); } catch(_) {}
-        scanned = scanned.concat(list);
-      }
+      var list = [];
+      try { list = await _clipsViaTrackScan(sequence, ph, pass === 1); } catch(_) {}
+      scanned = scanned.concat(list);
       for (var ci = 0; ci < list.length; ci++) {
+        if (tried(list[ci])) continue;
         if (await consider(list[ci])) break;
       }
     }
@@ -2425,7 +2453,7 @@ async function _detectContextFull(project, sequence, ph, selItems) {
   if (!bestQualified && fallback) { bestQualified = fallback.qp; bestFound = fallback.c; }
 
   // No clips found at playhead at all
-  if (!sel && scanned.length === 0) {
+  if (!sels.length && scanned.length === 0) {
     return { status: 'no-clip', availableParams: [], hint: 'No clip found at playhead position' };
   }
 
@@ -2478,7 +2506,9 @@ async function _detectContextFull(project, sequence, ph, selItems) {
   });
   // Which bake records hold on each row (times and values, see _evalRecords);
   // also retires records whose bake is gone from every clip that shared it
-  await _evalRecords(clipId, paramList, sequence, { start: found.clipStart || 0, trackIdx: found.trackIdx, isAudio: !!found.isAudio });
+  var hereInfo = { start: found.clipStart || 0, trackIdx: found.trackIdx, isAudio: !!found.isAudio };
+  var retireList = await _evalRecords(clipId, paramList, sequence, hereInfo, recFloor);
+  function withRetire(o) { o._retire = retireList; o._retireSeq = sequence; o._retireHere = hereInfo; return o; }
   var validParams = bestQualified.filter(function(p){ return !p.isOutside; });
 
   if (validParams.length === 0) {
@@ -2490,10 +2520,10 @@ async function _detectContextFull(project, sequence, ph, selItems) {
       if ((hq.kf1.seconds - hq.kf0.seconds) * mfps >= 2) { hintP = hq; break; }
     }
     if (!hintP) hintP = bestQualified[0];
-    return {
+    return withRetire({
       status: 'outside', availableParams: paramList, validParamKeys: [], clipId: clipId, clipName: clipName, tl: tlInfo,
       hint: 'Move playhead between keyframes (' + hintP.kf0.seconds.toFixed(2) + 's – ' + hintP.kf1.seconds.toFixed(2) + 's)',
-    };
+    });
   }
   var paramContexts = {};
   for (var vi = 0; vi < validParams.length; vi++) {
@@ -2525,17 +2555,17 @@ async function _detectContextFull(project, sequence, ph, selItems) {
     // Playhead is inside keyframe pairs, but every pair is one a previous bake
     // left behind (a frame apart, or inside a bake record). Nothing here can be
     // eased again, so say so instead of reporting "valid" with nothing to bake.
-    return {
+    return withRetire({
       status: 'outside', availableParams: paramList, validParamKeys: [], clipId: clipId, clipName: clipName, tl: tlInfo,
       hint: 'Already baked here. Move the playhead to an unbaked keyframe pair',
-    };
+    });
   }
 
   var firstCtx  = validParamKeys.length > 0 ? paramContexts[validParamKeys[0]] : null;
   var hintFrames = firstCtx ? firstCtx.frameCount + ' frames' : '';
   var selectionHint = found.viaSelection ? ' (selected clip)' : '';
 
-  return {
+  return withRetire({
     status: 'valid',
     availableParams: paramList,
     validParamKeys: validParamKeys,
@@ -2544,7 +2574,7 @@ async function _detectContextFull(project, sequence, ph, selItems) {
     tl: tlInfo,
     paramContexts: paramContexts,
     hint: hintFrames + selectionHint,
-  };
+  });
 }
 
 async function detectContext() {
@@ -2780,7 +2810,20 @@ async function bakeKeyframes(contexts, curve) {
   console.log('[FS] bake done: '+added+' keyframes across '+jobs.length+' param(s)');
   // What was written, per input context, so the caller can record it for undo
   if (added === 0) throw new Error('Premiere did not accept the keyframes. Try again.');
-  return jobs.map(function(j){ return { ci: j.ci, step: j.step, times: j.specs.map(function(x){ return x.seconds; }), fp: _fpFromSpecs(j.specs) }; });
+  // The records' value fingerprint is read back from Premiere, not taken from
+  // what was sent: a property can clamp or round a value (an overshoot past
+  // its range, an integer parameter), and the computed value would then never
+  // match and the fresh record would be dropped. No fingerprint if a read fails.
+  for (var fj = 0; fj < jobs.length; fj++) {
+    var cand = _fpFromSpecs(jobs[fj].specs);
+    var got = await Promise.all(cand.map(function(e) {
+      return Promise.resolve(_getValue(jobs[fj].param, ppro.TickTime.createWithSeconds(e[0]))).then(_extractValue, function() { return null; });
+    }));
+    jobs[fj].fp = got.every(function(v) { return v !== null; })
+      ? cand.map(function(e, i) { return [e[0], Array.isArray(got[i]) ? [got[i][0], got[i][1]] : got[i]]; })
+      : null;
+  }
+  return jobs.map(function(j){ return { ci: j.ci, step: j.step, times: j.specs.map(function(x){ return x.seconds; }), fp: j.fp }; });
 }
 
 // ─── Bake records / per-property undo ────────────────────────────────────
@@ -2960,58 +3003,105 @@ async function _recValsOk(rec, param) {
 }
 // Cached verdicts, so a record that doesn't hold on a copy isn't re-read (or
 // the sequence re-walked for it) on every poll: record id + the clip's place
-// on the timeline + the property's keyframe signature
+// on the timeline + the property's keyframe signature. They expire after
+// _REC_VERDICT_MS, since two copies swapped into each other's place would
+// otherwise inherit each other's verdicts.
 var _recVerdicts = {}, _recVerdictCount = 0;
+var _REC_VERDICT_MS = 10000;
+function _verdict(vk) {
+  var e = _recVerdicts[vk];
+  return (e && Date.now() - e.at < _REC_VERDICT_MS) ? e.v : undefined;
+}
+function _setVerdict(vk, v) {
+  if (!_recVerdicts[vk]) _recVerdictCount++;
+  _recVerdicts[vk] = { v: v, at: Date.now() };
+}
 function _kfSig(kf) {
   var sum = 0;
   for (var i = 0; i < (kf || []).length; i++) sum += kf[i];
   return (kf || []).length + ':' + Math.round(sum * 1e4);
 }
-// Mark the records that don't hold on each row (p._recBad), and retire the
-// ones whose bake is gone from every clip that shared it.
-async function _evalRecords(clipId, avail, sequence, here) {
+// Mark the records that don't hold on each row (p._recBad) and return the ones
+// to retire (_applyRetire forgets those whose bake is gone from every clip that
+// shared it). Nothing is dropped here: a scan's result can still be thrown away
+// (Go pressed meanwhile), and its pre-bake keyframes would make a fresh record
+// look undone. Records made after the scan began (id above recFloor) aren't
+// judged at all, for the same reason.
+async function _evalRecords(clipId, avail, sequence, here, recFloor) {
   if (_recVerdictCount > 4000) { _recVerdicts = {}; _recVerdictCount = 0; }
   var place = here ? (here.isAudio ? 'A' : 'V') + here.trackIdx + '@' + (here.start || 0).toFixed(4) : '';
   var retire = [];
   for (var pi = 0; pi < (avail || []).length; pi++) {
     var p = avail[pi];
     p._recBad = [];
-    var recs = _bakesFor(clipId, p.key).filter(function(r){ return _recForRow(r, p); });
+    var recs = _bakesFor(clipId, p.key).filter(function(r){ return _recForRow(r, p) && !(recFloor >= 0 && r.id > recFloor); });
     if (!recs.length) continue;
     var sig = _kfSig(p._kf);
     for (var ri = 0; ri < recs.length; ri++) {
       var rec = recs[ri];
       // Fingerprint gone, or the playhead's bracketing pair inside the span is
       // wider than the bake's keyframe spacing (one of ours would be narrower):
-      // the bake was undone or edited outside the panel
+      // the bake was undone or edited outside the panel. The width is counted
+      // at the frame rate the bake used (rec.fps): a record from before 2.0.2
+      // on a slowed-down clip was written a sequence frame apart, which is more
+      // than one frame of the media rate the rows now count in.
       var dead = Array.isArray(p._kf) && !_recAlive(rec, p._kf);
-      if (!dead && _recHere(rec, p) && typeof p._fc === 'number' && p._fc > (rec.step || 1)) dead = true;
+      if (!dead && _recHere(rec, p) && typeof p._kf0 === 'number' && !p._out) {
+        var fcRec = rec.fps > 0 ? Math.round((p._kf1 - p._kf0) * rec.fps) : p._fc;
+        if (typeof fcRec === 'number' && fcRec > (rec.step || 1)) dead = true;
+      }
       var vk = rec.id + '|' + place + '|' + sig;
-      if (!dead && rec.fp) {
-        var v = _recVerdicts[vk];
+      var v = _verdict(vk);
+      // 'kept': judged dead here with these very keyframes and carried by a copy
+      if (v === 'kept') dead = true;
+      else if (!dead && rec.fp) {
         if (v === undefined) {
           v = (await _recValsOk(rec, p._param)) ? 'ok' : 'bad';
-          _recVerdicts[vk] = v; _recVerdictCount++;
+          _setVerdict(vk, v);
         }
         if (v !== 'ok') dead = true;
       }
       if (!dead) continue;
       p._recBad.push(rec.id);
-      if (_recVerdicts[vk] !== 'kept') retire.push({ rec: rec, vk: vk });
+      if (v !== 'kept') retire.push({ rec: rec, vk: vk });
     }
   }
-  for (var k = 0; k < retire.length; k++) {
-    var r = retire[k];
+  return retire;
+}
+// Retire what a scan found dead, once its result is applied: keep a record a
+// copy of the clip still carries, forget the rest. A kept record that has lost
+// the very clip it was baked on (its keyframes deleted there by hand) also
+// leaves the panel-wide Undo and drops its handle, like _retireBake, so that
+// button never reaches across to the copy; one that merely doesn't hold on the
+// clip being viewed (another copy's own bake) is left as it is.
+function _samePlace(a, b) {
+  return !!a && !!b && !!a.isAudio === !!b.isAudio && a.trackIdx === b.trackIdx && Math.abs((a.start || 0) - (b.start || 0)) < 1e-4;
+}
+async function _applyRetire(list, sequence, here) {
+  for (var k = 0; k < (list || []).length; k++) {
+    var r = list[k];
     if (_bakeRecords.indexOf(r.rec) < 0) continue;
     var other = null;
     try { other = await _findRecCarrier(r.rec, sequence, here); } catch(_) {}
     if (other) {
-      if (_recVerdicts[r.vk] === undefined) _recVerdictCount++;
-      _recVerdicts[r.vk] = 'kept';
+      _setVerdict(r.vk, 'kept');
+      if (!r.rec.place || _samePlace(here, r.rec.place)) {
+        r.rec.param = null;
+        if (r.rec.batch > _sessionBatchFloor) { r.rec.batch = 0; _saveBakeRecords(); _showUndoBtn(_hasSessionBakes()); }
+      }
     } else {
       _dropBake(r.rec);
+      _showUndoBtn(_hasSessionBakes());
     }
   }
+}
+// A scan result's pending retirements, applied once (the result object is
+// cached and handed out again on idle polls)
+async function _applyResultRetire(result) {
+  if (!result || !result._retire) return;
+  var rl = result._retire;
+  result._retire = null;
+  if (rl.length) await _applyRetire(rl, result._retireSeq, result._retireHere);
 }
 // clipId = sequence guid | clip name | in-point (4 decimals); the name may hold '|'
 function _parseClipId(clipId) {
@@ -3064,7 +3154,7 @@ async function _clipsWithIdentity(sequence, name, inStr) {
         return Promise.resolve(it.getName()).then(function(v) { return String(v || ''); }, function() { return ''; });
       }));
       for (var i = 0; i < items.length; i++) {
-        if (names[i] !== name) continue;
+        if ((names[i] || '?') !== name) continue; // clipId writes a nameless clip as '?'
         try {
           var ip = await _clipInPoint(items[i]);
           if (ip.toFixed(4) !== inStr) continue;
@@ -3230,9 +3320,13 @@ async function _undoRecords(recs, label, key) {
       // bake: look for the clip that does, by name and in-point, anywhere in
       // the active sequence. Until 2.0.2 this said "Move the playhead over that
       // clip" even with the playhead on it, and the Undo button did nothing.
+      // A row undo acts on the row's own clip only: if that clip doesn't carry
+      // the bake, a copy elsewhere is left alone
       if (!have || !_recAlive(rec, have)) {
         var found = null;
-        try { found = await _findRecCarrier(rec, sequence, null); } catch(_) {}
+        if (!(key && liveRow && liveRow._param)) {
+          try { found = await _findRecCarrier(rec, sequence, null); } catch(_) {}
+        }
         if (found) {
           param = found.param;
           rec.param = param;
@@ -3243,7 +3337,7 @@ async function _undoRecords(recs, label, key) {
           continue;
         }
       }
-      if (!have || !_recAlive(rec, have)) { _dropBake(rec); continue; }
+      if (!have || !_recAlive(rec, have)) { await _retireBake(rec, sequence, null); continue; }
       var times = rec.times.filter(function(t){
         return have.some(function(h){ return Math.abs(h - t) < 1e-4; });
       });
@@ -3255,7 +3349,6 @@ async function _undoRecords(recs, label, key) {
     }
     if (jobs.length === 0) {
       // Nothing of ours is left (undone with Ctrl+Z, or the keyframes were edited away)
-      recs.forEach(_dropBake);
       _showUndoBtn(_hasSessionBakes());
       _invalidateCache();
       _showCopyToast('Nothing to undo: those keyframes are already gone', '#f0a030');
@@ -6743,6 +6836,7 @@ async function _freshBakeContexts(s, keys) {
   var selItems = null;
   try { selItems = await _getSelectionItems(sequence); } catch(_) {}
   var r = await _detectContextFull(project, sequence, ph, selItems);
+  await _applyResultRetire(r);
   var keep = [], ctxs = [];
   if (r.status === 'valid' && r.clipId === s.clipId) {
     keys.forEach(function(k) {
@@ -6892,6 +6986,11 @@ async function poll() {
     // record's range would look like an outside undo and drop the record
     // (the row then showed orange instead of green). Discard it.
     if (getState().isBaking || Date.now() < _skipPollUntil) return;
+    // Records this scan found dead are only forgotten now that its result is kept
+    if (result && result._retire) {
+      await _applyResultRetire(result);
+      if (_pollToken !== _myPoll || getState().isBaking || Date.now() < _skipPollUntil) return;
+    }
     s = getState();
     var updates = {
       status:          result.status,
@@ -6994,7 +7093,7 @@ function _pollSig(u) {
 }
 
 // ─── Settings / flyout ─────────────────────────────────────────────────────
-var CURRENT_VERSION     = '2.0.1';
+var CURRENT_VERSION     = '2.0.2';
 var _CURVE_COLOR_KEY    = 'opencurve-line-color';
 var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#ffffff';
 // [exchange-strip]

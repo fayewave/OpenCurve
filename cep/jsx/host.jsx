@@ -500,12 +500,29 @@ function detectContext() {
       if (found[fi].isSel) selectedClips.push(found[fi]); else otherClips.push(found[fi]);
     }
 
-    // When a clip is selected, only check that clip — don't fall through
-    // to other clips if it has no keyframes.
-    var hasSelection = selectedClips.length > 0;
-    var allClipResults = hasSelection ? selectedClips : otherClips;
+    // When a video clip is selected, only check the selected clips — don't fall
+    // through to other clips if they have no keyframes. A selected audio clip
+    // alone isn't respected that way: a music bed left selected would otherwise
+    // hide every keyframed video clip, so it only goes first, then the video
+    // clips here and the rest of the audio as usual.
+    var hasSelection = false;
+    for (var _hs = 0; _hs < selectedClips.length; _hs++) if (!selectedClips[_hs].isAudio) { hasSelection = true; break; }
+    var allClipResults = hasSelection ? selectedClips : selectedClips.concat(otherClips);
+    var _otherAudio = [];
+    if (!hasSelection && audioSel) {
+      // the unselected audio clips here are already walked: keep them for the fallback
+      for (var _oa = allClipResults.length - 1; _oa >= 0; _oa--) {
+        if (allClipResults[_oa].isAudio && !allClipResults[_oa].isSel) _otherAudio.unshift(allClipResults.splice(_oa, 1)[0]);
+      }
+      audioPending = _otherAudio.length > 0;
+    }
     if (hasSelection) audioPending = false;   // respect the selection
-    if (audioPending && allClipResults.length === 0) { allClipResults = _ocAudioAt(sequence, ph); audioPending = false; }
+    // The audio clips under the playhead that aren't in the list yet
+    var audioRest = function() {
+      if (audioSel) return _otherAudio;
+      return _ocAudioAt(sequence, ph);
+    };
+    if (audioPending && allClipResults.length === 0) { allClipResults = audioRest(); audioPending = false; }
 
     // ── Cache short-circuit ──
     // Build a cheap signature from the playhead + the clips at the playhead.
@@ -539,8 +556,16 @@ function detectContext() {
     var nowMs = new Date().getTime();
     if (_ocParamCache && _ocParamCache.key === clipsKey && (nowMs - _ocParamCache.at) < _OC_PARAM_CACHE_MS) {
       // The cached clip may be an audio clip found by the fallback below
-      if (_ocParamCache.isAudio && audioPending) { allClipResults = allClipResults.concat(_ocAudioAt(sequence, ph)); audioPending = false; }
+      if (_ocParamCache.isAudio && audioPending) { allClipResults = allClipResults.concat(audioRest()); audioPending = false; }
       bestParams = _ocParamsFromCache(_ocParamCache, allClipResults, ph, fps);
+      // The cached clip had no pair around the playhead (it was only the
+      // fallback) and other clips are here: scan again in case one now has one,
+      // or a lower clip stays hidden until the cache expires
+      if (bestParams !== null && bestParams.length > 0 && (allClipResults.length > 1 || audioPending)) {
+        var _allOut = true;
+        for (var _ao = 0; _ao < bestParams.length; _ao++) if (!bestParams[_ao].isOutside) { _allOut = false; break; }
+        if (_allOut) bestParams = null;
+      }
       if (bestParams !== null && bestParams.length > 0) _ocScanKind = 'fast';
       if (bestParams !== null && bestParams.length === 0) bestParams = null;
     }
@@ -551,7 +576,7 @@ function detectContext() {
     var moreAudio = function() {
       if (!audioPending) return false;
       audioPending = false;
-      allClipResults = allClipResults.concat(_ocAudioAt(sequence, ph));
+      allClipResults = allClipResults.concat(audioRest());
       return ci < allClipResults.length;
     };
     for (var ci = 0; bestParams === null && (ci < allClipResults.length || moreAudio()); ci++) {
@@ -715,7 +740,7 @@ function detectContext() {
     var paramContexts = {};
 
     // Media seconds -> sequence seconds for a scanned property's clip
-    function _seqT(p, m) { return p.clipStart + (m - p.clipInPoint) / (p.speed || 1); }
+    var _seqT = function(p, m) { return p.clipStart + (m - p.clipInPoint) / (p.speed || 1); };
     for (var pi = 0; pi < bestParams.length; pi++) {
       var p = bestParams[pi];
       // Bake records for this property (same clip, component and property as
@@ -744,7 +769,8 @@ function detectContext() {
           // inside the span wider than the bake's keyframe spacing means the
           // bake was undone outside the panel (one of ours would be narrower).
           var _alive = (p.kfSecs && p.kfSecs.length) ? _ocBakeAlive(_inf, p.kfSecs) : true;
-          if (!_alive || (!p.isOutside && p.frameCount > (_inf.step || 1) && p.kf0Time >= _inf.kf0Time - 0.0001 && p.kf1Time <= _inf.kf1Time + 0.0001)) {
+          var _fcRec = Math.round((p.kf1Time - p.kf0Time) * (_inf.fps || p.seqFps || p.fps));
+          if (!_alive || (!p.isOutside && _fcRec > (_inf.step || 1) && p.kf0Time >= _inf.kf0Time - 0.0001 && p.kf1Time <= _inf.kf1Time + 0.0001)) {
             _bb.splice(_bj, 1);
             continue;
           }
@@ -778,6 +804,7 @@ function detectContext() {
       if (!p.isOutside && p.frameCount >= 2 && bakeIds.length === 0) {
         validParamKeys.push(p.key);
         paramContexts[p.key] = {
+          key: p.key,
           trackIdx: p.trackIdx,
           isAudio: !!p.isAudio,
           nodeId: p.nodeId || '',
@@ -919,6 +946,23 @@ function _ocRetimed(prop, t0, t1, es) {
   return out;
 }
 
+// Is this pair (property keyframe times kfSecs) inside a live bake record of
+// the same clip and property? Same matching as detectContext's bakeIds loop.
+function _ocPairCovered(nodeId, clipName, clipStart, displayName, kfSecs, kf0, kf1) {
+  for (var bi = 0; bi < _undoStack.length; bi++) {
+    var b = _undoStack[bi];
+    for (var bj = 0; bj < b.length; bj++) {
+      var inf = b[bj];
+      if (inf.nodeId && nodeId) { if (inf.nodeId !== nodeId) continue; }
+      else if (inf.clipName !== (clipName || '') || Math.abs(inf.clipStart - clipStart) > 0.0005) continue;
+      if (inf.displayName && displayName && inf.displayName !== displayName) continue;
+      if (!_ocBakeAlive(inf, kfSecs)) continue;
+      if (kf0 >= inf.kf0Time - 0.0001 && kf1 <= inf.kf1Time + 0.0001) return true;
+    }
+  }
+  return false;
+}
+
 // The clip a bake/undo reference points at: its indices when they still lead to
 // the same clip (name + start), else its stable nodeId anywhere on the same kind
 // of track. Returns { clip, trackIdx, clipIdx } or null.
@@ -963,6 +1007,7 @@ function bakeKeyframes(argsJSON) {
     var totalActions = 0;
     var firstErr = null;
     var undoInfo = [];
+    var bakedKeys = [];  // keys actually written, so the panel only turns those green
 
     // Everything the panel sent comes from its last scan, which can be up to
     // two seconds old (the property cache), so a keyframe edited, a clip moved
@@ -1006,6 +1051,12 @@ function bakeKeyframes(argsJSON) {
       try { val0 = prop.getValueAtKey(kf0); val1 = prop.getValueAtKey(kf1); } catch(e) { changed++; continue; }
       var isCompound = (typeof val0 === 'object' && val0 !== null && val0.length === 2);
       if (!isCompound && typeof val0 !== 'number') { changed++; continue; }
+      // A pair inside a live bake record is that bake's own keyframes (2+ frames
+      // apart with a wider spacing): never bake on top of it (the scan's rule)
+      var kfSecsNow = [];
+      for (var kk2 = 0; keys && kk2 < keys.length; kk2++) kfSecsNow.push(keys[kk2].seconds);
+      var bNode = ''; try { bNode = String(clip.nodeId || ''); } catch(e) {}
+      if (_ocPairCovered(bNode, clip.name, cStart, ref.displayName, kfSecsNow, kf0, kf1)) { changed++; continue; }
       targets.push({ ref: ref, loc: loc, comp: comp, prop: prop, matchName: mn, kf0: kf0, kf1: kf1, frames: fc, fps: mfps,
                      val0: isCompound ? [val0[0], val0[1]] : val0, val1: isCompound ? [val1[0], val1[1]] : val1,
                      isCompound: isCompound, clipStart: cStart });
@@ -1084,8 +1135,10 @@ function bakeKeyframes(argsJSON) {
         var bClipName = '';  try { bClipName = bClip.name; } catch(e) {}
         var bNodeId = '';    try { bNodeId = String(bClip.nodeId || ''); } catch(e) {}
 
+        if (addedTimes.length) bakedKeys.push(tg.ref.key);
         if (addedTimes.length) undoInfo.push({
           id: ++_ocBakeSeq,          // referenced by the panel's per-row undo button
+          fps: fps,                  // frames per media second the keyframes were spaced at
           kf0Time: tg.kf0,           // range the bake filled, for spotting an external undo
           kf1Time: tg.kf1,
           trackIdx: tg.loc.trackIdx,
@@ -1118,7 +1171,7 @@ function bakeKeyframes(argsJSON) {
 
     _undoStack.push(undoInfo);
     var warn = firstErr || (changed ? changed + ' of the selected properties changed and were skipped' : null);
-    return _jsonStringify({ success: true, actions: totalActions, warning: warn });
+    return _jsonStringify({ success: true, actions: totalActions, warning: warn, baked: bakedKeys });
   } catch(err) {
     return _jsonStringify({ success: false, error: err.message || String(err) });
   }
