@@ -219,7 +219,10 @@ var _ocFpsSeqId = null;
 // keep plain-JS ranges, and only re-walk on the heartbeat, on sequence change,
 // when the track count changes, or when a cached clip reference goes stale.
 var _ocTracks      = null;  // [{ trackIdx, isAudio, items: [{ clip, clipIdx, start, end, inPoint, name }] }], top track first
-var _ocAudio       = null;  // the same for the audio tracks (A1 first), walked only when needed (see detectContext)
+var _ocAudio       = null;  // the same for the audio tracks (A1 first), walked only while a selected audio clip is under the playhead
+var _ocAudioKey    = null;  // sequence + track counts the audio walk belongs to
+var _ocAudioAt_ms  = 0;     // when it was walked; refreshed after _OC_AUDIO_WALK_MS
+var _OC_AUDIO_WALK_MS = 5000;
 var _ocTracksSeq   = null;
 var _ocTracksCount = -1;
 
@@ -317,13 +320,15 @@ function _ocTrackCount(sequence) {
   return v * 1000 + a;
 }
 // Walks the video tracks (top-down, the topmost clip wins). The audio tracks are
-// walked separately and only when needed: every clip costs about 0.25ms to read
-// here and timelines often hold more audio clips than video ones.
+// walked separately, and only while a selected audio clip is under the playhead:
+// every clip costs about 0.25ms to read here and timelines often hold several
+// times more audio clips than video ones (600 audio clips: a 90ms stall).
 function _ocWalkTracks(sequence, numTracks, seqId) {
   _ocTracks = _ocWalkKind(sequence, false); _ocTracksSeq = seqId; _ocTracksCount = numTracks;
-  _ocAudio = null;
 }
-function _ocWalkAudio(sequence) { _ocAudio = _ocWalkKind(sequence, true); }
+function _ocWalkAudio(sequence, key) {
+  _ocAudio = _ocWalkKind(sequence, true); _ocAudioKey = key; _ocAudioAt_ms = new Date().getTime();
+}
 function _ocWalkKind(sequence, isAudio) {
   var out = [];
   var nt = 0;
@@ -349,22 +354,32 @@ function _ocWalkKind(sequence, isAudio) {
   }
   return out;
 }
-// Is any audio clip selected? One call, so an audio selection is seen without
-// walking the audio tracks on every poll.
-function _ocAudioSelected(sequence) {
+// Is a selected audio clip under the playhead? One getSelection() call (about
+// 1ms), then start/end of the selected audio items, so nothing audio is walked
+// or read on a poll unless the user has an audio clip selected right here. A
+// very large selection (Select All) isn't read item by item: any audio item
+// among its first 40 counts, and the cached walk's isSelected() decides.
+function _ocAudioSelHere(sequence, ph) {
   try {
     var sel = sequence.getSelection();
-    for (var i = 0; sel && i < sel.length; i++) {
-      if (String(sel[i].mediaType) === 'Audio') return true;
+    if (!sel || !sel.length) return false;
+    var big = sel.length > 40, n = big ? 40 : sel.length;
+    for (var i = 0; i < n; i++) {
+      if (String(sel[i].mediaType) !== 'Audio') continue;
+      if (big) return true;
+      if (ph >= sel[i].start.seconds && ph < sel[i].end.seconds) return true;
     }
   } catch(e) {}
   return false;
 }
-// Audio clips under the playhead, walking the audio tracks first if needed
-function _ocAudioAt(sequence, ph) {
-  if (!_ocAudio) _ocWalkAudio(sequence);
+// Audio clips under the playhead, from the audio structure cache. Walked when
+// missing, for another sequence / track layout, older than _OC_AUDIO_WALK_MS,
+// or when a cached clip reference has gone stale.
+function _ocAudioAt(sequence, ph, key) {
+  var now = new Date().getTime();
+  if (!_ocAudio || _ocAudioKey !== key || now - _ocAudioAt_ms > _OC_AUDIO_WALK_MS) _ocWalkAudio(sequence, key);
   var found = _ocClipsAt(ph, _ocAudio);
-  if (found === null) { _ocWalkAudio(sequence); found = _ocClipsAt(ph, _ocAudio) || []; }
+  if (found === null) { _ocWalkAudio(sequence, key); found = _ocClipsAt(ph, _ocAudio) || []; }
   return found;
 }
 
@@ -488,47 +503,42 @@ function detectContext() {
       _ocWalkTracks(sequence, numTracks, seqId);
       found = _ocClipsAt(ph) || [];
     }
-    // Audio clips (issue #12): a selected one joins the candidates (after the
-    // video ones, so a linked clip's video is tried first); otherwise the audio
-    // tracks are only looked at when no video clip here has a keyframed property
-    var audioSel = _ocAudioSelected(sequence);
-    var audioPending = !audioSel;
-    if (audioSel) found = found.concat(_ocAudioAt(sequence, ph));
+    // Audio clips (issue #12) are offered only when SELECTED and under the
+    // playhead. Looking at unselected audio as a fallback was measured on a
+    // 150 video / 600 audio clip timeline at 2.7x the cost of a moving-playhead
+    // poll plus a 90ms walk, for every user, audio keyframes or not.
+    var selAudio = [];
+    if (_ocAudioSelHere(sequence, ph)) {
+      var _ak = seqId + '|' + numTracks;
+      for (var _try = 0; _try < 2 && selAudio.length === 0; _try++) {
+        if (_try === 1) _ocAudio = null;   // a clip added since the walk: look again once
+        var _au = _ocAudioAt(sequence, ph, _ak);
+        for (var _ai = 0; _ai < _au.length; _ai++) if (_au[_ai].isSel) selAudio.push(_au[_ai]);
+      }
+    }
     var selectedClips = [];
     var otherClips = [];
     for (var fi = 0; fi < found.length; fi++) {
       if (found[fi].isSel) selectedClips.push(found[fi]); else otherClips.push(found[fi]);
     }
 
-    // When a video clip is selected, only check the selected clips — don't fall
-    // through to other clips if they have no keyframes. A selected audio clip
-    // alone isn't respected that way: a music bed left selected would otherwise
-    // hide every keyframed video clip, so it only goes first, then the video
-    // clips here and the rest of the audio as usual.
-    var hasSelection = false;
-    for (var _hs = 0; _hs < selectedClips.length; _hs++) if (!selectedClips[_hs].isAudio) { hasSelection = true; break; }
-    var allClipResults = hasSelection ? selectedClips : selectedClips.concat(otherClips);
-    var _otherAudio = [];
-    if (!hasSelection && audioSel) {
-      // the unselected audio clips here are already walked: keep them for the fallback
-      for (var _oa = allClipResults.length - 1; _oa >= 0; _oa--) {
-        if (allClipResults[_oa].isAudio && !allClipResults[_oa].isSel) _otherAudio.unshift(allClipResults.splice(_oa, 1)[0]);
-      }
-      audioPending = _otherAudio.length > 0;
-    }
-    if (hasSelection) audioPending = false;   // respect the selection
-    // The audio clips under the playhead that aren't in the list yet
-    var audioRest = function() {
-      if (audioSel) return _otherAudio;
-      return _ocAudioAt(sequence, ph);
-    };
-    if (audioPending && allClipResults.length === 0) { allClipResults = audioRest(); audioPending = false; }
+    // When a video clip is selected, only check the selected clips (video, then
+    // audio: a linked clip selects both) — don't fall through to other clips if
+    // they have no keyframes. A selected audio clip alone isn't respected that
+    // way: a music bed left selected would otherwise hide every keyframed video
+    // clip. It goes first and wins while the playhead is inside one of its
+    // keyframe pairs; otherwise the video clips here are tried as usual.
+    var hasSelection = selectedClips.length > 0;
+    var allClipResults = hasSelection ? selectedClips.concat(selAudio) : selAudio.concat(otherClips);
+    // The leading selected clips: among those, one with a keyframe pair around
+    // the playhead beats one whose keyframes are all elsewhere
+    var nSel = hasSelection ? allClipResults.length : selAudio.length;
 
     // ── Cache short-circuit ──
     // Build a cheap signature from the playhead + the clips at the playhead.
     // If it matches the last poll (within the heartbeat window), skip the whole
     // component/property/getKeys walk and tell the panel nothing changed.
-    var _sig = Math.round(ph * 1000) + '|' + numTracks + '|' + (audioSel ? 'a' : '') + '|';
+    var _sig = Math.round(ph * 1000) + '|' + numTracks + '|' + nSel + '|';
     for (var _si = 0; _si < allClipResults.length; _si++) {
       var _ce = allClipResults[_si];
       var _cn = _ce.clipName || '';
@@ -555,13 +565,12 @@ function detectContext() {
     var clipsKey = _sig.substring(_sig.indexOf('|') + 1);
     var nowMs = new Date().getTime();
     if (_ocParamCache && _ocParamCache.key === clipsKey && (nowMs - _ocParamCache.at) < _OC_PARAM_CACHE_MS) {
-      // The cached clip may be an audio clip found by the fallback below
-      if (_ocParamCache.isAudio && audioPending) { allClipResults = allClipResults.concat(audioRest()); audioPending = false; }
       bestParams = _ocParamsFromCache(_ocParamCache, allClipResults, ph, fps);
-      // The cached clip had no pair around the playhead (it was only the
-      // fallback) and other clips are here: scan again in case one now has one,
-      // or a lower clip stays hidden until the cache expires
-      if (bestParams !== null && bestParams.length > 0 && (allClipResults.length > 1 || audioPending)) {
+      // With several selected clips, the cached one may only have been the
+      // fallback (no pair around the playhead): scan again in case another of
+      // them has one now. A single candidate, or the plain unselected scan,
+      // keeps the fast path exactly as before.
+      if (bestParams !== null && bestParams.length > 0 && nSel > 1) {
         var _allOut = true;
         for (var _ao = 0; _ao < bestParams.length; _ao++) if (!bestParams[_ao].isOutside) { _allOut = false; break; }
         if (_allOut) bestParams = null;
@@ -571,15 +580,8 @@ function detectContext() {
     }
     if (bestParams === null) _ocParamCache = null;
 
-    // Out of video candidates and nothing qualified: the audio clips here are next
     var outsideFallback = null;
-    var moreAudio = function() {
-      if (!audioPending) return false;
-      audioPending = false;
-      allClipResults = allClipResults.concat(audioRest());
-      return ci < allClipResults.length;
-    };
-    for (var ci = 0; bestParams === null && (ci < allClipResults.length || moreAudio()); ci++) {
+    for (var ci = 0; bestParams === null && ci < allClipResults.length; ci++) {
       var clipInfo = allClipResults[ci];
       var clip = clipInfo.clip;
       var cSpeed = clipInfo.speed || 1, mfps = fps / cSpeed;
@@ -707,13 +709,13 @@ function detectContext() {
 
       if (qualifiedParams.length > 0) {
         var cacheHere = { key: clipsKey, at: nowMs, trackIdx: clipInfo.trackIdx, isAudio: !!clipInfo.isAudio, clipIdx: clipInfo.clipIdx, entries: cacheEntries };
-        // A clip whose keyframes surround the playhead wins over one whose
-        // keyframes are all elsewhere (a title above with keyframes at its
-        // start no longer hides the clip under it, or the audio): the first
-        // clip with keyframes is only the fallback, as it always used to be
+        // Unselected clips (ci >= nSel): the first with a keyframed property
+        // wins, as it always has. Among the selected ones, a clip whose
+        // keyframes surround the playhead wins over one whose keyframes are all
+        // elsewhere, and the first with keyframes is the fallback.
         var anyHere = false;
         for (var _qh = 0; _qh < qualifiedParams.length; _qh++) if (!qualifiedParams[_qh].isOutside) { anyHere = true; break; }
-        if (anyHere) {
+        if (ci >= nSel || anyHere) {
           bestParams = qualifiedParams;
           _ocParamCache = cacheHere;
           break;
@@ -869,7 +871,7 @@ function detectContext() {
     }));
 
   } catch(err) {
-    _ocCacheKey = null; _ocTracks = null; _ocParamCache = null; // don't let a transient error poison the caches
+    _ocCacheKey = null; _ocTracks = null; _ocAudio = null; _ocParamCache = null; // don't let a transient error poison the caches
     return _jsonStringify({
       status: 'error',
       availableParams: [],
@@ -932,10 +934,15 @@ function _ocSamplePath(prop, t0, t1, v0, v1, frames) {
   } catch(e) { return null; }
   return _ocPathFromSamples(pts, v0, v1);
 }
-function _ocRetimed(prop, t0, t1, es) {
+function _ocRetimed(prop, t0, t1, es, v0, v1) {
   if (typeof prop.getValueAtTime !== 'function') return null;
   var out = [];
   try {
+    // If Premiere doesn't hand back the keyframes' own values at the ends, these
+    // reads aren't this pair (an older getValueAtTime): use the straight line
+    var tol = Math.max(0.000001, Math.abs(v1 - v0) * 0.001);
+    var a = prop.getValueAtTime(t0), b = prop.getValueAtTime(t1);
+    if (typeof a !== 'number' || typeof b !== 'number' || Math.abs(a - v0) > tol || Math.abs(b - v1) > tol) return null;
     for (var i = 0; i < es.length; i++) {
       var c = Math.max(0, Math.min(1, es[i]));
       var v = prop.getValueAtTime(t0 + (t1 - t0) * c);
@@ -1024,7 +1031,7 @@ function bakeKeyframes(argsJSON) {
       var ref = paramRefs[vi];
       var loc = _ocResolveClip(sequence, ref);
       if (!loc) {
-        _ocCacheKey = null; _ocTracks = null; _ocParamCache = null;
+        _ocCacheKey = null; _ocTracks = null; _ocAudio = null; _ocParamCache = null;
         return _jsonStringify({ success: false, error: 'The clip changed since the last scan. Try again.' });
       }
       var clip = loc.clip, comp = null, prop = null, mn = '';
@@ -1090,7 +1097,7 @@ function bakeKeyframes(argsJSON) {
         var frames = [], eased = [];
         for (var f = step; f < totalFrames; f += step) { frames.push(f); eased.push(_sampleBezier(f / totalFrames, curve)); }
         var path = isCompound ? _ocSamplePath(prop, tg.kf0, tg.kf1, val0, val1, totalFrames) : null;
-        var retimed = (!isCompound && isAudio) ? _ocRetimed(prop, tg.kf0, tg.kf1, eased) : null;
+        var retimed = (!isCompound && isAudio) ? _ocRetimed(prop, tg.kf0, tg.kf1, eased, val0, val1) : null;
 
         for (var fi = 0; fi < frames.length; fi++) {
           var easedT = eased[fi];
