@@ -57,6 +57,8 @@
           var res = JSON.parse(result);
           if (res.success) {
             _skipPollUntil = Date.now() + OpenCurve.DONE_DISPLAY_MS;
+            // Some selected properties changed since the scan and were left alone
+            if (res.warning) OpenCurve.showCopyToast(res.warning);
             var newBaked = (state.bakedParamKeys || []).concat(bakedKeys.filter(function(k) {
               return (state.bakedParamKeys || []).indexOf(k) < 0;
             }));

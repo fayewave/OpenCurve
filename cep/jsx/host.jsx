@@ -51,13 +51,13 @@ var _ocLiveNameMiss  = {};  // clip + component QE couldn't be matched to; not r
 function _ocLiveNames(clipInfo, compIdx, matchName, numProps) {
   var ck = matchName + '|' + numProps;
   if (matchName && _ocLiveNameCache.hasOwnProperty(ck)) return _ocLiveNameCache[ck] || null;
-  var mk = clipInfo.trackIdx + '|' + clipInfo.clipIdx + '|' + clipInfo.clipName + '|' + compIdx + '|' + matchName;
+  var mk = (clipInfo.isAudio ? 'A' : 'V') + clipInfo.trackIdx + '|' + clipInfo.clipIdx + '|' + clipInfo.clipName + '|' + compIdx + '|' + matchName;
   if (_ocLiveNameMiss[mk]) return null;
   var qComp = null, names = null;
   try {
     if (typeof app.enableQE === 'function') app.enableQE();
     var qs = (typeof qe !== 'undefined' && qe && qe.project) ? qe.project.getActiveSequence() : null;
-    var qt = qs ? qs.getVideoTrackAt(clipInfo.trackIdx) : null;
+    var qt = qs ? (clipInfo.isAudio ? qs.getAudioTrackAt(clipInfo.trackIdx) : qs.getVideoTrackAt(clipInfo.trackIdx)) : null;
     // QE lists gaps as 'Empty' items and the DOM doesn't: DOM clip n is the n-th non-empty QE item
     var n = -1;
     for (var i = 0; qt && i < qt.numItems; i++) {
@@ -218,7 +218,8 @@ var _ocFpsSeqId = null;
 // "nothing changed" poll cost ~15-30ms of ExtendScript time. We now walk once,
 // keep plain-JS ranges, and only re-walk on the heartbeat, on sequence change,
 // when the track count changes, or when a cached clip reference goes stale.
-var _ocTracks      = null;  // [{ trackIdx, items: [{ clip, clipIdx, start, end, inPoint, name }] }], top track first
+var _ocTracks      = null;  // [{ trackIdx, isAudio, items: [{ clip, clipIdx, start, end, inPoint, name }] }], top track first
+var _ocAudio       = null;  // the same for the audio tracks (A1 first), walked only when needed (see detectContext)
 var _ocTracksSeq   = null;
 var _ocTracksCount = -1;
 
@@ -251,10 +252,11 @@ function _ocCachedVal(e, t) {
 function _ocParamsFromCache(cache, clips, ph, fps) {
   var info = null;
   for (var i = 0; i < clips.length; i++) {
-    if (clips[i].trackIdx === cache.trackIdx && clips[i].clipIdx === cache.clipIdx) { info = clips[i]; break; }
+    if (clips[i].trackIdx === cache.trackIdx && clips[i].clipIdx === cache.clipIdx && !!clips[i].isAudio === !!cache.isAudio) { info = clips[i]; break; }
   }
   if (!info) return null;
-  var phLocal = (ph - info.clipStart) + info.clipInPoint;
+  var speed = info.speed || 1, mfps = fps / speed;
+  var phLocal = info.clipInPoint + (ph - info.clipStart) * speed;
   var out = [];
   for (var ei = 0; ei < cache.entries.length; ei++) {
     var e = cache.entries[ei];
@@ -277,6 +279,7 @@ function _ocParamsFromCache(cache, clips, ph, fps) {
       displayName: e.displayName,
       label: e.label,
       trackIdx: info.trackIdx,
+      isAudio: !!info.isAudio,
       clipIdx: info.clipIdx,
       compIdx: e.compIdx,
       propIdx: e.propIdx,
@@ -284,12 +287,13 @@ function _ocParamsFromCache(cache, clips, ph, fps) {
       kf1Time: kf1Time,
       val0: val0,
       val1: val1,
-      frameCount: Math.round((kf1Time - kf0Time) * fps),
+      frameCount: Math.round((kf1Time - kf0Time) * mfps),
       isOutside: isOutside,
       isCompound: e.isCompound,
-      fps: fps,
+      fps: mfps,
+      seqFps: fps,
+      speed: speed,
       totalKf: kfTimes.length,
-      seqOffset: info.clipStart - info.clipInPoint,
       clipStart: info.clipStart,
       clipEnd: info.clipEnd,
       clipInPoint: info.clipInPoint,
@@ -301,10 +305,32 @@ function _ocParamsFromCache(cache, clips, ph, fps) {
   return out;
 }
 
+// A track by kind and index (audio clips are scanned too since 2.0.2, issue #12)
+function _ocTrack(sequence, isAudio, idx) {
+  return isAudio ? sequence.audioTracks[idx] : sequence.videoTracks[idx];
+}
+// Video and audio track counts as one value, so adding either kind re-walks
+function _ocTrackCount(sequence) {
+  var v = 0, a = 0;
+  try { v = sequence.videoTracks.numTracks; } catch(e) {}
+  try { a = sequence.audioTracks.numTracks; } catch(e) {}
+  return v * 1000 + a;
+}
+// Walks the video tracks (top-down, the topmost clip wins). The audio tracks are
+// walked separately and only when needed: every clip costs about 0.25ms to read
+// here and timelines often hold more audio clips than video ones.
 function _ocWalkTracks(sequence, numTracks, seqId) {
+  _ocTracks = _ocWalkKind(sequence, false); _ocTracksSeq = seqId; _ocTracksCount = numTracks;
+  _ocAudio = null;
+}
+function _ocWalkAudio(sequence) { _ocAudio = _ocWalkKind(sequence, true); }
+function _ocWalkKind(sequence, isAudio) {
   var out = [];
-  for (var t = numTracks - 1; t >= 0; t--) {
-    var track = sequence.videoTracks[t];
+  var nt = 0;
+  try { nt = isAudio ? sequence.audioTracks.numTracks : sequence.videoTracks.numTracks; } catch(e) {}
+  for (var n = 0; n < nt; n++) {
+    var t = isAudio ? n : nt - 1 - n;
+    var track = _ocTrack(sequence, isAudio, t);
     var clips = track.clips;
     var items = [];
     for (var c = 0; c < clips.numItems; c++) {
@@ -319,20 +345,64 @@ function _ocWalkTracks(sequence, numTracks, seqId) {
         nodeId: nid,
       });
     }
-    out.push({ trackIdx: t, items: items });
+    out.push({ trackIdx: t, isAudio: isAudio, items: items });
   }
-  _ocTracks = out; _ocTracksSeq = seqId; _ocTracksCount = numTracks;
+  return out;
+}
+// Is any audio clip selected? One call, so an audio selection is seen without
+// walking the audio tracks on every poll.
+function _ocAudioSelected(sequence) {
+  try {
+    var sel = sequence.getSelection();
+    for (var i = 0; sel && i < sel.length; i++) {
+      if (String(sel[i].mediaType) === 'Audio') return true;
+    }
+  } catch(e) {}
+  return false;
+}
+// Audio clips under the playhead, walking the audio tracks first if needed
+function _ocAudioAt(sequence, ph) {
+  if (!_ocAudio) _ocWalkAudio(sequence);
+  var found = _ocClipsAt(ph, _ocAudio);
+  if (found === null) { _ocWalkAudio(sequence); found = _ocClipsAt(ph, _ocAudio) || []; }
+  return found;
+}
+
+// How a clip's keyframe times (source media seconds) map to sequence time.
+// Keyframes live on the media: on a clip with a speed change one sequence
+// second covers `speed` media seconds (issue #15; measured on 26.0.2, a 200%
+// clip trimmed 5 media seconds in reports inPoint 2.5 and has its keyframes at
+// 5 + 2 x clip time). ExtendScript reports in/out per sequence second; if a
+// version ever reports them in media seconds, the in/out span tells (it then
+// equals the clip length x speed). A reversed clip keeps the old mapping.
+function _ocClipTiming(clip, start, end, inRaw) {
+  var speed = 1;
+  try {
+    var sp = clip.getSpeed();
+    var rev = false; try { rev = !!clip.isSpeedReversed(); } catch(e) {}
+    if (typeof sp === 'number' && isFinite(sp) && sp > 0 && !rev) speed = sp;
+  } catch(e) {}
+  var srcIn = inRaw;
+  if (Math.abs(speed - 1) > 0.000001) {
+    srcIn = inRaw * speed;
+    try {
+      var durIn = clip.outPoint.seconds - inRaw, durSeq = end - start;
+      if (durSeq > 0 && Math.abs(durIn - durSeq * speed) < Math.abs(durIn - durSeq)) srcIn = inRaw;
+    } catch(e) {}
+  }
+  return { speed: speed, srcIn: srcIn };
 }
 
 // Clips under the playhead from the cache. Touches ExtendScript only for the
 // (usually 1-3) clips actually at the playhead: one start check to catch a
 // moved/deleted clip, one isSelected(). Returns null if anything looks stale
 // so the caller can re-walk.
-function _ocClipsAt(ph) {
-  if (!_ocTracks) return null;
+function _ocClipsAt(ph, tracks) {
+  if (tracks === undefined) tracks = _ocTracks;
+  if (!tracks) return null;
   var found = [];
-  for (var ti = 0; ti < _ocTracks.length; ti++) {
-    var items = _ocTracks[ti].items;
+  for (var ti = 0; ti < tracks.length; ti++) {
+    var items = tracks[ti].items;
     for (var i = 0; i < items.length; i++) {
       var it = items[i];
       // End is exclusive, as in Premiere: a playhead sitting on a cut belongs to
@@ -345,9 +415,13 @@ function _ocClipsAt(ph) {
       if (Math.abs(liveStart - it.start) > 0.0005) return null;
       var isSel = false;
       try { isSel = it.clip.isSelected(); } catch(e) { return null; }
+      // Speed and media in-point, read once per walk for the clips that come under the playhead
+      if (it.speed === undefined) { var tm = _ocClipTiming(it.clip, it.start, it.end, it.inPoint); it.speed = tm.speed; it.srcIn = tm.srcIn; }
       found.push({
-        trackIdx: _ocTracks[ti].trackIdx, clipIdx: it.clipIdx, clip: it.clip,
-        clipStart: it.start, clipEnd: it.end, clipInPoint: it.inPoint, clipName: it.name, nodeId: it.nodeId || '', isSel: isSel,
+        trackIdx: tracks[ti].trackIdx, isAudio: !!tracks[ti].isAudio, clipIdx: it.clipIdx, clip: it.clip,
+        // clipInPoint is the MEDIA in-point the keyframe times are measured against
+        clipStart: it.start, clipEnd: it.end, clipInPoint: it.srcIn, speed: it.speed,
+        clipName: it.name, nodeId: it.nodeId || '', isSel: isSel,
       });
     }
   }
@@ -404,7 +478,7 @@ function detectContext() {
     // Find clips at playhead across all video tracks (from the structure cache;
     // see _ocWalkTracks). Selected clip goes first so user can override which
     // clip is targeted.
-    var numTracks = sequence.videoTracks.numTracks;
+    var numTracks = _ocTrackCount(sequence);
     if (!_ocTracks || _ocTracksSeq !== seqId || _ocTracksCount !== numTracks || _ocPollCount >= _OC_HEARTBEAT) {
       _ocWalkTracks(sequence, numTracks, seqId);
       _ocParamCache = null;
@@ -414,6 +488,12 @@ function detectContext() {
       _ocWalkTracks(sequence, numTracks, seqId);
       found = _ocClipsAt(ph) || [];
     }
+    // Audio clips (issue #12): a selected one joins the candidates (after the
+    // video ones, so a linked clip's video is tried first); otherwise the audio
+    // tracks are only looked at when no video clip here has a keyframed property
+    var audioSel = _ocAudioSelected(sequence);
+    var audioPending = !audioSel;
+    if (audioSel) found = found.concat(_ocAudioAt(sequence, ph));
     var selectedClips = [];
     var otherClips = [];
     for (var fi = 0; fi < found.length; fi++) {
@@ -424,17 +504,19 @@ function detectContext() {
     // to other clips if it has no keyframes.
     var hasSelection = selectedClips.length > 0;
     var allClipResults = hasSelection ? selectedClips : otherClips;
+    if (hasSelection) audioPending = false;   // respect the selection
+    if (audioPending && allClipResults.length === 0) { allClipResults = _ocAudioAt(sequence, ph); audioPending = false; }
 
     // ── Cache short-circuit ──
     // Build a cheap signature from the playhead + the clips at the playhead.
     // If it matches the last poll (within the heartbeat window), skip the whole
     // component/property/getKeys walk and tell the panel nothing changed.
-    var _sig = Math.round(ph * 1000) + '|' + numTracks + '|';
+    var _sig = Math.round(ph * 1000) + '|' + numTracks + '|' + (audioSel ? 'a' : '') + '|';
     for (var _si = 0; _si < allClipResults.length; _si++) {
       var _ce = allClipResults[_si];
       var _cn = _ce.clipName || '';
-      _sig += _cn + '@' + _ce.clipStart.toFixed(3) + ':' + _ce.clipInPoint.toFixed(3)
-            + '#' + _ce.trackIdx + '/' + _ce.clipIdx + ';';
+      _sig += _cn + '@' + _ce.clipStart.toFixed(3) + ':' + _ce.clipInPoint.toFixed(3) + 'x' + (_ce.speed || 1)
+            + '#' + (_ce.isAudio ? 'A' : 'V') + _ce.trackIdx + '/' + _ce.clipIdx + ';';
     }
     if (_sig === _ocCacheKey && _ocPollCount < _OC_HEARTBEAT && _ocCacheResult !== null) {
       _ocPollCount++;
@@ -443,8 +525,8 @@ function detectContext() {
     _ocPollCount = 0;
     _ocCacheKey  = _sig;
 
-    if (selectedClips.length === 0 && otherClips.length === 0) {
-      return _ocReturn(_jsonStringify({ status: 'no-clip', availableParams: [], hint: 'No video clip found at playhead position', ph: ph }));
+    if (allClipResults.length === 0) {
+      return _ocReturn(_jsonStringify({ status: 'no-clip', availableParams: [], hint: 'No clip found at playhead position', ph: ph }));
     }
 
     // Find qualifying params (properties with 2+ keyframes)
@@ -456,16 +538,27 @@ function detectContext() {
     var clipsKey = _sig.substring(_sig.indexOf('|') + 1);
     var nowMs = new Date().getTime();
     if (_ocParamCache && _ocParamCache.key === clipsKey && (nowMs - _ocParamCache.at) < _OC_PARAM_CACHE_MS) {
+      // The cached clip may be an audio clip found by the fallback below
+      if (_ocParamCache.isAudio && audioPending) { allClipResults = allClipResults.concat(_ocAudioAt(sequence, ph)); audioPending = false; }
       bestParams = _ocParamsFromCache(_ocParamCache, allClipResults, ph, fps);
       if (bestParams !== null && bestParams.length > 0) _ocScanKind = 'fast';
       if (bestParams !== null && bestParams.length === 0) bestParams = null;
     }
     if (bestParams === null) _ocParamCache = null;
 
-    for (var ci = 0; bestParams === null && ci < allClipResults.length; ci++) {
+    // Out of video candidates and nothing qualified: the audio clips here are next
+    var outsideFallback = null;
+    var moreAudio = function() {
+      if (!audioPending) return false;
+      audioPending = false;
+      allClipResults = allClipResults.concat(_ocAudioAt(sequence, ph));
+      return ci < allClipResults.length;
+    };
+    for (var ci = 0; bestParams === null && (ci < allClipResults.length || moreAudio()); ci++) {
       var clipInfo = allClipResults[ci];
       var clip = clipInfo.clip;
-      var phLocal = (ph - clipInfo.clipStart) + clipInfo.clipInPoint;
+      var cSpeed = clipInfo.speed || 1, mfps = fps / cSpeed;
+      var phLocal = clipInfo.clipInPoint + (ph - clipInfo.clipStart) * cSpeed;
       // Not every track item has a component chain (some graphics and adjustment
       // types throw here). Skipping the clip keeps the panel working; letting it
       // reach the outer catch returned status 'error' and dropped all three
@@ -538,7 +631,7 @@ function detectContext() {
           if (!liveAsked) { liveAsked = true; liveNames = _ocLiveNames(clipInfo, compIdx, matchName, numProps); }
           var live  = liveNames ? liveNames[propIdx] : '';
           var label = live || _ocFallbackLabel(displayName);
-          var frameCount = Math.round((kf1Time - kf0Time) * fps);
+          var frameCount = Math.round((kf1Time - kf0Time) * mfps);
 
           // Convert compound values to plain arrays for JSON
           var kfSecs = [];
@@ -552,6 +645,7 @@ function detectContext() {
             label: label,
             live: !!live,
             trackIdx: clipInfo.trackIdx,
+            isAudio: !!clipInfo.isAudio,
             clipIdx: clipInfo.clipIdx,
             compIdx: compIdx,
             propIdx: propIdx,
@@ -562,9 +656,10 @@ function detectContext() {
             frameCount: frameCount,
             isOutside: isOutside,
             isCompound: isCompound,
-            fps: fps,
+            fps: mfps,              // frames per MEDIA second (sequence rate / clip speed)
+            seqFps: fps,
+            speed: cSpeed,
             totalKf: kfTimes.length,
-            seqOffset: clipInfo.clipStart - clipInfo.clipInPoint,
             clipStart: clipInfo.clipStart,
             clipEnd: clipInfo.clipEnd,
             clipInPoint: clipInfo.clipInPoint,
@@ -586,10 +681,24 @@ function detectContext() {
       for (var _li = 0; _li < qualifiedParams.length; _li++) cacheEntries[_li].label = qualifiedParams[_li].label;
 
       if (qualifiedParams.length > 0) {
-        bestParams = qualifiedParams;
-        _ocParamCache = { key: clipsKey, at: nowMs, trackIdx: clipInfo.trackIdx, clipIdx: clipInfo.clipIdx, entries: cacheEntries };
-        break;
+        var cacheHere = { key: clipsKey, at: nowMs, trackIdx: clipInfo.trackIdx, isAudio: !!clipInfo.isAudio, clipIdx: clipInfo.clipIdx, entries: cacheEntries };
+        // A clip whose keyframes surround the playhead wins over one whose
+        // keyframes are all elsewhere (a title above with keyframes at its
+        // start no longer hides the clip under it, or the audio): the first
+        // clip with keyframes is only the fallback, as it always used to be
+        var anyHere = false;
+        for (var _qh = 0; _qh < qualifiedParams.length; _qh++) if (!qualifiedParams[_qh].isOutside) { anyHere = true; break; }
+        if (anyHere) {
+          bestParams = qualifiedParams;
+          _ocParamCache = cacheHere;
+          break;
+        }
+        if (!outsideFallback) outsideFallback = { params: qualifiedParams, cache: cacheHere };
       }
+    }
+    if (!bestParams && outsideFallback) {
+      bestParams = outsideFallback.params;
+      _ocParamCache = outsideFallback.cache;
     }
 
     if (!bestParams) {
@@ -605,6 +714,8 @@ function detectContext() {
     var validParamKeys = [];
     var paramContexts = {};
 
+    // Media seconds -> sequence seconds for a scanned property's clip
+    function _seqT(p, m) { return p.clipStart + (m - p.clipInPoint) / (p.speed || 1); }
     for (var pi = 0; pi < bestParams.length; pi++) {
       var p = bestParams[pi];
       // Bake records for this property (same clip, component and property as
@@ -637,7 +748,7 @@ function detectContext() {
             _bb.splice(_bj, 1);
             continue;
           }
-          tlSpans.push([_r4(_inf.kf0Time + p.seqOffset), _r4(_inf.kf1Time + p.seqOffset)]);
+          tlSpans.push([_r4(_seqT(p, _inf.kf0Time)), _r4(_seqT(p, _inf.kf1Time))]);
           // The record stays, but it only colours the row (and feeds its undo button)
           // while the playhead's bracket sits inside the span it baked; elsewhere on
           // the clip the row is a normal row and another area can be baked.
@@ -646,19 +757,20 @@ function detectContext() {
           if (!bakeCurve && _inf.curve) bakeCurve = _inf.curve;
         }
       }
-      var _jp = (p.kfSecs && p.kfSecs.length) ? _ocJumpPair(p.kfSecs, ph - p.seqOffset, p.fps) : null;
-      var _entry = { key: p.key, displayName: p.displayName, label: p.label, jumpSec: (_jp ? _jp.start : p.kf0Time) + p.seqOffset, bakeIds: bakeIds };
+      var _phM = p.clipInPoint + (ph - p.clipStart) * (p.speed || 1);
+      var _jp = (p.kfSecs && p.kfSecs.length) ? _ocJumpPair(p.kfSecs, _phM, p.fps) : null;
+      var _entry = { key: p.key, displayName: p.displayName, label: p.label, jumpSec: _seqT(p, _jp ? _jp.start : p.kf0Time), bakeIds: bakeIds };
       // Mini timeline lane: keyframes and the bracket in sequence seconds (rounded to keep the JSON small)
       _entry.tlKf = [];
-      for (var _tk = 0; _tk < (p.kfSecs || []).length; _tk++) _entry.tlKf.push(_r4(p.kfSecs[_tk] + p.seqOffset));
-      _entry.tlKf0 = _r4(p.kf0Time + p.seqOffset);
-      _entry.tlKf1 = _r4(p.kf1Time + p.seqOffset);
+      for (var _tk = 0; _tk < (p.kfSecs || []).length; _tk++) _entry.tlKf.push(_r4(_seqT(p, p.kfSecs[_tk])));
+      _entry.tlKf0 = _r4(_seqT(p, p.kf0Time));
+      _entry.tlKf1 = _r4(_seqT(p, p.kf1Time));
       _entry.tlOut = !!p.isOutside;
       _entry.tlSpans = tlSpans;
       if (bakeCurve) _entry.bakeCurve = bakeCurve;
       // Nearest 2+ frame pair, for the status strip's click-to-jump
-      var _near = (p.kfSecs && p.kfSecs.length) ? _ocNearestPair(p.kfSecs, ph - p.seqOffset, p.fps) : null;
-      if (_near) { _entry.nearSec = _near.start + p.seqOffset; _entry.nearDist = _near.dist; }
+      var _near = (p.kfSecs && p.kfSecs.length) ? _ocNearestPair(p.kfSecs, _phM, p.fps) : null;
+      if (_near) { _entry.nearSec = _seqT(p, _near.start); _entry.nearDist = _near.dist / (p.speed || 1); }
       paramList.push(_entry);
 
       // A pair inside a live bake record is that bake's own keyframes (they can be
@@ -667,6 +779,8 @@ function detectContext() {
         validParamKeys.push(p.key);
         paramContexts[p.key] = {
           trackIdx: p.trackIdx,
+          isAudio: !!p.isAudio,
+          nodeId: p.nodeId || '',
           clipIdx: p.clipIdx,
           compIdx: p.compIdx,
           propIdx: p.propIdx,
@@ -685,7 +799,8 @@ function detectContext() {
     }
 
     // Mini timeline: the clip's extent and the playhead, in sequence seconds
-    var _tl = { clipStart: bestParams[0].clipStart, clipEnd: bestParams[0].clipEnd, clipIn: bestParams[0].clipInPoint, fps: fps, ph: ph };
+    var _tl = { clipStart: bestParams[0].clipStart, clipEnd: bestParams[0].clipEnd, clipIn: bestParams[0].clipInPoint,
+                speed: bestParams[0].speed || 1, fps: fps, ph: ph };
 
     if (validParamKeys.length === 0) {
       // Two cases: the playhead is outside every pair (say where they are, using
@@ -736,6 +851,101 @@ function detectContext() {
   }
 }
 
+// ─── Following Premiere's own interpolation (issues #10, #12) ───────────
+// Mirror of _pathFromSamples / _pathAt / _retimedValues in src/plugin.js.
+// Position (any two-value property) is eased along the motion path Premiere
+// draws between the pair, sampled with getValueAtTime and walked by arc length,
+// instead of the straight line between the two keyframes (a curved path used to
+// come out straight). A straight path gives exactly the old values. Audio
+// properties take Premiere's own value at the eased time, since Premiere doesn't
+// fade Level in a straight line (a Linear curve then reproduces the user's fade).
+function _ocDist(a, b) { var dx = b[0] - a[0], dy = b[1] - a[1]; return Math.sqrt(dx * dx + dy * dy); }
+function _ocPathFromSamples(pts, v0, v1) {
+  if (!pts || pts.length < 3) return null;
+  var chord = _ocDist(v0, v1);
+  var tol = Math.max(0.0001, chord * 0.001, 0.000001 * (Math.abs(v0[0]) + Math.abs(v0[1])));
+  var last = pts[pts.length - 1];
+  if (Math.abs(pts[0][0] - v0[0]) > tol || Math.abs(pts[0][1] - v0[1]) > tol ||
+      Math.abs(last[0] - v1[0]) > tol || Math.abs(last[1] - v1[1]) > tol) return null;
+  pts[0] = [v0[0], v0[1]]; pts[pts.length - 1] = [v1[0], v1[1]];
+  var cum = [0];
+  for (var k = 1; k < pts.length; k++) cum.push(cum[k - 1] + _ocDist(pts[k - 1], pts[k]));
+  var L = cum[cum.length - 1];
+  if (!(L > 1e-9) || L <= chord * (1 + 1e-6)) return null;
+  return { pts: pts, cum: cum, L: L };
+}
+function _ocPathAt(path, e) {
+  var pts = path.pts, cum = path.cum, L = path.L, n = pts.length, d = 0, a, b, j;
+  if (e <= 0 || e >= 1) {
+    var atEnd = e >= 1;
+    a = atEnd ? pts[n - 1] : pts[0];
+    for (j = 1; j < n; j++) {
+      b = atEnd ? pts[n - 1 - j] : pts[j];
+      d = _ocDist(a, b);
+      if (d > 1e-9) break;
+    }
+    if (!(d > 1e-9)) return [a[0], a[1]];
+    var over = (atEnd ? e - 1 : -e) * L;
+    return [a[0] + (a[0] - b[0]) / d * over, a[1] + (a[1] - b[1]) / d * over];
+  }
+  var s = e * L, lo = 0, hi = n - 1;
+  while (hi - lo > 1) { var mid = Math.floor((lo + hi) / 2); if (cum[mid] <= s) lo = mid; else hi = mid; }
+  var seg = cum[hi] - cum[lo], f = seg > 0 ? (s - cum[lo]) / seg : 0;
+  return [pts[lo][0] + (pts[hi][0] - pts[lo][0]) * f, pts[lo][1] + (pts[hi][1] - pts[lo][1]) * f];
+}
+function _ocSamplePath(prop, t0, t1, v0, v1, frames) {
+  if (typeof prop.getValueAtTime !== 'function') return null;
+  var K = Math.max(24, Math.min(400, frames * 3)), pts = [];
+  try {
+    for (var k = 0; k <= K; k++) {
+      var v = prop.getValueAtTime(t0 + (t1 - t0) * k / K);
+      if (!v || v.length !== 2 || typeof v[0] !== 'number' || typeof v[1] !== 'number' || !isFinite(v[0]) || !isFinite(v[1])) return null;
+      pts.push([v[0], v[1]]);
+    }
+  } catch(e) { return null; }
+  return _ocPathFromSamples(pts, v0, v1);
+}
+function _ocRetimed(prop, t0, t1, es) {
+  if (typeof prop.getValueAtTime !== 'function') return null;
+  var out = [];
+  try {
+    for (var i = 0; i < es.length; i++) {
+      var c = Math.max(0, Math.min(1, es[i]));
+      var v = prop.getValueAtTime(t0 + (t1 - t0) * c);
+      if (typeof v !== 'number' || !isFinite(v)) return null;
+      out.push(v);
+    }
+  } catch(e) { return null; }
+  return out;
+}
+
+// The clip a bake/undo reference points at: its indices when they still lead to
+// the same clip (name + start), else its stable nodeId anywhere on the same kind
+// of track. Returns { clip, trackIdx, clipIdx } or null.
+function _ocResolveClip(sequence, ref) {
+  try {
+    var c = _ocTrack(sequence, !!ref.isAudio, ref.trackIdx).clips[ref.clipIdx];
+    var okStart = typeof ref.clipStart !== 'number' || Math.abs(c.start.seconds - ref.clipStart) < 0.001;
+    var okName = !ref.clipName || c.name === ref.clipName;
+    var okNode = !ref.nodeId || String(c.nodeId || '') === ref.nodeId;
+    if (okStart && okName && okNode) return { clip: c, trackIdx: ref.trackIdx, clipIdx: ref.clipIdx };
+  } catch(e) {}
+  if (!ref.nodeId) return null;
+  return _ocFindNode(sequence, ref.nodeId, !!ref.isAudio);
+}
+function _ocFindNode(sequence, nodeId, isAudio) {
+  try {
+    var tracks = isAudio ? sequence.audioTracks : sequence.videoTracks;
+    for (var t = 0; t < tracks.numTracks; t++) {
+      var clips = tracks[t].clips;
+      for (var c = 0; c < clips.numItems; c++) {
+        try { if (String(clips[c].nodeId || '') === nodeId) return { clip: clips[c], trackIdx: t, clipIdx: c }; } catch(e) {}
+      }
+    }
+  } catch(e) {}
+  return null;
+}
+
 // ─── bakeKeyframes ───────────────────────────────────────────────────────
 
 function bakeKeyframes(argsJSON) {
@@ -749,84 +959,112 @@ function bakeKeyframes(argsJSON) {
 
     var project = app.project;
     var sequence = project.activeSequence;
-    // Without this the verification below throws on a null sequence and the
-    // catch reports "Clip changed since the last scan", which is misleading
     if (!sequence) return _jsonStringify({ success: false, error: 'No active sequence' });
     var totalActions = 0;
     var firstErr = null;
-
     var undoInfo = [];
 
-    // Premiere's ExtendScript `app` has no beginUndoGroup/endUndoGroup (that's
-    // an After Effects API), so only use it if present. Undo is handled by the
-    // panel's own undo button (_undoStack) regardless. The real apply speed-up
-    // comes from passing updateUI=false on intermediate keys (see below).
-    // Refuse to bake if any target clip is no longer where the scan saw it
-    // (track/clip indices drift when clips are added, removed or moved).
+    // Everything the panel sent comes from its last scan, which can be up to
+    // two seconds old (the property cache), so a keyframe edited, a clip moved
+    // or an effect added since then left the bake writing stale values or
+    // refusing with "Clip changed since the last scan" (issue #14). Each target
+    // is resolved again here: the clip (indices, else its nodeId), the property
+    // (same name), and the keyframe pair around the playhead right now, with
+    // fresh values. Nothing is written unless every target resolves.
+    var ph = sequence.getPlayerPosition().seconds;
+    var seqFps = _fpsCached(sequence);
+    var targets = [];
+    var changed = 0;
     for (var vi = 0; vi < paramRefs.length; vi++) {
-      var vref = paramRefs[vi];
-      if (typeof vref.clipStart !== 'number') continue;
-      var okClip = false;
-      try {
-        var vclip = sequence.videoTracks[vref.trackIdx].clips[vref.clipIdx];
-        okClip = Math.abs(vclip.start.seconds - vref.clipStart) < 0.001
-              && (!vref.clipName || vclip.name === vref.clipName);
-      } catch(e) {}
-      if (!okClip) {
+      var ref = paramRefs[vi];
+      var loc = _ocResolveClip(sequence, ref);
+      if (!loc) {
         _ocCacheKey = null; _ocTracks = null; _ocParamCache = null;
-        return _jsonStringify({ success: false, error: 'Clip changed since the last scan. Try again.' });
+        return _jsonStringify({ success: false, error: 'The clip changed since the last scan. Try again.' });
       }
+      var clip = loc.clip, comp = null, prop = null, mn = '';
+      try { comp = clip.components[ref.compIdx]; prop = comp.properties[ref.propIdx]; mn = comp.matchName; } catch(e) { prop = null; }
+      if (!prop || (ref.displayName && _paramName(mn, ref.propIdx) !== ref.displayName)) {
+        _ocCacheKey = null; _ocParamCache = null;
+        return _jsonStringify({ success: false, error: 'The effects on that clip changed. Try again.' });
+      }
+      var cStart = clip.start.seconds, cEnd = clip.end.seconds;
+      var inRaw = clip.inPoint ? clip.inPoint.seconds : 0;
+      var tm = _ocClipTiming(clip, cStart, cEnd, inRaw);
+      var mfps = seqFps / tm.speed;
+      var phL = tm.srcIn + (ph - cStart) * tm.speed;
+      var keys = null;
+      try { keys = prop.getKeys(); } catch(e) { keys = null; }
+      var kf0 = null, kf1 = null;
+      for (var k = 0; keys && k < keys.length; k++) {
+        var kt = keys[k].seconds;
+        if (kt <= phL) kf0 = kt; else if (kf1 === null) kf1 = kt;
+      }
+      var fc = (kf0 !== null && kf1 !== null) ? Math.round((kf1 - kf0) * mfps) : 0;
+      if (fc < 2) { changed++; continue; }
+      var val0, val1;
+      try { val0 = prop.getValueAtKey(kf0); val1 = prop.getValueAtKey(kf1); } catch(e) { changed++; continue; }
+      var isCompound = (typeof val0 === 'object' && val0 !== null && val0.length === 2);
+      if (!isCompound && typeof val0 !== 'number') { changed++; continue; }
+      targets.push({ ref: ref, loc: loc, comp: comp, prop: prop, matchName: mn, kf0: kf0, kf1: kf1, frames: fc, fps: mfps,
+                     val0: isCompound ? [val0[0], val0[1]] : val0, val1: isCompound ? [val1[0], val1[1]] : val1,
+                     isCompound: isCompound, clipStart: cStart });
+    }
+    if (targets.length === 0) {
+      _ocCacheKey = null; _ocParamCache = null;
+      return _jsonStringify({ success: false, error: 'The keyframes changed. Check the properties and press Go again.' });
     }
 
     try { bSeqId = String(sequence.sequenceID || sequence.name || ''); } catch(e) {}
+    // Premiere's ExtendScript `app` has no beginUndoGroup/endUndoGroup (that's
+    // an After Effects API), so only use it if present. Undo is handled by the
+    // panel's own undo button (_undoStack) regardless.
     var _hasUndoGroup = (typeof app.beginUndoGroup === 'function' && typeof app.endUndoGroup === 'function');
     if (_hasUndoGroup) app.beginUndoGroup('OpenCurve bake');
     try {
-      for (var pi = 0; pi < paramRefs.length; pi++) {
-        var ref = paramRefs[pi];
-        var track = sequence.videoTracks[ref.trackIdx];
-        var clip = track.clips[ref.clipIdx];
-        var comp = clip.components[ref.compIdx];
-        var prop = comp.properties[ref.propIdx];
-
-        var startSec = ref.kf0Time;
-        var totalFrames = ref.frameCount;
-        var val0 = ref.val0;
-        var val1 = ref.val1;
-        var fps = ref.fps;
-        var isCompound = ref.isCompound || false;
-        var label = ref.displayName || ('param ' + ref.propIdx);
-
-        if (totalFrames < 2) continue;
+      for (var pi = 0; pi < targets.length; pi++) {
+        var tg = targets[pi];
+        var prop = tg.prop;
+        var startSec = tg.kf0;
+        var totalFrames = tg.frames;
+        var val0 = tg.val0, val1 = tg.val1;
+        var fps = tg.fps;
+        var isCompound = tg.isCompound;
+        var label = tg.ref.displayName || ('param ' + tg.ref.propIdx);
+        var isAudio = !!tg.ref.isAudio;
 
         // Short pairs are always written densely enough to get at least two keyframes
         var step = Math.max(1, Math.min(stepReq, Math.floor((totalFrames - 1) / 2)));
         var addedTimes = [];
+        var frames = [], eased = [];
+        for (var f = step; f < totalFrames; f += step) { frames.push(f); eased.push(_sampleBezier(f / totalFrames, curve)); }
+        var path = isCompound ? _ocSamplePath(prop, tg.kf0, tg.kf1, val0, val1, totalFrames) : null;
+        var retimed = (!isCompound && isAudio) ? _ocRetimed(prop, tg.kf0, tg.kf1, eased) : null;
 
-        for (var f = step; f < totalFrames; f += step) {
-          var t = f / totalFrames;
-          var easedT = _sampleBezier(t, curve);
+        for (var fi = 0; fi < frames.length; fi++) {
+          var easedT = eased[fi];
           // Compound (Position / Anchor Point) values are passed as [x, y]
           // arrays — the correct format for 2D spatial params (the old
           // "illegal parameter type" bug was fixed in PPro 14.0.1).
           var value;
           if (isCompound) {
-            value = [
+            value = path ? _ocPathAt(path, easedT) : [
               val0[0] + (val1[0] - val0[0]) * easedT,
               val0[1] + (val1[1] - val0[1]) * easedT
             ];
           } else {
-            value = val0 + (val1 - val0) * easedT;
+            value = retimed ? retimed[fi]
+                  : val0 + (val1 - val0) * (isAudio ? Math.max(0, Math.min(1, easedT)) : easedT);
             // Overshoot curves: Opacity only goes 0..100
             if (/opacity/i.test(label)) value = Math.max(0, Math.min(100, value));
           }
-          var timeSec = startSec + f / fps;
+          var timeSec = startSec + frames[fi] / fps;
 
           // Pass updateUI=true only on the final key of each property: one
           // redraw per param (so the keyframes actually appear without
           // re-selecting the clip) instead of a redraw on every frame, which
           // would defeat the batching speed-up.
-          var doUpdate = (f + step >= totalFrames);
+          var doUpdate = (fi === frames.length - 1);
 
           try {
             prop.addKey(timeSec);
@@ -842,22 +1080,22 @@ function bakeKeyframes(argsJSON) {
         // Capture a stable clip/component identity alongside the indices so
         // undo can detect a changed timeline and refuse to touch the wrong
         // property.
-        var bClipName = '';  try { bClipName = clip.name; } catch(e) {}
-        var bClipStart = 0;  try { bClipStart = clip.start.seconds; } catch(e) {}
-        var bMatchName = ''; try { bMatchName = comp.matchName; } catch(e) {}
-        var bNodeId = '';    try { bNodeId = String(clip.nodeId || ''); } catch(e) {}
+        var bClip = tg.loc.clip;
+        var bClipName = '';  try { bClipName = bClip.name; } catch(e) {}
+        var bNodeId = '';    try { bNodeId = String(bClip.nodeId || ''); } catch(e) {}
 
-        undoInfo.push({
+        if (addedTimes.length) undoInfo.push({
           id: ++_ocBakeSeq,          // referenced by the panel's per-row undo button
-          kf0Time: ref.kf0Time,      // range the bake filled, for spotting an external undo
-          kf1Time: ref.kf1Time,
-          trackIdx: ref.trackIdx,
-          clipIdx: ref.clipIdx,
-          compIdx: ref.compIdx,
-          propIdx: ref.propIdx,
+          kf0Time: tg.kf0,           // range the bake filled, for spotting an external undo
+          kf1Time: tg.kf1,
+          trackIdx: tg.loc.trackIdx,
+          clipIdx: tg.loc.clipIdx,
+          isAudio: isAudio,
+          compIdx: tg.ref.compIdx,
+          propIdx: tg.ref.propIdx,
           clipName: bClipName,
-          clipStart: bClipStart,
-          matchName: bMatchName,
+          clipStart: tg.clipStart,
+          matchName: tg.matchName,
           nodeId: bNodeId,
           displayName: label,
           times: addedTimes,
@@ -879,7 +1117,8 @@ function bakeKeyframes(argsJSON) {
     }
 
     _undoStack.push(undoInfo);
-    return _jsonStringify({ success: true, actions: totalActions, warning: firstErr });
+    var warn = firstErr || (changed ? changed + ' of the selected properties changed and were skipped' : null);
+    return _jsonStringify({ success: true, actions: totalActions, warning: warn });
   } catch(err) {
     return _jsonStringify({ success: false, error: err.message || String(err) });
   }
@@ -948,10 +1187,10 @@ function _ocUndoInfo(sequence, info) {
     var clip = null;
     if (info.nodeId) {
       // The clip may have been moved since the bake: find it by its stable id
-      clip = _ocClipByNodeId(sequence, info.nodeId);
+      clip = _ocClipByNodeId(sequence, info.nodeId, !!info.isAudio);
     }
     if (!clip) {
-      clip = sequence.videoTracks[info.trackIdx].clips[info.clipIdx];
+      clip = _ocTrack(sequence, !!info.isAudio, info.trackIdx).clips[info.clipIdx];
       // Verify the indices still resolve to the SAME clip we baked into. If the
       // timeline changed (clip moved/reordered) skip rather than deleting
       // keyframes off whatever clip now sits at those indices.
@@ -1021,9 +1260,10 @@ function _ocUndoInfo(sequence, info) {
 
 // Locate a clip anywhere in the sequence by its stable nodeId (cached
 // structure first, then a live walk in case the cache is behind).
-function _ocClipByNodeId(sequence, nodeId) {
+function _ocClipByNodeId(sequence, nodeId, isAudio) {
   if (_ocTracks) {
     for (var ti = 0; ti < _ocTracks.length; ti++) {
+      if (!!_ocTracks[ti].isAudio !== !!isAudio) continue;
       var items = _ocTracks[ti].items;
       for (var i = 0; i < items.length; i++) {
         if (items[i].nodeId === nodeId) {
@@ -1032,16 +1272,8 @@ function _ocClipByNodeId(sequence, nodeId) {
       }
     }
   }
-  try {
-    var n = sequence.videoTracks.numTracks;
-    for (var t = 0; t < n; t++) {
-      var clips = sequence.videoTracks[t].clips;
-      for (var c = 0; c < clips.numItems; c++) {
-        try { if (String(clips[c].nodeId || '') === nodeId) return clips[c]; } catch(e) {}
-      }
-    }
-  } catch(e) {}
-  return null;
+  var hit = _ocFindNode(sequence, nodeId, !!isAudio);
+  return hit ? hit.clip : null;
 }
 
 // Start of the keyframe pair with a real (2+ frame) span nearest the playhead,

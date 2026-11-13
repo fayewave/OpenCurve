@@ -2026,7 +2026,9 @@ function _tlRequestValue(info) {
   var s = getState();
   var p = (s.availableParams || []).filter(function(a) { return a.key === info.lane.key; })[0];
   if (!p) return;
-  var mediaSec = info.t.sec - (s.tl ? (s.tl.clipStart - s.tl.clipIn) : 0);
+  // Keyframes are in media time; on a clip with a speed change one sequence
+  // second is `speed` media seconds (clipIn is the media in-point)
+  var mediaSec = s.tl ? (s.tl.clipIn || 0) + (info.t.sec - (s.tl.clipStart || 0)) * (s.tl.speed || 1) : info.t.sec;
   var id = ++_tlValReq;
   _tlValBusy = true;
   function done(v) {
@@ -2048,6 +2050,9 @@ function _fmtParamValue(v, name) {
     return s === '-0' ? '0' : s;
   }
   if (typeof v === 'number' && isFinite(v)) {
+    // Audio Level (the Volume effect's second parameter) is stored as a gain,
+    // 0.178 = 0 dB: show it in dB as Effect Controls does
+    if (/^Internal Volume\b.* 1$/.test(name || '')) return v > 0 ? num(20 * Math.log(v) / Math.LN10 + 15) + ' dB' : '-\u221e dB';
     var unit = /opacity|scale/i.test(name || '') ? '%' : /rotation|skew/i.test(name || '') ? '\u00b0' : '';
     return num(v) + unit;
   }
