@@ -65,8 +65,12 @@ Object.keys(found).forEach(function(k) {
 });
 
 // ─── UXP staging (shared by github and exchange) ──────────────────────────
+// Retries: Dropbox holds a folder it just saw emptied for a moment, and the
+// delete failed with EBUSY partway through a build (November 2026)
+const RM_OPTS = { recursive: true, force: true, maxRetries: 20, retryDelay: 250 };
+
 function stageUxp(dir, pluginJs, manifest) {
-  fs.rmSync(dir, { recursive: true, force: true });
+  fs.rmSync(dir, RM_OPTS);
   fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'img'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
@@ -168,7 +172,7 @@ var targets = {
     });
 
     var dir = path.join(ROOT, 'packages', 'CEP', 'opencurve');
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, RM_OPTS);
     var cepRoot = path.join(ROOT, 'cep');
     copyDir(cepRoot, dir, function(a, e) {
       var rel = path.relative(cepRoot, a).split(path.sep).join('/');
