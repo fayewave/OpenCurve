@@ -597,6 +597,7 @@ var _dragGhost      = localStorage.getItem(_DRAG_GHOST_KEY) !== 'off';
 var _PEAK_K_FRAC = 0.98; // top of the box = this fraction of the sharpest ease possible at that x (1 would be a step)
 var _PEAK_EPS   = 1e-4; // keep t off the exact endpoints so 0/0 never happens
 var _peakThumbRefresh = null; // set by initPanel: redraws preset thumbnails when the mode flips
+var _presetMatchRef   = null; // set by initPanel: id of the preset with a given curve (Load Baked Curve)
 var _resetPresetsRef  = null; // set by initPanel; Reset All Settings rebuilds the preset list with it
 
 // Velocity dy/dx of the easing at bezier parameter t
@@ -1481,7 +1482,13 @@ function _styleReplaceBtn(el, ready) {
 function _loadBakedCurve(key) {
   var live = (getState().availableParams || []).filter(function(x){ return x.key === key; })[0];
   if (!live || !live.bakeCurve) { _showCopyToast('No curve was recorded for this bake', '#f0a030'); return; }
-  clearPresetActive();
+  // The preset it came from, if it is still in the list, lights up as if clicked
+  var pid = _presetMatchRef ? _presetMatchRef(live.bakeCurve) : null;
+  if (pid !== null) {
+    setPresetActive(pid);
+    var tile = document.querySelector('.preset-btn[data-id="' + pid + '"]');
+    if (tile && tile.scrollIntoView) tile.scrollIntoView({ block: 'nearest' }); // in view
+  } else clearPresetActive();
   _animateToCurve(_cloneCurve(live.bakeCurve), function(cur) { if (_svgW > 0 && _svgH > 0) updateDynamicSVG(cur, _svgW, _svgH); });
   _showCopyToast('Loaded the curve baked on ' + (live.label || live.displayName || 'this property'));
 }
@@ -3843,6 +3850,12 @@ function initPanel() {
   // Reset All Settings rebuilds the list from here: _presetList lives in this
   // closure, so clearing storage alone left the old list in memory and the next
   // preset edit wrote it straight back.
+  // Load Baked Curve lights the preset the bake used: the first preset whose
+  // curve has the same shape (_sameCurve), or null
+  _presetMatchRef = function(curve) {
+    for (var i = 0; i < _presetList.length; i++) if (_sameCurve(_presetList[i].curve, curve)) return _presetList[i].id;
+    return null;
+  };
   _resetPresetsRef = function() {
     _presetList = BUILT_IN_PRESETS.map(function(p) {
       return { id: p.id, name: p.name, curve: _cloneCurve(p.curve), builtIn: true };

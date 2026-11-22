@@ -2949,7 +2949,13 @@ function _bakeRecFor(s, key) {
 function _loadBakedCurve(key) {
   var rec = _bakeRecFor(getState(), key);
   if (!rec || !rec.curve) { _showCopyToast('No curve was recorded for this bake', '#f0a030'); return; }
-  clearPresetActive();
+  // The preset it came from, if it is still in the list, lights up as if clicked
+  var pid = _presetMatchRef ? _presetMatchRef(rec.curve) : null;
+  if (pid !== null) {
+    setPresetActive(pid);
+    var tile = document.querySelector('.preset-btn[data-id="' + pid + '"]');
+    if (tile) _presetGoToTile(tile); // the page it is on
+  } else clearPresetActive();
   _animateToCurve(_cloneCurve(rec.curve), function(cur) { if (_svgW > 0 && _svgH > 0) updateDynamicSVG(cur, _svgW, _svgH); });
   _showCopyToast('Loaded the curve baked on ' + (rec.label || rec.displayName || 'this property'));
 }
@@ -5394,6 +5400,7 @@ function _sdWatch(el, name, noKick) {
 }
 var _sdKickN = 0;
 var _renderPresetsRef = null; // set in initPanel; kick 6 rebuilds the preset list into a fresh element with it
+var _presetMatchRef   = null; // set by initPanel: id of the preset with a given curve (Load Baked Curve)
 var _resetPresetsRef  = null; // set in initPanel; Reset All Settings rebuilds the preset list with it
 function _sdKick(el) {
   _sd.kickTimer = null;
@@ -6701,6 +6708,12 @@ function initPanel() {
   // Reset All Settings rebuilds the list from here: _presetList lives in this
   // closure, so clearing storage alone left the old list in memory and the next
   // preset edit wrote it straight back.
+  // Load Baked Curve lights the preset the bake used: the first preset whose
+  // curve has the same shape (_sameCurve), or null
+  _presetMatchRef = function(curve) {
+    for (var i = 0; i < _presetList.length; i++) if (_sameCurve(_presetList[i].curve, curve)) return _presetList[i].id;
+    return null;
+  };
   _resetPresetsRef = function() {
     _presetList = BUILT_IN_PRESETS.map(function(p) {
       return { id: p.id, name: p.name, curve: _cloneCurve(p.curve), builtIn: true };
