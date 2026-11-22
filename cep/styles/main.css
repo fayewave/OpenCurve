@@ -165,6 +165,15 @@ input, textarea {
   position: relative;
 }
 
+/* The zoom button sits in the graph area's bottom-right corner (its slider opens above it) */
+#zoom-btn {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  margin-left: 0;
+  z-index: 2;
+}
+
 .graph-coords {
   position: absolute;
   top: 28px;

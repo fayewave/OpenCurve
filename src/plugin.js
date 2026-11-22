@@ -6480,7 +6480,8 @@ function initPanel() {
     settingsBtn.addEventListener('click', function() { _showSettingsModal(); });
   }
 
-  // Zoom: one toolbar button (#zoom-btn) opens a vertical slider under it. Drag
+  // Zoom: one button (#zoom-btn, in the graph area's bottom-right corner since
+  // 2.1.0; it was in the toolbar) opens a vertical slider above it. Drag
   // up to zoom in (100% at the top), down to zoom out (25% at the bottom); the
   // scale is logarithmic, so 50% sits in the middle and every stretch of the
   // track is the same step by eye. A press anywhere outside the slider, the
@@ -6526,9 +6527,14 @@ function initPanel() {
     var r  = anchor.getBoundingClientRect();
     var ww = document.documentElement.clientWidth  || document.body.clientWidth;
     var wh = document.documentElement.clientHeight || document.body.clientHeight;
-    var top    = Math.round(r.bottom + 4);
-    var trackH = Math.max(48, Math.min(116, wh - top - 4 - (PAD_T + GAP + LABEL_H + PAD_B + 2)));
-    var popH   = PAD_T + trackH + GAP + LABEL_H + PAD_B + 2;
+    // The graph's own button (bottom-right of the graph) opens upward, into the
+    // graph; any other anchor opens below unless there is more room above
+    var chrome = PAD_T + GAP + LABEL_H + PAD_B + 2;
+    var below  = wh - Math.round(r.bottom + 4) - 4, above = Math.round(r.top - 4) - 4;
+    var up     = anchor === zoomBtn ? (above >= 48 + chrome || above > below) : (below < 116 + chrome && above > below);
+    var trackH = Math.max(48, Math.min(116, (up ? above : below) - chrome));
+    var popH   = trackH + chrome;
+    var top    = up ? Math.round(r.top - 4) - popH : Math.round(r.bottom + 4);
     var left   = Math.max(2, Math.min(ww - POP_W - 2, Math.round(r.left + r.width / 2 - POP_W / 2)));
     var cx     = INNER_W / 2; // the track's centre line
 
@@ -6624,8 +6630,9 @@ function initPanel() {
   // its dropdown (their toolbar buttons stay in the HTML, hidden, as icon sources).
   // Ghost is a Settings row now; its hidden button is kept for _setDragGhost and
   // the drag ghost's icon. The other tools join the dropdown once the bar is narrow.
-  var _tbTools = [peakBtn, bounceBtn, addPtBtn, zoomBtn];
-  var _TB_NEED = (4 * 26 + 3 * 5) + (2 * 26 + 1 * 5) + 10 + 8;
+  var _tbTools = [peakBtn, bounceBtn, addPtBtn]; // zoom lives on the graph itself and never collapses
+  // Left: the menu button and New Preset; right: A-curve, Bounce, Add Point, Full Screen
+  var _TB_NEED = (2 * 26 + 1 * 5) + (4 * 26 + 3 * 5) + 10 + 8;
   var _tbCollapsed = null;
   var _tbDismiss   = null;
   function _hideToolsMenu() {
@@ -6689,9 +6696,6 @@ function initPanel() {
     item('Flip',      flipBtn,   function() { _applyCurveOp(_flipCurve); });
     item('Invert',    invertBtn, function() { _applyCurveOp(_invertCurve); });
     item('Numeric Entry', numBtn, function() { _showNumericPanel(); });
-    if (_tbCollapsed) {
-      item(_zoomLabel(), zoomBtn, function() { _showZoomSlider(menuBtn); }); // the slider opens under the menu button
-    }
     menu.style.left = '0px';
     menu.style.top  = '0px';
     document.body.appendChild(menu);
@@ -6738,7 +6742,10 @@ function initPanel() {
   var ptb      = document.getElementById('preset-toolbar');
   var pMenuBtn = document.getElementById('preset-tools-menu');
   var _PTB_IDS = ['preset-new', 'preset-layout', 'toggle-graph', 'toggle-timeline'];
-  var _PTB_NEED = (3 * 26 + 2 * 5) + (3 * 26 + 2 * 5) + 10 + 8;
+  // New Preset lives in the graph bar while the graph is shown (_newPresetPlace),
+  // so it only counts, and only collapses here, while it is in this bar
+  function _newInPtb() { var b = document.getElementById('preset-new'); return !!(b && ptb && b.parentNode === ptb); }
+  function _ptbNeed() { var left = _newInPtb() ? 3 : 2; return (left * 26 + (left - 1) * 5) + (3 * 26 + 2 * 5) + 10 + 8; }
   var _ptbCollapsed = null;
   var _ptbDismiss   = null;
   function _hidePresetMenu() {
@@ -6750,11 +6757,15 @@ function initPanel() {
     if (!ptb || !pMenuBtn) return;
     var w = ptb.clientWidth;
     if (!(w > 0)) return;
-    var collapse = w < _PTB_NEED;
+    var collapse = w < _ptbNeed();
     if (collapse === _ptbCollapsed) return;
     _ptbCollapsed = collapse;
     // inline display: UXP ignores class-driven display changes
-    _PTB_IDS.forEach(function(id) { var b = document.getElementById(id); if (b) b.style.display = collapse ? 'none' : ''; });
+    _PTB_IDS.forEach(function(id) {
+      var b = document.getElementById(id);
+      if (!b || (id === 'preset-new' && !_newInPtb())) return;
+      b.style.display = collapse ? 'none' : '';
+    });
     // #preset-layout carries the margin that pushes the right group away; while it
     // is hidden the menu button takes that job (inline, UXP ignores class changes)
     pMenuBtn.style.marginRight = collapse ? 'auto' : '';
@@ -6805,7 +6816,7 @@ function initPanel() {
       sep.style.cssText = 'border-top:1px solid rgba(255,255,255,0.07);margin:3px 0;';
       menu.appendChild(sep);
       var newBtn = document.getElementById('preset-new');
-      item('New Preset', svgOf('preset-new'), function() { if (newBtn) newBtn.click(); });
+      if (_newInPtb()) item('New Preset', svgOf('preset-new'), function() { if (newBtn) newBtn.click(); }); // in the graph bar it stays on show
       item(_presetLayout === 'list' ? 'Grid View' : 'List View',
            svgOf('preset-layout', _presetLayout === 'list' ? '.ic-grid' : '.ic-list'),
            function() { _presetLayout = _presetLayout === 'list' ? 'grid' : 'list'; localStorage.setItem(_LAYOUT_KEY, _presetLayout); _applyPresetLayout(true); });
@@ -6842,6 +6853,21 @@ function initPanel() {
     });
   }
   if (ptb && typeof ResizeObserver !== 'undefined') new ResizeObserver(_ptbLayout).observe(ptb);
+  // New Preset sits next to the graph bar's menu button while the graph is shown
+  // and goes back next to the preset bar's menu button while it is off (the graph
+  // bar hides with the graph). _applyGraphVisibility calls this on every change.
+  _newPresetPlace = function() {
+    var b = document.getElementById('preset-new'), gtb = document.getElementById('graph-toolbar');
+    var gMenu = document.getElementById('graph-tools-menu');
+    if (!b || !gtb || !gMenu || !ptb || !pMenuBtn) return;
+    var host = _graphVisible ? gtb : ptb, after = _graphVisible ? gMenu : pMenuBtn;
+    if (b.parentNode !== host) {
+      host.insertBefore(b, after.nextSibling);
+      if (b.style.display) b.style.display = ''; // the preset bar may have collapsed it
+      _ptbCollapsed = null; _ptbLayout();        // the preset bar's room changed
+    }
+  };
+  _newPresetPlace();
   _ptbLayout();
 
   // ── Unified preset system ─────────────────────────────────────
@@ -8266,7 +8292,9 @@ if ([1, 2, 4].indexOf(_bakeDensity) < 0) _bakeDensity = 1;
 // full panel width. The status strip and the mini timeline sit at the bottom of
 // the panel in both layouts, so they need no moving. Everything is done with
 // inline styles because UXP does not relayout on class changes.
+var _newPresetPlace = null; // set by initPanel: puts #preset-new in the graph bar or the preset bar
 function _applyGraphVisibility() {
+  if (_newPresetPlace) _newPresetPlace();
   var leftCol  = document.querySelector('.left-col');
   var handle   = document.getElementById('resize-handle');
   var rightCol = document.getElementById('right-col');
