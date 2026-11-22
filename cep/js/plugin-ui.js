@@ -844,7 +844,7 @@ function _setPeakMode(on) {
 // _BN_TEXT_MS while a drag runs (a text write relayouts the whole panel).
 var _BN_KEY    = 'opencurve-bounce';
 var _BN_DEF    = { style: 'bounce', dir: 'out', n: 3, bounce: 0.45, over: 0.3, fric: 0.35, hit: 0.4 };
-var _BN_RANGE  = { n: [0, 20], bounce: [0, 0.9], over: [0, 0.7], fric: [0, 0.9], hit: [0.15, 0.85] };
+var _BN_RANGE  = { n: [0, 20], bounce: [0, 0.9], over: [0, 0.7], fric: [0, 0.9], hit: [0.05, 0.85] };
 var _BN_MIN_W  = 0.015;  // narrowest bounce or half swing kept (anchors must stay PT_MIN_GAP apart)
 var _BN_MIN_H  = 0.003;  // lower bounces than this are dropped
 var _BN_COS_F  = 0.3645; // flat-to-flat half cosine
