@@ -7732,11 +7732,8 @@ function initPanel() {
     var btnRow = document.createElement('div');
     btnRow.style.cssText = 'display:flex;justify-content:flex-start;';
 
-    var addBtn = document.createElement('div');
-    addBtn.textContent = 'Add Preset';
-    addBtn.style.cssText = 'color:#4a9eff;font-size:13px;font-weight:600;cursor:pointer;padding:5px 12px;border:2px solid rgba(74,158,255,0.4);margin-right:10px;';
-    addBtn.addEventListener('mouseenter', function() { addBtn.style.color='#7dc4ff'; addBtn.style.borderColor='rgba(74,158,255,0.8)'; });
-    addBtn.addEventListener('mouseleave', function() { addBtn.style.color='#4a9eff'; addBtn.style.borderColor='rgba(74,158,255,0.4)'; });
+    var addBtn = _modalBtn('Add Preset', null, 'primary');
+    addBtn.style.marginRight = '8px';
     addBtn.addEventListener('click', function() {
       var curve = _parseCubicBezier(input.value.trim());
       if (!curve) { err.textContent = 'Invalid format — expected cubic-bezier(x1, y1, x2, y2) or an opencurve(...) value'; return; }
@@ -7744,11 +7741,7 @@ function initPanel() {
       _createPresetFromCurve(curve);
     });
 
-    var cancelBtn = document.createElement('div');
-    cancelBtn.textContent = 'Cancel';
-    cancelBtn.style.cssText = 'color:#888;font-size:13px;cursor:pointer;padding:5px 12px;border:2px solid rgba(255,255,255,0.12);';
-    cancelBtn.addEventListener('mouseenter', function() { cancelBtn.style.color='#e4e4e4'; cancelBtn.style.borderColor='rgba(255,255,255,0.25)'; });
-    cancelBtn.addEventListener('mouseleave', function() { cancelBtn.style.color='#888'; cancelBtn.style.borderColor='rgba(255,255,255,0.12)'; });
+    var cancelBtn = _modalBtn('Cancel', null, 'plain');
     cancelBtn.addEventListener('click', close);
 
     btnRow.appendChild(addBtn);
@@ -9186,6 +9179,46 @@ function _fakeUpdateToggle() { // [dev-fake-update]
 }
 // [/exchange-strip]
 
+// ─── Popup buttons (2.1.0) ────────────────────────────────────────────────
+// Every popup's buttons (Save, Cancel, Delete, Apply, Let's go, ...) share the
+// Settings buttons' look (_cardBtn in _showSettingsModal): a 30px outlined box,
+// 6px corners, 13px text, with rest / hover / pressed looks. The outline is an
+// outer box filled with its colour round a 1px inset inner box (UXP draws a
+// CSS border soft, see _crispBox). kind: 'primary' is Settings' blue GitHub
+// look, 'danger' a red twin of it, anything else the grey look.
+var _MODAL_LIFT = 1; // UXP sets text about 1px low in its line box (Settings' _uxpLift)
+var _MODAL_LOOKS = {
+  plain:   { looks: [['#3c3c3c', '#222222'], ['#5a5a5a', '#2a2a2a'], ['#757575', '#343434']], text: ['#e4e4e4', '#ffffff'] },
+  primary: { looks: [['#2b507c', '#161c24'], ['#6796b8', '#1a2635'], ['#8bb3d6', '#22324a']], text: ['#4a9eff', '#8ccfff'] },
+  danger:  { looks: [['#7c2b2b', '#241616'], ['#b86767', '#351a1a'], ['#d68b8b', '#4a2222']], text: ['#ff6b6b', '#ffa3a3'] }
+};
+function _modalBtn(label, onClick, kind) {
+  var k = _MODAL_LOOKS[kind] || _MODAL_LOOKS.plain;
+  var b = document.createElement('div');
+  b.style.cssText = 'box-sizing:border-box;height:30px;padding:1px;flex-shrink:0;border-radius:6px;cursor:pointer;';
+  var inner = document.createElement('div');
+  inner.style.cssText = 'display:flex;align-items:center;justify-content:center;box-sizing:border-box;height:28px;border-radius:5px;'
+    + 'padding:' + (4 - _MODAL_LIFT) + 'px 12px ' + (4 + _MODAL_LIFT) + 'px;font-size:13px;line-height:18px;white-space:nowrap;';
+  inner.textContent = label;
+  b.appendChild(inner);
+  b._ocIn = inner;
+  var hot = false, down = false;
+  function paint() {
+    var st = down ? 2 : hot ? 1 : 0;
+    b.style.backgroundColor = k.looks[st][0];
+    inner.style.backgroundColor = k.looks[st][1];
+    inner.style.color = k.text[st ? 1 : 0];
+  }
+  b.addEventListener('mouseenter', function() { hot = true; paint(); });
+  b.addEventListener('mouseleave', function() { hot = false; down = false; paint(); });
+  b.addEventListener('pointerdown', function() { down = true; paint(); });
+  b.addEventListener('pointerup', function() { if (down) { down = false; paint(); } });
+  b.addEventListener('pointercancel', function() { if (down) { down = false; paint(); } });
+  if (onClick) b.addEventListener('click', onClick);
+  paint();
+  return b;
+}
+
 // Modal confirmation: title, message, a red action button and Cancel.
 // onOk runs after the dialog has closed. Used by reset-all and preset delete.
 // ─── Welcome to v2 (first launch of a 2.x build) ─────────────────────────
@@ -9262,11 +9295,8 @@ function _showWelcome() {
 
   var btns = document.createElement('div');
   btns.style.cssText = 'display:flex;justify-content:center;';
-  var okBtn = document.createElement('div');
-  okBtn.textContent = 'Let’s go';
-  okBtn.style.cssText = 'background:rgba(74,158,255,0.15);color:#6cb8ff;border:none;font-size:13px;padding:6px 26px;cursor:pointer;font-weight:600;';
-  okBtn.addEventListener('mouseenter', function() { okBtn.style.backgroundColor = 'rgba(74,158,255,0.28)'; });
-  okBtn.addEventListener('mouseleave', function() { okBtn.style.backgroundColor = 'rgba(74,158,255,0.15)'; });
+  var okBtn = _modalBtn('Let’s go', null, 'primary');
+  okBtn._ocIn.style.paddingLeft = okBtn._ocIn.style.paddingRight = '26px';
   // Vertical fit: the width caps itself through max-width, but a short panel
   // would clip the card, so it is scaled down as a whole (transform) to fit
   // the panel's height with a little air, and re-fitted when the panel is
@@ -9325,18 +9355,11 @@ function _confirmDialog(titleText, msgText, okLabel, onOk) {
   var btns = document.createElement('div');
   btns.style.cssText = 'display:flex;justify-content:flex-end;'; // no flex gap: UXP ignores it, the OK button carries a margin
 
-  var cancelBtn = document.createElement('div');
-  cancelBtn.textContent = 'Cancel';
-  cancelBtn.style.cssText = 'background:transparent;border:1px solid rgba(255,255,255,0.12);color:#888;font-size:13px;padding:5px 12px;cursor:pointer;';
-  cancelBtn.addEventListener('mouseenter', function() { cancelBtn.style.color='#e4e4e4'; cancelBtn.style.borderColor='rgba(255,255,255,0.25)'; });
-  cancelBtn.addEventListener('mouseleave', function() { cancelBtn.style.color='#888'; cancelBtn.style.borderColor='rgba(255,255,255,0.12)'; });
+  var cancelBtn = _modalBtn('Cancel', null, 'plain');
   cancelBtn.addEventListener('click', function() { document.body.removeChild(overlay); });
 
-  var okBtn = document.createElement('div');
-  okBtn.textContent = okLabel;
-  okBtn.style.cssText = 'background:#f06060;border:none;color:#fff;font-size:13px;padding:5px 12px;cursor:pointer;font-weight:600;margin-left:8px;';
-  okBtn.addEventListener('mouseenter', function() { okBtn.style.background='#f27878'; });
-  okBtn.addEventListener('mouseleave', function() { okBtn.style.background='#f06060'; });
+  var okBtn = _modalBtn(okLabel, null, 'danger');
+  okBtn.style.marginLeft = '8px';
   okBtn.addEventListener('click', function() {
     document.body.removeChild(overlay);
     onOk();
@@ -9390,18 +9413,11 @@ function _renamePresetDialog(current, onOk, opts) {
     onOk(v);
   }
 
-  var cancelBtn = document.createElement('div');
-  cancelBtn.textContent = 'Cancel';
-  cancelBtn.style.cssText = 'background:transparent;border:1px solid rgba(255,255,255,0.12);color:#888;font-size:13px;padding:5px 12px;cursor:pointer;';
-  cancelBtn.addEventListener('mouseenter', function() { cancelBtn.style.color='#e4e4e4'; cancelBtn.style.borderColor='rgba(255,255,255,0.25)'; });
-  cancelBtn.addEventListener('mouseleave', function() { cancelBtn.style.color='#888'; cancelBtn.style.borderColor='rgba(255,255,255,0.12)'; });
+  var cancelBtn = _modalBtn('Cancel', null, 'plain');
   cancelBtn.addEventListener('click', close);
 
-  var okBtn = document.createElement('div');
-  okBtn.textContent = (opts && opts.ok) || 'Rename';
-  okBtn.style.cssText = 'background:#4a9eff;border:none;color:#fff;font-size:13px;padding:5px 12px;cursor:pointer;font-weight:600;margin-left:8px;';
-  okBtn.addEventListener('mouseenter', function() { okBtn.style.background='#6bb0ff'; });
-  okBtn.addEventListener('mouseleave', function() { okBtn.style.background='#4a9eff'; });
+  var okBtn = _modalBtn((opts && opts.ok) || 'Rename', null, 'primary');
+  okBtn.style.marginLeft = '8px';
   okBtn.addEventListener('click', ok);
 
   input.addEventListener('keydown', function(ev) {
@@ -9633,21 +9649,14 @@ function _showNumericPanel() {
 
   var btnRow = document.createElement('div');
   btnRow.style.cssText = 'display:flex;justify-content:flex-start;';
-  function mkBtn(label, onClick) {
-    var b = document.createElement('div');
-    b.textContent = label;
-    b.style.cssText = 'color:#4a9eff;font-size:13px;font-weight:600;cursor:pointer;padding:5px 12px;border:2px solid rgba(74,158,255,0.4);margin-right:10px;';
-    b.addEventListener('mouseenter', function() { b.style.color = '#7dc4ff'; b.style.borderColor = 'rgba(74,158,255,0.8)'; });
-    b.addEventListener('mouseleave', function() { b.style.color = '#4a9eff'; b.style.borderColor = 'rgba(74,158,255,0.4)'; });
-    b.addEventListener('click', onClick);
+  function mkBtn(label, onClick, kind) { // the shared popup button (_modalBtn)
+    var b = _modalBtn(label, onClick, kind);
+    b.style.marginRight = '8px';
     btnRow.appendChild(b);
     return b;
   }
-  mkBtn('Apply', apply);
-  var cancelBtn = mkBtn('Cancel', cancel);
-  cancelBtn.style.color = '#888'; cancelBtn.style.borderColor = 'rgba(255,255,255,0.15)';
-  cancelBtn.addEventListener('mouseenter', function() { cancelBtn.style.color = '#e4e4e4'; cancelBtn.style.borderColor = 'rgba(255,255,255,0.35)'; });
-  cancelBtn.addEventListener('mouseleave', function() { cancelBtn.style.color = '#888'; cancelBtn.style.borderColor = 'rgba(255,255,255,0.15)'; });
+  mkBtn('Apply', apply, 'primary');
+  mkBtn('Cancel', cancel);
   box.appendChild(btnRow);
 
   setTimeout(function() { fields.p1x.focus(); fields.p1x.select(); }, 0);
