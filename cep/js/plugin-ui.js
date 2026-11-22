@@ -5952,14 +5952,14 @@ function _showSettingsModal() {
   madeByText.textContent = 'made by faye';
   madeByText.style.cssText = 'flex-shrink:0;white-space:nowrap;line-height:16px;';
   footerLeft.appendChild(madeByText);
-  var ghIc = '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M8.2 2.5h3.3v3.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M11.5 2.5L6.6 7.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 8.6v2.1a.8.8 0 01-.8.8H3.3a.8.8 0 01-.8-.8V4.6a.8.8 0 01.8-.8h2.1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>', ghTip = 'Open OpenCurve on GitHub in your browser';
+  var ghIc = '<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M8.2 2.5h3.3v3.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M11.5 2.5L6.6 7.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 8.6v2.1a.8.8 0 01-.8.8H3.3a.8.8 0 01-.8-.8V4.6a.8.8 0 01.8-.8h2.1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>', ghTip = 'Open OpenCurve on GitHub in your browser';
   var ghLink = _cardBtn('GitHub', function() { _openReleasesPage(); });
   ghLink._ocLooks = [['#2b507c', '#161c24'], ['#6796b8', '#1a2635'], ['#8bb3d6', '#22324a']];
   ghLink._ocHot(0);
   ghLink._ocIn.style.color = '#4a9eff';
   ghLink.style.marginLeft = '12px';
   var ghIcon = document.createElement('span');
-  ghIcon.style.cssText = 'display:inline-flex;width:12px;height:12px;margin-right:6px;';
+  ghIcon.style.cssText = 'display:inline-flex;width:15px;height:15px;margin-right:6px;';
   ghIcon.innerHTML = ghIc;
   ghLink._ocIn.insertBefore(ghIcon, ghLink._ocText);
   ghLink.addEventListener('mouseenter', function() { ghLink._ocIn.style.color = '#8ccfff'; });
