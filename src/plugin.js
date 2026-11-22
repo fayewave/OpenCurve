@@ -8110,6 +8110,7 @@ function _applyCurveColor(color) {
   if (ep3) ep3.setAttribute('stroke', color);
   for (var pi = 0; pi < _ptEls.length; pi++) { _ptEls[pi].inner.setAttribute('stroke', color); _ptEls[pi].sq.setAttribute('stroke', color); }
   document.querySelectorAll('.preset-thumb path').forEach(function(p) {
+    if (p.getAttribute('data-oc-keep')) return; // the update tile's icon stays amber
     p.setAttribute('stroke', color);
   });
   // Update active preset button theme colours
@@ -8224,7 +8225,7 @@ function _refreshUpdateNotification() {
   // the 28-unit viewBox; one path, so that stroke applies to all of it.
   var iconHost = document.createElement('span');
   iconHost.innerHTML = '<svg class="preset-thumb" width="28" height="28" viewBox="0 0 28 28" fill="none" style="flex-shrink:0;margin-right:8px;">'
-    + '<path d="M3 14A11 11 0 1 1 25 14A11 11 0 1 1 3 14Z M14 19.5V8.5 M9 13.5L14 8.5L19 13.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    + '<path d="M3 14A11 11 0 1 1 25 14A11 11 0 1 1 3 14Z M14 19.5V8.5 M9 13.5L14 8.5L19 13.5" fill="none" stroke="#e6b800" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-oc-keep="1"/></svg>';
   var iconWrap = iconHost.firstChild;
   notif.appendChild(iconWrap);
 

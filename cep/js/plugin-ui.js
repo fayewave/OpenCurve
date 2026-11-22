@@ -2276,11 +2276,18 @@ function _fmtParamValue(v, name) {
 // waiting for the next poll (polling pauses while "Done" shows, so the bar
 // otherwise trailed the green row by a second or more). The bracket that was
 // baked is the span; the scan replaces these with the real records afterwards.
-function _tlSpansAfterBake(s, keys) {
+// ids (the host's new record id per key) and curve go on the rows too, so their
+// Undo, Load Curve and Replace buttons work at once: until 2.1.0 a row Undo
+// pressed before the next scan found no bakeIds and did nothing.
+function _tlSpansAfterBake(s, keys, ids, curve) {
   return (s.availableParams || []).map(function(p) {
-    if (keys.indexOf(p.key) < 0 || typeof p.tlKf0 !== 'number' || typeof p.tlKf1 !== 'number') return p;
+    if (keys.indexOf(p.key) < 0) return p;
     var q = Object.assign({}, p);
-    q.tlSpans = (p.tlSpans || []).concat([[p.tlKf0, p.tlKf1]]);
+    if (typeof p.tlKf0 === 'number' && typeof p.tlKf1 === 'number') q.tlSpans = (p.tlSpans || []).concat([[p.tlKf0, p.tlKf1]]);
+    if (ids && ids[p.key]) {
+      q.bakeIds = (p.bakeIds || []).concat([ids[p.key]]);
+      if (curve) q.bakeCurve = _cloneCurve(curve);
+    }
     return q;
   });
 }
@@ -4836,6 +4843,7 @@ function _applyCurveColor(color) {
   if (ep3) ep3.setAttribute('stroke', color);
   for (var pi = 0; pi < _ptEls.length; pi++) { _ptEls[pi].inner.setAttribute('stroke', color); _ptEls[pi].sq.setAttribute('stroke', color); }
   document.querySelectorAll('.preset-thumb path').forEach(function(p) {
+    if (p.getAttribute('data-oc-keep')) return; // the update tile's icon stays amber
     p.setAttribute('stroke', color);
   });
   if (/^#[0-9a-fA-F]{6}$/.test(color)) {
@@ -4902,7 +4910,7 @@ function _refreshUpdateNotification() {
   // the 28-unit viewBox; one path, so that stroke applies to all of it.
   var iconHost = document.createElement('span');
   iconHost.innerHTML = '<svg class="preset-thumb" width="28" height="28" viewBox="0 0 28 28" fill="none" style="flex-shrink:0;margin-right:8px;">'
-    + '<path d="M3 14A11 11 0 1 1 25 14A11 11 0 1 1 3 14Z M14 19.5V8.5 M9 13.5L14 8.5L19 13.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    + '<path d="M3 14A11 11 0 1 1 25 14A11 11 0 1 1 3 14Z M14 19.5V8.5 M9 13.5L14 8.5L19 13.5" fill="none" stroke="#e6b800" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-oc-keep="1"/></svg>';
   var iconWrap = iconHost.firstChild;
   notif.appendChild(iconWrap);
 

@@ -81,7 +81,7 @@
               isBaking: false,
               status: 'done',
               bakedParamKeys: newBaked,
-              availableParams: OpenCurve.tlSpansAfterBake(state, bakedKeys), // green bar on the timeline right away
+              availableParams: OpenCurve.tlSpansAfterBake(state, bakedKeys, res.bakedIds, state.curve), // green bar, row Undo / Load Curve right away
               validParamKeys: (state.validParamKeys || []).filter(function(k) { return bakedKeys.indexOf(k) < 0; }),
               paramContexts: ctxLeft,
               selectedParamKeys: (state.selectedParamKeys || []).filter(function(k) {

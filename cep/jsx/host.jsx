@@ -1212,6 +1212,7 @@ function bakeKeyframes(argsJSON) {
     var firstErr = null;
     var undoInfo = [];
     var bakedKeys = [];  // keys actually written, so the panel only turns those green
+    var bakedIds = {};   // their new record ids, so the rows' buttons work before the next scan
 
     // Everything the panel sent comes from its last scan, which can be up to
     // two seconds old (the property cache), so a keyframe edited, a clip moved
@@ -1281,7 +1282,7 @@ function bakeKeyframes(argsJSON) {
         var w = _ocWriteTarget(targets[pi], curve, stepReq, bSeqId);
         totalActions += w.count;
         if (w.err && !firstErr) firstErr = w.err;
-        if (w.info) { bakedKeys.push(targets[pi].ref.key); undoInfo.push(w.info); }
+        if (w.info) { bakedKeys.push(targets[pi].ref.key); undoInfo.push(w.info); bakedIds[targets[pi].ref.key] = w.info.id; }
       }
     } finally {
       if (_hasUndoGroup) app.endUndoGroup();
@@ -1297,7 +1298,9 @@ function bakeKeyframes(argsJSON) {
 
     _undoStack.push(undoInfo);
     var warn = firstErr || (changed ? changed + ' of the selected properties changed and were skipped' : null);
-    return _jsonStringify({ success: true, actions: totalActions, warning: warn, baked: bakedKeys });
+    // bakedIds: each baked property's new record id, so the panel's row Undo /
+    // Load Curve / Replace work at once instead of after the next scan
+    return _jsonStringify({ success: true, actions: totalActions, warning: warn, baked: bakedKeys, bakedIds: bakedIds });
   } catch(err) {
     return _jsonStringify({ success: false, error: err.message || String(err) });
   }
