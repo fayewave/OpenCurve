@@ -51,6 +51,12 @@ html, body {
 ::-webkit-scrollbar-corner { background: transparent; }
 /* Settings draws its own, wider scrollbar over the scroller (_sbSync) */
 .oc-sb-hidden::-webkit-scrollbar { width: 0; height: 0; }
+/* The preset list's matches the Settings one: a 14px strip with a 10px round
+   thumb (2px clear top and bottom too), 0.18 at rest, 0.3 hovered, 0.42 held */
+#all-presets-list::-webkit-scrollbar { width: 14px; }
+#all-presets-list::-webkit-scrollbar-thumb { min-height: 28px; border-radius: 7px; border: 2px solid transparent; background: rgba(255,255,255,0.18); background-clip: padding-box; }
+#all-presets-list::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); background-clip: padding-box; }
+#all-presets-list::-webkit-scrollbar-thumb:active { background: rgba(255,255,255,0.42); background-clip: padding-box; }
 
 /* ─── App shell ─────────────────────────────────────────────── */
 input, textarea {
