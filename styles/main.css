@@ -17,6 +17,7 @@
   --oc-active-bg2:    rgba(255,255,255,0.28);
   --oc-edited-bg:     rgba(255,255,255,0.07);
   --oc-edited-bg2:    rgba(255,255,255,0.16);
+  --oc-name-color:    #ffffff; /* the chip's preset name: the theme colour lifted towards white (_applyCurveColor) */
   --green:      #4ce890;
   --green-dim:  rgba(61,220,132,0.22);
   --amber:      #f0a030;
@@ -487,7 +488,7 @@ html, body {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--oc-active-color);
+  color: var(--oc-name-color);
 }
 /* Save / Revert in the chip: tinted with the theme colour like the chip
    itself, not the plain white tool button look. A class on the buttons, not

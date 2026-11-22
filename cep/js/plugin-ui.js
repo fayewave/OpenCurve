@@ -5608,6 +5608,10 @@ function _applyCurveColor(color) {
     root.style.setProperty('--oc-active-bg2',   bg2);
     root.style.setProperty('--oc-edited-bg',    _hexToRgba(color, 0.07));
     root.style.setProperty('--oc-edited-bg2',   _hexToRgba(color, 0.16));
+    // The graph bar chip's preset name: the theme colour a third of the way to
+    // white, so it reads brighter than the tinted fill around it
+    var _nm = [1, 3, 5].map(function(i) { var c = parseInt(color.substr(i, 2), 16); return Math.round(c + (255 - c) * 0.35); });
+    root.style.setProperty('--oc-name-color',   'rgb(' + _nm.join(',') + ')');
   }
   _presetEditSync(); // the edited tile's dot
 }
