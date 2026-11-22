@@ -5421,7 +5421,7 @@ function _showSettingsModal() {
   // box filled with the outline colour round an opaque inner box: UXP draws a
   // 1px CSS border soft (see _crispBox).
   var _uxpLift = 0;
-  var _CARD_LINE = '#262626', _CARD_FILL = '#191919', _CARD_HOT = '#1f1f1f';
+  var _CARD_LINE = '#262626', _CARD_FILL = '#191919', _CARD_HOT = '#1f1f1f', _CARD_DOWN = '#282828';
   var _SW_ON = '#4a9eff', _SW_OFF = '#3a3a3a';
   function _el(css, text) {
     var e = document.createElement('div');
@@ -5453,8 +5453,20 @@ function _showSettingsModal() {
     if (below) card._ocIn.appendChild(below);
     card._ocDesc = d;
     if (onClick) {
-      card.addEventListener('mouseenter', function() { card._ocIn.style.backgroundColor = _CARD_HOT; });
-      card.addEventListener('mouseleave', function() { card._ocIn.style.backgroundColor = _CARD_FILL; });
+      // Hover lights the card, a press lights it more until the release. A
+      // button control (the Updates card's) follows the card: the whole card
+      // is the button, so it hovers, presses and clicks with it.
+      var hot = false, down = false;
+      if (control && control._ocHot) control._ocInCard = true;
+      var paint = function() {
+        card._ocIn.style.backgroundColor = down ? _CARD_DOWN : hot ? _CARD_HOT : _CARD_FILL;
+        if (control && control._ocInCard) control._ocHot(down ? 2 : hot ? 1 : 0);
+      };
+      card.addEventListener('mouseenter', function() { hot = true; paint(); });
+      card.addEventListener('mouseleave', function() { hot = false; down = false; paint(); });
+      card.addEventListener('pointerdown', function() { down = true; paint(); });
+      card.addEventListener('pointerup', function() { if (down) { down = false; paint(); } });
+      card.addEventListener('pointercancel', function() { if (down) { down = false; paint(); } });
       card.addEventListener('click', onClick);
     }
     return card;
@@ -5490,16 +5502,26 @@ function _showSettingsModal() {
     t.textContent = label;
     b._ocIn.appendChild(t);
     b._ocText = t;
-    b.addEventListener('mouseenter', function() { b.style.backgroundColor = '#5a5a5a'; b._ocIn.style.backgroundColor = '#2a2a2a'; });
-    b.addEventListener('mouseleave', function() { b.style.backgroundColor = '#3c3c3c'; b._ocIn.style.backgroundColor = '#222222'; });
-    b.addEventListener('click', function(ev) { ev.stopPropagation(); onClick(); });
+    // Look by state: 0 rest, 1 hover, 2 pressed (outline, fill)
+    var looks = [['#3c3c3c', '#222222'], ['#5a5a5a', '#2a2a2a'], ['#757575', '#343434']];
+    b._ocHot = function(st) { b.style.backgroundColor = looks[st][0]; b._ocIn.style.backgroundColor = looks[st][1]; };
+    // Inside a clickable card (_ocInCard) the card drives the look and the click
+    var hot = false, down = false;
+    var paint = function() { if (!b._ocInCard) b._ocHot(down ? 2 : hot ? 1 : 0); };
+    b.addEventListener('mouseenter', function() { hot = true; paint(); });
+    b.addEventListener('mouseleave', function() { hot = false; down = false; paint(); });
+    b.addEventListener('pointerdown', function() { down = true; paint(); });
+    b.addEventListener('pointerup', function() { if (down) { down = false; paint(); } });
+    b.addEventListener('pointercancel', function() { if (down) { down = false; paint(); } });
+    b.addEventListener('click', function(ev) { if (b._ocInCard) return; ev.stopPropagation(); onClick(); });
     return b;
   }
 
   // Header: the wordmark and a plain close cross. The whole banner still closes
   // the modal; hovering it lights the cross.
   var header = document.createElement('div');
-  header.style.cssText = 'display:flex;align-items:center;padding:12px 10px 4px 14px;flex-shrink:0;cursor:pointer;';
+  // Even padding above and below: the bottom edge is where scrolled cards are cut off
+  header.style.cssText = 'display:flex;align-items:center;padding:10px 10px 10px 14px;flex-shrink:0;cursor:pointer;';
   var logoWrap = document.createElement('div');
   logoWrap.style.cssText = 'flex:1;display:flex;align-items:center;justify-content:flex-start;';
   var logo = document.createElement('img');
@@ -5507,7 +5529,7 @@ function _showSettingsModal() {
   // fixed 170x26 box: letting the host shrink a larger PNG made the logo blurry
   var _dpr = window.devicePixelRatio || 1;
   logo.src = 'img/OpenCurve2_Wordmark_small' + (_dpr >= 2.5 ? '@3x' : _dpr >= 1.5 ? '@2x' : '') + '.png';
-  logo.style.cssText = 'width:145px;height:22px;opacity:0.9;margin-top:6px;'; // margin centres 3px lower, the artwork sat high
+  logo.style.cssText = 'width:145px;height:22px;opacity:0.9;'; // centred: the same space above and below it
   logoWrap.appendChild(logo);
   var closeBtn = document.createElement('div');
   closeBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 12 12" fill="none"><line x1="2.5" y1="2.5" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="9.5" y1="2.5" x2="2.5" y2="9.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
@@ -5526,7 +5548,7 @@ function _showSettingsModal() {
   // Content: the scroller, holding the card columns
   var content = document.createElement('div');
   content.style.cssText = 'flex:1;overflow-y:auto;display:flex;flex-direction:column;align-items:center;';
-  var cols = _el('display:flex;flex-direction:row;align-items:flex-start;flex-shrink:0;box-sizing:border-box;width:100%;max-width:1000px;padding:10px 12px 6px;');
+  var cols = _el('display:flex;flex-direction:row;align-items:flex-start;flex-shrink:0;box-sizing:border-box;width:100%;max-width:1000px;padding:4px 12px 6px;');
   var colA = _el('display:flex;flex-direction:column;flex:1 1 0;min-width:0;');
   var colB = _el('display:flex;flex-direction:column;flex:1 1 0;min-width:0;');
   cols.appendChild(colA);
@@ -5644,16 +5666,17 @@ function _showSettingsModal() {
   var cardsTop = []; // Updates and Update Notifications: first in the list
   // Updates: the line under the title says where you stand, the button checks
   // GitHub (or opens the release once a newer one is out); _applyUpdateBtnState
-  var updBtn = _cardBtn('Check now', function() {
+  function updAct() {
     if (_updateAvailable) {
       modal.remove();
       _openReleasesPage();
     } else {
       _checkForUpdates();
     }
-  });
+  }
+  var updBtn = _cardBtn('Check now', updAct);
   updBtn.id = '_updates-row';
-  var updCard = _card('Updates', '', updBtn);
+  var updCard = _card('Updates', '', updBtn, updAct); // the whole card is the button
   updCard._ocDesc.id = '_updates-label';
   _applyUpdateBtnState(updBtn, updCard._ocDesc);
   var notifCard = _toggleCard('Update Notifications', 'A tile in the preset list when a new version is out',
