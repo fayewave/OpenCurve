@@ -8684,9 +8684,22 @@ function _openTextFile() {
 function _footerBadge(label) {
   var b = document.createElement('span');
   b.textContent = label;
-  b.style.cssText = 'display:inline-block;margin-left:8px;padding:3px 7px;border:1px solid #454545;border-radius:4px;'
+  b.style.cssText = 'display:inline-block;box-sizing:border-box;height:24px;text-align:center;flex-shrink:0;white-space:nowrap;margin-left:8px;padding:3px 7px;border:1px solid #454545;border-radius:4px;'
     + 'background-color:rgba(255,255,255,0.04);color:#b0b0b0;font-size:12px;font-weight:600;letter-spacing:0.5px;line-height:16px;';
   return b;
+}
+
+// UXP doesn't snap borders to the pixel grid the way Chromium does: a 1px
+// border at a fractional x or y is drawn as two half-bright pixels, so the
+// footer's badges and buttons looked soft and thick in the CCX next to the
+// ZXP (2026-11-22). Their heights are fixed in whole pixels; this rounds
+// each width up once, after the first layout, so every edge after them lands
+// on a whole pixel too (text widths are fractional).
+function _snapWidths(els) {
+  var ws = els.map(function(el) { return el.getBoundingClientRect().width; });
+  els.forEach(function(el, i) {
+    if (ws[i] > 0) { el.style.boxSizing = 'border-box'; el.style.width = Math.ceil(ws[i]) + 'px'; }
+  });
 }
 
 function _showSettingsModal() {
@@ -9094,10 +9107,11 @@ function _showSettingsModal() {
   editionTag = 'CCX'; // [exchange-strip-line]
   var madeByText = document.createElement('span');
   madeByText.textContent = 'made by faye';
-  madeByText.style.cssText = 'flex-shrink:0;white-space:nowrap;';
+  madeByText.style.cssText = 'flex-shrink:0;white-space:nowrap;line-height:16px;';
   footerLeft.appendChild(madeByText);
-  footerLeft.appendChild(_footerBadge('v' + CURRENT_VERSION));
-  footerLeft.appendChild(_footerBadge(editionTag));
+  var verBadge = _footerBadge('v' + CURRENT_VERSION), edBadge = _footerBadge(editionTag);
+  footerLeft.appendChild(verBadge);
+  footerLeft.appendChild(edBadge);
   // GitHub: a blue badge with an open-in-browser icon (the same shape as the
   // badges before it), brighter blue on hover
   // The Exchange build can't open a browser (no launchProcess), so _openUrl
@@ -9106,7 +9120,7 @@ function _showSettingsModal() {
   ghIc = '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M8.2 2.5h3.3v3.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M11.5 2.5L6.6 7.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 8.6v2.1a.8.8 0 01-.8.8H3.3a.8.8 0 01-.8-.8V4.6a.8.8 0 01.8-.8h2.1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'; // [exchange-strip-line]
   ghTip = 'Open OpenCurve on GitHub in your browser'; // [exchange-strip-line]
   var ghLink = document.createElement('span');
-  ghLink.style.cssText = 'display:inline-flex;align-items:center;flex-shrink:0;margin-left:8px;padding:3px 7px;border:1px solid #2b507c;border-radius:4px;'
+  ghLink.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;height:24px;flex-shrink:0;margin-left:8px;padding:3px 7px;border:1px solid #2b507c;border-radius:4px;'
     + 'background-color:rgba(74,158,255,0.08);color:#4a9eff;font-size:12px;font-weight:600;letter-spacing:0.5px;line-height:16px;cursor:pointer;white-space:nowrap;';
   var ghIcon = document.createElement('span');
   ghIcon.style.cssText = 'display:inline-flex;width:12px;height:12px;margin-right:5px;';
@@ -9124,7 +9138,7 @@ function _showSettingsModal() {
   footerLeft.appendChild(ghLink);
 
   var resetRow = document.createElement('div');
-  resetRow.style.cssText = 'display:flex;align-items:center;padding:5px 10px;cursor:pointer;color:#e4e4e4;font-size:13px;background-color:transparent;border:1px solid #4c4c4c;border-radius:4px;flex-shrink:0;';
+  resetRow.style.cssText = 'display:flex;align-items:center;justify-content:center;box-sizing:border-box;height:28px;white-space:nowrap;padding:5px 10px;cursor:pointer;color:#e4e4e4;font-size:13px;line-height:16px;background-color:transparent;border:1px solid #4c4c4c;border-radius:4px;flex-shrink:0;';
   var resetLabel = document.createElement('span');
   resetLabel.textContent = 'Reset All Settings';
   _attachTooltip(resetRow, 'Restore defaults and remove all presets');
@@ -9138,7 +9152,7 @@ function _showSettingsModal() {
 
   // Report an Issue: opens the GitHub issues page in the browser
   var issueRow = document.createElement('div');
-  issueRow.style.cssText = 'display:flex;align-items:center;padding:5px 10px;margin-right:8px;cursor:pointer;color:#e4e4e4;font-size:13px;background-color:transparent;border:1px solid #4c4c4c;border-radius:4px;flex-shrink:0;';
+  issueRow.style.cssText = 'display:flex;align-items:center;justify-content:center;box-sizing:border-box;height:28px;white-space:nowrap;padding:5px 10px;margin-right:8px;cursor:pointer;color:#e4e4e4;font-size:13px;line-height:16px;background-color:transparent;border:1px solid #4c4c4c;border-radius:4px;flex-shrink:0;';
   var issueLabel = document.createElement('span');
   issueLabel.textContent = 'Report an Issue';
   _attachTooltip(issueRow, 'Open the OpenCurve issues page on GitHub');
@@ -9178,6 +9192,7 @@ function _showSettingsModal() {
   modal.appendChild(content);
   modal.appendChild(footer);
   document.body.appendChild(modal);
+  _snapWidths([madeByText, verBadge, edBadge, ghLink, issueRow, resetRow]);
   _layoutFooter(vw);
 
   // Resize with the panel
