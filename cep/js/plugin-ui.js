@@ -5459,18 +5459,23 @@ function _showSettingsModal() {
     }
     return card;
   }
-  // On/off switch: a pill with a round knob, blue and right while on
+  // On/off switch: a pill with a round knob, blue and right while on. Drawn as
+  // SVG: UXP rounds a div's corners coarsely, so a fully rounded pill and knob
+  // came out lumpy in the CCX (2026-11-22). The pill is a path (two arcs) rather
+  // than a rect with rx; only attributes change on a toggle.
   function _switch(on) {
-    var track = _el('position:relative;flex-shrink:0;width:36px;height:20px;border-radius:10px;');
-    var knob = _el('position:absolute;top:3px;width:14px;height:14px;border-radius:7px;');
-    track.appendChild(knob);
-    track._ocSet = function(v) {
-      track.style.backgroundColor = v ? _SW_ON : _SW_OFF;
-      knob.style.backgroundColor  = v ? '#ffffff' : '#9a9a9a';
-      knob.style.left             = v ? '19px' : '3px';
+    var wrap = _el('display:flex;flex-shrink:0;width:36px;height:20px;');
+    wrap.innerHTML = '<svg width="36" height="20" viewBox="0 0 36 20" fill="none">'
+      + '<path d="M10 0H26A10 10 0 0 1 26 20H10A10 10 0 0 1 10 0Z" fill="' + _SW_OFF + '"/>'
+      + '<circle cx="10" cy="10" r="7" fill="#9a9a9a"/></svg>';
+    var pill = wrap.querySelector('path'), knob = wrap.querySelector('circle');
+    wrap._ocSet = function(v) {
+      pill.setAttribute('fill', v ? _SW_ON : _SW_OFF);
+      knob.setAttribute('fill', v ? '#ffffff' : '#9a9a9a');
+      knob.setAttribute('cx', v ? '26' : '10');
     };
-    track._ocSet(on);
-    return track;
+    wrap._ocSet(on);
+    return wrap;
   }
   // A switch card: get() reads the setting, set(v) applies and saves it
   function _toggleCard(title, desc, get, set) {
