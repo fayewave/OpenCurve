@@ -3337,7 +3337,7 @@ function _attachTooltip(el, text, side) {
     _tipTimer = setTimeout(function() {
       _tipTimer = null;
       var t = typeof text === 'function' ? text() : text;
-      _showTooltip(el, t, side);
+      _showTooltip(el, t, typeof side === 'function' ? side() : side); // side may depend on where el is
     }, DELAY);
   });
   el.addEventListener('mouseleave',  _hideTooltip);
@@ -5062,7 +5062,10 @@ function initPanel() {
     // saves the current curve as a preset and opens its name for editing
     var newTool = document.getElementById('preset-new');
     if (newTool) {
-      _attachTooltip(newTool, 'New Preset: save the current curve as a preset');
+      // Beside the button while it is in the graph's side column, below it in the preset bar
+      _attachTooltip(newTool, 'New Preset: save the current curve as a preset', function() {
+        return newTool.parentNode && newTool.parentNode.id === 'graph-side-tools' ? 'right' : null;
+      });
       newTool.addEventListener('click', function() {
         _promptNewPreset(getState().curve, 'Custom ' + _customCount(), 'New Preset', true);
       });
