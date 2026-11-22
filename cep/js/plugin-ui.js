@@ -3732,11 +3732,12 @@ function initPanel() {
 
     // Rename: right-click > Rename Preset opens a modal (an inline field lost
     // focus to the key sink's deferred grab and committed unchanged; no dblclick)
-    function startRename() {
+    // opts: the dialog's title and button for a fresh preset (New Preset, Paste)
+    function startRename(opts) {
       _renamePresetDialog(preset.name, function(v) {
         preset.name = v; nameSpan.textContent = v;
         _savePresetList(_presetList);
-      });
+      }, opts && opts.title ? opts : null);
     }
     btn._ocRename = startRename; // New Preset / Paste open it for the fresh tile
     btn.addEventListener('contextmenu', function(e) { e.preventDefault(); _showCtxMenu(preset, btn, startRename, e); });
@@ -3952,7 +3953,7 @@ function initPanel() {
     var btn = _buildPresetBtn(preset);
     list.appendChild(btn);
     _applyPresetLayout(true);
-    if (btn._ocRename) btn._ocRename();
+    if (btn._ocRename) btn._ocRename({ title: 'Name Pasted Preset', ok: 'Save' });
   }
 
   // Add presets in bulk (file import): tiles go in before the New tile
@@ -4323,7 +4324,7 @@ function initPanel() {
         var list = document.getElementById('all-presets-list');
         if (list) list.appendChild(btn);
         _applyPresetLayout(true);
-        if (btn._ocRename) btn._ocRename();
+        if (btn._ocRename) btn._ocRename({ title: 'New Preset', ok: 'Save' });
       });
     }
   }());
@@ -5214,7 +5215,7 @@ function _confirmDialog(titleText, msgText, okLabel, onOk) {
 // Modal rename: title, a text field with the current name selected, OK and
 // Cancel. Enter is OK, Esc and a click on the overlay cancel. onOk(name) runs
 // after the dialog has closed with the trimmed name (unchanged if left empty).
-function _renamePresetDialog(current, onOk) {
+function _renamePresetDialog(current, onOk, opts) {
   var old = document.getElementById('oc-rename');
   if (old && old.parentNode) old.parentNode.removeChild(old);
   var overlay = document.createElement('div');
@@ -5225,7 +5226,7 @@ function _renamePresetDialog(current, onOk) {
   box.style.cssText = 'background:#1c1c1c;border:1px solid rgba(255,255,255,0.18);padding:20px;width:260px;font-family:system-ui,sans-serif;';
 
   var title = document.createElement('div');
-  title.textContent = 'Rename Preset';
+  title.textContent = (opts && opts.title) || 'Rename Preset';
   title.style.cssText = 'color:#e4e4e4;font-size:14px;font-weight:600;margin-bottom:10px;';
 
   var input = document.createElement('input');
@@ -5251,7 +5252,7 @@ function _renamePresetDialog(current, onOk) {
   cancelBtn.addEventListener('click', close);
 
   var okBtn = document.createElement('div');
-  okBtn.textContent = 'Rename';
+  okBtn.textContent = (opts && opts.ok) || 'Rename';
   okBtn.style.cssText = 'background:#4a9eff;border:none;color:#fff;font-size:13px;padding:5px 12px;cursor:pointer;font-weight:600;margin-left:8px;';
   okBtn.addEventListener('mouseenter', function() { okBtn.style.background='#6bb0ff'; });
   okBtn.addEventListener('mouseleave', function() { okBtn.style.background='#4a9eff'; });
@@ -5936,36 +5937,57 @@ function _showSettingsModal() {
   var footerRow = document.createElement('div');
   footerRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 12px;';
 
-  // One row: made by faye, then the version, edition and GitHub badges
+  var editionTag = 'ZXP';
+  // Header: the version and edition badges sit beside the wordmark
+  var verBadge = _footerBadge('v' + CURRENT_VERSION), edBadge = _footerBadge(editionTag);
+  verBadge.style.marginLeft = '12px';
+  logoWrap.appendChild(verBadge);
+  logoWrap.appendChild(edBadge);
+
+  // Footer, left: made by faye, the GitHub button (Report/Reset's size and
+  // text, in blue) and the Veil lockup
   var footerLeft = document.createElement('div');
   footerLeft.style.cssText = 'display:flex;align-items:center;flex:0 1 auto;min-width:0;overflow:hidden;margin-right:12px;color:#888;font-size:12px;';
-  var editionTag = 'ZXP';
   var madeByText = document.createElement('span');
   madeByText.textContent = 'made by faye';
-  madeByText.style.cssText = 'flex-shrink:0;white-space:nowrap;';
+  madeByText.style.cssText = 'flex-shrink:0;white-space:nowrap;line-height:16px;';
   footerLeft.appendChild(madeByText);
-  footerLeft.appendChild(_footerBadge('v' + CURRENT_VERSION));
-  footerLeft.appendChild(_footerBadge(editionTag));
-  // GitHub: a blue badge with an open-in-browser icon (the same shape as the
-  // badges before it), brighter blue on hover
   var ghIc = '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M8.2 2.5h3.3v3.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M11.5 2.5L6.6 7.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 8.6v2.1a.8.8 0 01-.8.8H3.3a.8.8 0 01-.8-.8V4.6a.8.8 0 01.8-.8h2.1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>', ghTip = 'Open OpenCurve on GitHub in your browser';
-  var ghLink = document.createElement('span');
-  ghLink.style.cssText = 'display:inline-flex;align-items:center;flex-shrink:0;margin-left:8px;padding:3px 7px;border:1px solid #2b507c;border-radius:4px;'
-    + 'background-color:rgba(74,158,255,0.08);color:#4a9eff;font-size:12px;font-weight:600;letter-spacing:0.5px;line-height:16px;cursor:pointer;white-space:nowrap;';
+  var ghLink = _cardBtn('GitHub', function() { _openReleasesPage(); });
+  ghLink._ocLooks = [['#2b507c', '#161c24'], ['#6796b8', '#1a2635'], ['#8bb3d6', '#22324a']];
+  ghLink._ocHot(0);
+  ghLink._ocIn.style.color = '#4a9eff';
+  ghLink.style.marginLeft = '12px';
   var ghIcon = document.createElement('span');
-  ghIcon.style.cssText = 'display:inline-flex;width:12px;height:12px;margin-right:5px;';
+  ghIcon.style.cssText = 'display:inline-flex;width:12px;height:12px;margin-right:6px;';
   ghIcon.innerHTML = ghIc;
-  var ghText = document.createElement('span');
-  ghText.textContent = 'GitHub';
-  ghLink.appendChild(ghIcon);
-  ghLink.appendChild(ghText);
+  ghLink._ocIn.insertBefore(ghIcon, ghLink._ocText);
+  ghLink.addEventListener('mouseenter', function() { ghLink._ocIn.style.color = '#8ccfff'; });
+  ghLink.addEventListener('mouseleave', function() { ghLink._ocIn.style.color = '#4a9eff'; });
   _attachTooltip(ghLink, ghTip);
-  ghLink.addEventListener('mouseenter', function() { ghLink.style.color = '#8ccfff'; ghLink.style.borderColor = '#6796b8'; ghLink.style.backgroundColor = 'rgba(74,158,255,0.15)'; });
-  ghLink.addEventListener('mouseleave', function() { ghLink.style.color = '#4a9eff'; ghLink.style.borderColor = '#2b507c'; ghLink.style.backgroundColor = 'rgba(74,158,255,0.08)'; });
-  ghLink.addEventListener('click', function() {
-    _openReleasesPage();
-  });
   footerLeft.appendChild(ghLink);
+
+  // Veil: the mark and wordmark (one evenodd path, from the Veil site's
+  // veil-lockup-white.svg), grey at rest, white on hover, a tint while
+  // pressed; opens veil.page. The viewBox has room round the edge (UXP clips
+  // an SVG's anti-aliased border).
+  var veilBtn = _el('display:flex;align-items:center;justify-content:center;flex-shrink:0;box-sizing:border-box;height:30px;padding:0;margin-left:12px;border-radius:6px;cursor:pointer;');
+  veilBtn.innerHTML = '<svg width="126" height="30" viewBox="-6 -6 1213 288" fill="none">' // the buttons' 30px height
+    + '<path fill-rule="evenodd" d="M322.26,0.67L1200.74,0.67L1200.74,275.87L322.26,275.87ZM393.17 64.79H437.62L506.75 185.31H510.87L580.01 64.79H623.63L539.26 211.76H477.54ZM646.26 211.76V64.79H847.91V91.24H687.41V125.05H806.76V151.5H687.41V185.31H847.91V211.76ZM924.04 64.79V211.76H882.89V64.79ZM1006.35 64.79V185.31H1129.8V211.76H965.19V64.79ZM0.63,0.67L275.83,0.67L275.83,275.87L0.63,275.87ZM232.75,138.27L138.23,212.35L43.7,138.27L138.23,64.19Z" fill="#8a8a8a"/></svg>';
+  var veilPath = veilBtn.querySelector('path');
+  var veilHot = false, veilDown = false;
+  function _veilPaint() {
+    veilPath.setAttribute('fill', veilDown ? '#d0d0d0' : veilHot ? '#ffffff' : '#8a8a8a');
+    veilBtn.style.backgroundColor = veilDown ? 'rgba(255,255,255,0.12)' : veilHot ? 'rgba(255,255,255,0.06)' : '';
+  }
+  veilBtn.addEventListener('mouseenter', function() { veilHot = true; _veilPaint(); });
+  veilBtn.addEventListener('mouseleave', function() { veilHot = false; veilDown = false; _veilPaint(); });
+  veilBtn.addEventListener('pointerdown', function() { veilDown = true; _veilPaint(); });
+  veilBtn.addEventListener('pointerup', function() { if (veilDown) { veilDown = false; _veilPaint(); } });
+  veilBtn.addEventListener('pointercancel', function() { if (veilDown) { veilDown = false; _veilPaint(); } });
+  veilBtn.addEventListener('click', function() { var u = 'https://veil.page'; if (_bridge && _bridge.openExternal) _bridge.openExternal(u); else window.open(u); });
+  _attachTooltip(veilBtn, 'Visit veil.page');
+  footerLeft.appendChild(veilBtn);
 
   // Footer buttons: the same outlined style as the Updates card's Check now
   var resetRow = _cardBtn('Reset All Settings', function() {
