@@ -751,12 +751,41 @@ function _applyPeakVisibility() {
   _svgShow('sg-pts-lines', !_peakMode);
 }
 
+// Hover and press for a toolbar button whose tint is written inline (A-curve,
+// Zoom): an inline background beats the stylesheet's :hover and :active, so the
+// button tracks both itself (_ocHov, _ocDown) and repaint() redraws it.
+function _toolStates(btn, repaint) {
+  if (!btn || btn._ocStates) return;
+  btn._ocStates = true;
+  btn.addEventListener('mouseenter', function() { btn._ocHov = true; repaint(); });
+  btn.addEventListener('mouseleave', function() { btn._ocHov = false; btn._ocDown = false; repaint(); });
+  btn.addEventListener('pointerdown', function() { btn._ocDown = true; repaint(); });
+  btn.addEventListener('pointerup', function() { if (btn._ocDown) { btn._ocDown = false; repaint(); } });
+  btn.addEventListener('pointercancel', function() { if (btn._ocDown) { btn._ocDown = false; repaint(); } });
+}
+// Fill and icon colour by state. rgb: the tint ('61,220,132') with its resting
+// alpha, or null for an untinted button, which gets the stylesheet's own hover
+// and press values (and '' at rest, so the stylesheet shows through).
+function _toolPaint(btn, rgb, rest, col) {
+  var bg, c;
+  if (rgb) {
+    bg = 'rgba(' + rgb + ',' + (btn._ocDown ? rest + 0.32 : btn._ocHov ? rest + 0.14 : rest) + ')';
+    c = btn._ocDown ? '#ffffff' : col;
+  } else {
+    bg = btn._ocDown ? 'rgba(255,255,255,0.26)' : btn._ocHov ? 'rgba(255,255,255,0.16)' : '';
+    c = (btn._ocDown || btn._ocHov) ? '#ffffff' : '';
+  }
+  // Change-only (UXP relayouts on every write), compared with the last write
+  if (btn._ocTpBg !== bg) { btn._ocTpBg = bg; btn.style.backgroundColor = bg; }
+  if (btn._ocTpCol !== c) { btn._ocTpCol = c; btn.style.color = c; }
+}
+
 function _stylePeakBtn() {
   var btn = document.getElementById('peak-mode');
   if (!btn) return;
+  _toolStates(btn, _stylePeakBtn);
   // backgroundColor, not background: the shorthand would drop the stylesheet's sheen gradient
-  btn.style.backgroundColor = _peakMode ? 'rgba(61,220,132,0.18)' : '';
-  btn.style.color      = _peakMode ? '#3ddc84' : '';
+  _toolPaint(btn, _peakMode ? '61,220,132' : null, 0.18, '#3ddc84');
   btn.style.opacity    = _peakMode ? '1' : '';
   // While the bar is collapsed the menu button carries the same tint, so the
   // mode stays visible while the A-curve button itself is hidden
@@ -3077,6 +3106,7 @@ function initPanel() {
   // button again, or Esc closes it. Sizes are fixed and the popup is placed
   // from the anchor's rect only: UXP can't be trusted to measure a fresh element.
   var zoomBtn = document.getElementById('zoom-btn');
+  _toolStates(zoomBtn, _paintZoomBtn); // hover and press (see _paintZoomBtn)
   var _ZOOM_MIN = 0.25, _ZOOM_MAX = 1.0;
   function _zoomLabel() {
     return _zoom < 0.995 ? 'Zoom (' + Math.round(_zoom * 100) + '%)' : 'Zoom';
@@ -3091,11 +3121,17 @@ function initPanel() {
     _updateContentTransform();
   }
   var _zsDismiss = null, _zsLit = null;
+  // The zoom button: lit white while its slider is open, with hover and press
+  // states either way (_toolPaint; the inline tint hides the stylesheet's)
+  function _paintZoomBtn() {
+    if (!zoomBtn) return;
+    _toolPaint(zoomBtn, _zsLit === zoomBtn ? '255,255,255' : null, 0.22, '#ffffff');
+  }
   // Closes the slider; true if it was open (Esc uses that through _zoomPopHide)
   function _hideZoomSlider() {
     var pop = document.getElementById('_zoom-pop');
     if (_zsDismiss) { document.removeEventListener('pointerdown', _zsDismiss, true); _zsDismiss = null; }
-    if (_zsLit) { _zsLit.style.backgroundColor = ''; _zsLit.style.color = ''; _zsLit = null; }
+    if (_zsLit) { _zsLit = null; _paintZoomBtn(); }
     if (!pop) return false;
     if (pop.parentNode) pop.parentNode.removeChild(pop);
     return true;
@@ -3176,8 +3212,7 @@ function initPanel() {
     place();
     if (anchor === zoomBtn) { // the menu button keeps its own tint (A-curve)
       _zsLit = zoomBtn;
-      zoomBtn.style.backgroundColor = 'rgba(255,255,255,0.22)';
-      zoomBtn.style.color = '#ffffff';
+      _paintZoomBtn();
     }
     _zsDismiss = function(ev) {
       if (pop.contains(ev.target)) return;

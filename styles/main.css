@@ -467,7 +467,7 @@ html, body {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 22px;
+  width: 48px; /* wide targets (2.1.0); _ICON_OFF centres the icon at [15.5, 2.5] */
   height: 22px;
   border-radius: 3px;
   background-color: rgba(255,255,255,0.08);
