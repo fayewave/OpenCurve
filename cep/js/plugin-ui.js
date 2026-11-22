@@ -1296,9 +1296,14 @@ var _closeMenus  = null; // set by initPanel: closes the tile / mini context men
 // pad, centred in the SVG; the rest of the SVG is the outer area (overshoot
 // handles, zoomed-out content). It used to stretch to the SVG's own aspect,
 // which squashed every curve in a wide or tall panel.
+// _RANGE_GUTTER: the box keeps clear of the tool column and zoom button down
+// the graph area's left side (8px + 26px buttons + 14px air = 48px = PAD + 32).
+// Centred while the SVG is wide enough; otherwise it shrinks by the gutter and
+// sits against it, so the buttons never cover the curve's start or a handle there.
+var _RANGE_GUTTER = 32;
 function _rangeBox(W, H) {
-  var s = Math.max(1, Math.min(W, H) - 2 * PAD);
-  return { x: (W - s) / 2, y: (H - s) / 2, s: s };
+  var s = Math.max(1, Math.min(W - _RANGE_GUTTER, H) - 2 * PAD);
+  return { x: Math.max(PAD + _RANGE_GUTTER, (W - s) / 2), y: (H - s) / 2, s: s };
 }
 function normToSVG(nx, ny, W, H) {
   var b = _rangeBox(W, H);
@@ -3588,11 +3593,7 @@ function initPanel() {
 
   var peakBtn = document.getElementById('peak-mode');
   if (peakBtn) {
-    _attachTooltip(peakBtn, function() {
-      return _peakMode
-        ? 'A-curve mode is on. Click to go back to the bezier handles'
-        : 'A-curve mode: drag on the graph to move the peak left/right; up narrows the ease, down widens it';
-    });
+    _attachTooltip(peakBtn, 'A-curve mode');
     peakBtn.addEventListener('click', function() { _setPeakMode(!_peakMode); });
   }
   _stylePeakBtn();
@@ -3602,11 +3603,7 @@ function initPanel() {
   var bounceBtn = document.getElementById('bounce-mode');
   _bnInit();
   if (bounceBtn) {
-    _attachTooltip(bounceBtn, function() {
-      return _bounceMode
-        ? 'Bounce mode is on. Click to go back to the bezier handles (the curve stays)'
-        : 'Bounce mode: build a bounce or elastic ease from a few settings';
-    });
+    _attachTooltip(bounceBtn, 'Bounce mode');
     bounceBtn.addEventListener('click', function() { _setBounceMode(!_bounceMode); });
   }
   _styleBounceBtn();
@@ -3615,11 +3612,7 @@ function initPanel() {
   // Add Point: splits the curve's widest segment; unavailable in A-curve mode
   var addPtBtn = document.getElementById('add-point');
   if (addPtBtn) {
-    _attachTooltip(addPtBtn, function() {
-      return _peakMode
-        ? 'Add a point to the curve and go back to the bezier handles, where it can be dragged'
-        : 'Add a point to the curve. Drag it and its handles, right-click it to delete. Alt-drag a handle to keep both lengths, Ctrl-drag to move it on its own (makes a corner)';
-    });
+    _attachTooltip(addPtBtn, 'Add a point to the curve');
     // In A-curve mode the point would have no handles to grab, so adding one switches back
     addPtBtn.addEventListener('click', function() { if (_peakMode) _setPeakMode(false); _addPoint(); });
   }
@@ -3895,21 +3888,26 @@ function initPanel() {
     });
   }
 
-  // Collapsed toolbar: as soon as the bar is too narrow for the left tools and
-  // the zoom/settings group to sit apart, every tool but Full Screen and
-  // Settings hides and one menu button takes the top-left spot; its dropdown
-  // lists all of them. Full Screen keeps its place at the far right. Widths are the
-  // CSS ones (26px buttons, 5px margins, 5px padding each side), plus a little
-  // air so they never touch before collapsing.
+  // The mode tools (A-curve, Bounce, Add Point) sit in a column down the graph
+  // area's left side (#graph-side-tools), above the zoom button in its
+  // bottom-left corner. When the area is too short for both (_SIDE_NEED), the
+  // column's buttons hide with inline display and the graph menu lists them.
+  // The bar itself only holds the menu button and New Preset at the left and
+  // Full Screen at the right, with the preset chip between (_tbChipLayout).
+  // Widths are the CSS ones (26px buttons, 5px margins, 5px padding each side),
+  // plus a little air.
   var toolbar  = document.getElementById('graph-toolbar');
   var menuBtn  = document.getElementById('graph-tools-menu');
+  var canvasWrap = document.querySelector('.graph-canvas-wrap');
   // The menu button is always shown: Flip, Invert and Numeric Entry live only in
   // its dropdown (their toolbar buttons stay in the HTML, hidden, as icon sources).
   // Ghost is a Settings row now; its hidden button is kept for _setDragGhost and
-  // the drag ghost's icon. The other tools join the dropdown once the bar is narrow.
-  var _tbTools = [peakBtn, bounceBtn, addPtBtn]; // zoom lives on the graph itself and never collapses
-  // Left: the menu button and New Preset; right: A-curve, Bounce, Add Point, Full Screen
-  var _TB_NEED = (2 * 26 + 1 * 5) + (4 * 26 + 3 * 5) + 10 + 8;
+  // the drag ghost's icon. The column's tools join the dropdown once it hides.
+  var _tbTools = [peakBtn, bounceBtn, addPtBtn]; // zoom never hides
+  // Bar: the menu button and New Preset on the left, Full Screen on the right
+  var _TB_NEED = (2 * 26 + 1 * 5) + 26 + 10 + 8;
+  // Column: 8px + three buttons and their 5px gaps + 8px air + zoom + 8px
+  var _SIDE_NEED = 8 + (3 * 26 + 2 * 5) + 8 + 26 + 8;
   var _tbCollapsed = null;
   var _tbDismiss   = null;
   function _hideToolsMenu() {
@@ -3935,9 +3933,10 @@ function initPanel() {
   function _tbLayout() {
     if (!toolbar || !menuBtn) return;
     var w = toolbar.clientWidth;
-    if (!(w > 0)) return;
-    _tbChipLayout(w);
-    var collapse = w < _TB_NEED;
+    if (w > 0) _tbChipLayout(w);
+    var h = canvasWrap ? canvasWrap.clientHeight : 0;
+    if (!(h > 0)) return; // the graph is hidden
+    var collapse = h < _SIDE_NEED;
     if (collapse === _tbCollapsed) return;
     _tbCollapsed = collapse;
     // inline display: UXP ignores class-driven display changes
@@ -4031,7 +4030,11 @@ function initPanel() {
       if (document.getElementById('_tools-menu')) _hideToolsMenu(); else _showToolsMenu();
     });
   }
-  if (toolbar && typeof ResizeObserver !== 'undefined') new ResizeObserver(_tbLayout).observe(toolbar);
+  if (typeof ResizeObserver !== 'undefined') {
+    var _tbRO = new ResizeObserver(_tbLayout);
+    if (toolbar) _tbRO.observe(toolbar);
+    if (canvasWrap) _tbRO.observe(canvasWrap); // the column hides by the graph area's height
+  }
   _tbLayout();
 
   // Icons for the preset bar's menu

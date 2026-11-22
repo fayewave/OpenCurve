@@ -144,10 +144,25 @@ html, body {
   position: relative;
 }
 
-/* The zoom button sits in the graph area's bottom-right corner (its slider opens above it) */
+/* Mode tools (A-curve, Bounce, Add Point) down the graph area's left side;
+   flex gap is ignored by UXP, so the buttons space themselves with a margin */
+#graph-side-tools {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  display: flex;
+  flex-direction: column;
+  z-index: 2;
+}
+#graph-side-tools .tool-btn {
+  margin-left: 0;
+  margin-bottom: 5px;
+}
+
+/* The zoom button sits in the graph area's bottom-left corner (its slider opens above it) */
 #zoom-btn {
   position: absolute;
-  right: 8px;
+  left: 8px;
   bottom: 8px;
   margin-left: 0;
   z-index: 2;
