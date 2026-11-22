@@ -5947,6 +5947,7 @@ function initPanel() {
     menu.style.left = '0px';
     menu.style.top  = '0px';
     document.body.appendChild(menu);
+    _ctxMenuShadow(menu);
     void menu.offsetHeight;
     // Below the button, left-aligned with it; above when there is no room below
     var r  = menuBtn.getBoundingClientRect();
@@ -6066,6 +6067,7 @@ function initPanel() {
     menu.style.left = '0px';
     menu.style.top  = '0px';
     document.body.appendChild(menu);
+    _ctxMenuShadow(menu);
     void menu.offsetHeight;
     // Below the button, left-aligned with it; above when there is no room below
     var r  = pMenuBtn.getBoundingClientRect();
@@ -6225,6 +6227,7 @@ function initPanel() {
     var existingMini = document.getElementById('_mini-ctx');
     if (existingMini && existingMini.parentNode) existingMini.parentNode.removeChild(existingMini);
     _ctxTarget = { preset: preset, btn: btn, startRename: startRename };
+    _ctxMenuShadow(_ctxMenu);
     _ctxMenu.style.left = '0px';
     _ctxMenu.style.top = '0px';
     _ctxMenu.style.display = 'block';
@@ -6915,6 +6918,7 @@ function initPanel() {
     mini.style.left = '0px';
     mini.style.top = '0px';
     document.body.appendChild(mini);
+    _ctxMenuShadow(mini);
     void mini.offsetHeight;
     var mw = mini.offsetWidth || 170;
     var mh = mini.offsetHeight || 100;
@@ -7897,6 +7901,28 @@ function _applyCurveColor(color) {
     root.style.setProperty('--oc-active-color', color);
     root.style.setProperty('--oc-active-bg',    bg);
     root.style.setProperty('--oc-active-bg2',   bg2);
+  }
+}
+
+// Context menu drop shadow (2.1.0, UXP only). UXP draws no CSS box-shadow, so
+// the shadow is faked the way gradients are elsewhere: nested frames around
+// the menu, each a transparent box with a dark border, fading outward and
+// deeper below. Every frame sits wholly outside the menu (its inner edge is
+// the previous frame's outer edge), so nothing over the menu itself darkens.
+// Safe to call again on the same menu. The CEP edition uses box-shadow.
+var _CTX_SHADOW = [0.42, 0.3, 0.21, 0.14, 0.09, 0.055, 0.03, 0.015]; // alpha per frame, inner to outer (matched by eye to the CEP box-shadow)
+function _ctxMenuShadow(menu) {
+  if (!menu || menu._ocShadow) return;
+  menu._ocShadow = true;
+  var side = 2, top = 1, bottom = 3; // px per frame on each side: 16px spread at the sides, 8 above, 24 below
+  for (var i = 0; i < _CTX_SHADOW.length; i++) {
+    var k = i + 1, f = document.createElement('div');
+    f.className = 'ctx-shadow';
+    f.style.cssText = 'position:absolute;pointer-events:none;box-sizing:border-box;background:transparent;'
+      + 'left:' + (-side * k) + 'px;right:' + (-side * k) + 'px;top:' + (-top * k) + 'px;bottom:' + (-bottom * k) + 'px;'
+      + 'border-style:solid;border-color:rgba(0,0,0,' + _CTX_SHADOW[i] + ');'
+      + 'border-width:' + top + 'px ' + side + 'px ' + bottom + 'px ' + side + 'px;';
+    menu.appendChild(f);
   }
 }
 
