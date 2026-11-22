@@ -1,6 +1,6 @@
 {
   "opencurve": 1,
-  "version": "2.0.2",
+  "version": "2.1.0",
   "presets": [
     { "name": "Linear",      "curve": { "p1x": 0.25, "p1y": 0.25, "p2x": 0.75, "p2y": 0.75 } },
     { "name": "Snap",        "curve": { "p1x": 0.87, "p1y": 0,    "p2x": 0.13, "p2y": 1 } },
