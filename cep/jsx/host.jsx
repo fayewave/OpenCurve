@@ -236,6 +236,21 @@ var _ocWalkAt      = 0;     // when the video walk ran
 var _ocWalkMs      = 0;     // how long it took
 var _ocWalkCounts  = '';    // each video track's clip count at walk time
 var _OC_WALK_SPACING = 20;
+// Edits are caught by Premiere's undo counter, not by waiting for a re-walk:
+// every user edit (move, trim, add, delete, undo, a keyframe change) moves
+// qe.project.undoStackIndex(), which costs ~0.15ms (checked on 26.0.2: a clip
+// move took it from 45 to 48, its undo back). Scripted edits (our own bakes)
+// don't touch it. A change since the walk re-walks; a change since the cached
+// result rescans. The spaced re-walk above stays as a backstop.
+var _ocWalkUndo    = -1;    // undo counter at the last walk
+var _ocCacheUndo   = -1;    // undo counter when the cached result was built
+function _ocUndoIdx() {
+  try {
+    if (typeof app.enableQE === 'function') app.enableQE();
+    if (typeof qe !== 'undefined' && qe && qe.project && typeof qe.project.undoStackIndex === 'function') return qe.project.undoStackIndex();
+  } catch(e) {}
+  return -1;
+}
 
 // ── Property cache ──
 // Keyframe lists and sampled values for the winning clip from the last full
@@ -336,6 +351,7 @@ function _ocTrackCount(sequence) {
 // times more audio clips than video ones (600 audio clips: a 90ms stall).
 function _ocWalkTracks(sequence, numTracks, seqId) {
   var t0 = new Date().getTime();
+  _ocWalkUndo = _ocUndoIdx();
   _ocTracks = _ocWalkKind(sequence, false); _ocTracksSeq = seqId; _ocTracksCount = numTracks;
   _ocWalkAt = new Date().getTime(); _ocWalkMs = _ocWalkAt - t0;
   var counts = [];
@@ -575,6 +591,8 @@ function detectContext(needFull) {
     // clip is targeted.
     var numTracks = _ocTrackCount(sequence);
     var _walk = !_ocTracks || _ocTracksSeq !== seqId || _ocTracksCount !== numTracks;
+    var _undo = _ocUndoIdx();
+    if (!_walk && _undo >= 0 && _undo !== _ocWalkUndo) _walk = true; // an edit or an undo since the walk
     if (!_walk && _ocPollCount >= _OC_HEARTBEAT) {
       // Heartbeat: re-walk when it's cheap; when the last walk was expensive, only
       // once enough time has passed, unless a track gained or lost clips
@@ -632,13 +650,14 @@ function detectContext(needFull) {
       _sig += _cn + '@' + _ce.clipStart.toFixed(3) + ':' + _ce.clipInPoint.toFixed(3) + 'x' + (_ce.speed || 1)
             + '#' + (_ce.isAudio ? 'A' : 'V') + _ce.trackIdx + '/' + _ce.clipIdx + ';';
     }
-    if (_sig === _ocCacheKey && _ocPollCount < _OC_HEARTBEAT && _ocCacheResult !== null) {
+    if (_sig === _ocCacheKey && _ocPollCount < _OC_HEARTBEAT && _ocCacheResult !== null && _undo === _ocCacheUndo) {
       _ocPollCount++;
       if (needFull) return _ocCacheResult;
       return _jsonStringify({ status: 'unchanged', ph: ph });
     }
     _ocPollCount = 0;
     _ocCacheKey  = _sig;
+    _ocCacheUndo = _undo;
 
     if (allClipResults.length === 0) {
       return _ocReturn(_jsonStringify({ status: 'no-clip', availableParams: [], hint: 'No clip found at playhead position', ph: ph }));
