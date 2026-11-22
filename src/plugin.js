@@ -1199,10 +1199,10 @@ function _bnDotAt(raw, px) {
 function _bnDragTo(which, nx, ny, snap) {
   if (_bnOpts.dir === 'in') { nx = 1 - nx; ny = 1 - ny; }
   if (snap) { nx = Math.round(nx * _gridSize) / _gridSize; ny = Math.round(ny * _gridSize) / _gridSize; }
-  var ch = {};
-  if (which === 'hit') ch.hit = nx;
-  else if (_bnOpts.style === 'elastic') ch.over = ny - 1;
-  else ch.bounce = 1 - ny;
+  var ch = {}, r2 = function(v) { return Math.round(v * 100) / 100; }; // whole percents, like the sliders
+  if (which === 'hit') ch.hit = r2(nx);
+  else if (_bnOpts.style === 'elastic') ch.over = r2(ny - 1);
+  else ch.bounce = r2(1 - ny);
   _bnSet(ch, true);
 }
 // Arrow keys in Bounce mode: left/right move the hit, up/down the height
@@ -1272,7 +1272,12 @@ function _bnInit() {
     thumb.setAttribute('cy', '11');
     sv.appendChild(thumb);
     var val = document.createElement('div');
-    val.style.cssText = 'flex-shrink:0;width:38px;text-align:right;font-size:12px;color:#d4d4d4;white-space:nowrap;';
+    val.style.cssText = 'flex-shrink:0;width:38px;text-align:right;font-size:12px;color:#d4d4d4;white-space:nowrap;cursor:text;';
+    // Click the number to type one (_bnTypeValue); hover brightens it
+    val.addEventListener('mouseenter', function() { val.style.color = '#ffffff'; });
+    val.addEventListener('mouseleave', function() { val.style.color = '#d4d4d4'; });
+    val.addEventListener('click', function() { _bnTypeValue(def); });
+    _attachTooltip(val, 'Click to type a value');
     row.appendChild(lb); row.appendChild(sv); row.appendChild(val);
     wrap.appendChild(row);
     var el = { row: row, lb: lb, sv: sv, track: track, fill: fill, thumb: thumb, val: val, w: 0, def: def };
@@ -1283,12 +1288,32 @@ function _bnInit() {
   if (typeof ResizeObserver !== 'undefined') new ResizeObserver(function() { _bnLayout(); }).observe(panel);
 }
 function _bnKeyOf(def) { return def.key === 'h' ? _bnHKey(_bnOpts) : def.key; }
+// Number entry for one slider, in the rename dialog (a modal, so the key sink
+// and the panel shortcuts stay out of the way). Percent sliders take a percent
+// ("45", "45%", "12.5"); out-of-range values are clamped by _bnClean.
+function _bnTypeValue(def) {
+  var k = _bnKeyOf(def), r = _BN_RANGE[k], pct = k !== 'n';
+  var title = def.key === 'h' ? (_bnOpts.style === 'elastic' ? 'Overshoot' : 'Bounce') : def.label;
+  var cur = pct ? String(Math.round(_bnOpts[k] * 1000) / 10) : String(_bnOpts[k]);
+  var hint = pct ? 'Percent, ' + Math.round(r[0] * 100) + ' to ' + Math.round(r[1] * 100)
+                 : 'Whole number, ' + r[0] + ' to ' + r[1];
+  _renamePresetDialog(cur, function(v) {
+    var num = parseFloat(String(v).replace('%', '').replace(',', '.'));
+    if (!isFinite(num)) { _showCopyToast('Enter a number'); return; }
+    var ch = {};
+    ch[k] = pct ? num / 100 : num;
+    _bnSet(ch, false);
+  }, { title: title, ok: 'Set', hint: hint });
+}
+// Slider value as shown: a count, or a percent with one decimal when it has one
+function _bnFmt(k, v) { return k === 'n' ? String(v) : (Math.round(v * 1000) / 10) + '%'; }
 function _bnWireSlider(el) {
   var dragging = false, rect = null;
   function valAt(e) {
     var r = _BN_RANGE[_bnKeyOf(el.def)], pad = 7, w = Math.max(1, rect.width - 2 * pad); // rect: measured once, at the press
     var f = Math.max(0, Math.min(1, (e.clientX - rect.left - pad) / w));
-    return r[0] + f * (r[1] - r[0]);
+    var v = r[0] + f * (r[1] - r[0]);
+    return _bnKeyOf(el.def) === 'n' ? v : Math.round(v * 100) / 100; // drags land on whole percents; typed values may carry a decimal
   }
   function set(e, live) { var ch = {}; ch[_bnKeyOf(el.def)] = valAt(e); _bnSet(ch, live); }
   el.sv.addEventListener('pointerdown', function(e) {
@@ -1375,7 +1400,7 @@ function _bnSyncUI(force) {
       var x = 7 + (v - r[0]) / (r[1] - r[0]) * Math.max(0, el.w - 14);
       if (el._ocX !== x) { el._ocX = x; el.thumb.setAttribute('cx', String(x)); el.fill.setAttribute('width', String(Math.max(0, x - 7))); }
     }
-    _bnText('v' + def.key, el.val, k === 'n' ? String(v) : Math.round(v * 100) + '%');
+    _bnText('v' + def.key, el.val, _bnFmt(k, v));
     if (def.key === 'h') _bnText('lh', el.lb, _bnOpts.style === 'elastic' ? 'Overshoot' : 'Bounce');
   });
 }
@@ -9098,6 +9123,13 @@ function _renamePresetDialog(current, onOk, opts) {
   var title = document.createElement('div');
   title.textContent = (opts && opts.title) || 'Rename Preset';
   title.style.cssText = 'color:#e4e4e4;font-size:14px;font-weight:600;margin-bottom:10px;';
+  var hintEl = null;
+  if (opts && opts.hint) { // a line under the title (Bounce mode's number entry gives the allowed range)
+    title.style.marginBottom = '4px';
+    hintEl = document.createElement('div');
+    hintEl.textContent = opts.hint;
+    hintEl.style.cssText = 'color:#8a8a8a;font-size:12px;margin-bottom:10px;';
+  }
 
   var input = document.createElement('input');
   input.type = 'text';
@@ -9140,6 +9172,7 @@ function _renamePresetDialog(current, onOk, opts) {
   btns.appendChild(cancelBtn);
   btns.appendChild(okBtn);
   box.appendChild(title);
+  if (hintEl) box.appendChild(hintEl);
   box.appendChild(input);
   box.appendChild(btns);
   overlay.appendChild(box);
