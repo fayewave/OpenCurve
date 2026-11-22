@@ -4367,6 +4367,24 @@ var _peChipRoom = true;         // set by the graph bar's layout (_tbLayout): ro
 var _peRoom = Infinity;         // ... and the room it has (px), for the name test below
 // Room the name and "Edited" need beside the buttons: the name may be cut to
 // about 8 characters (12px text, ~6.6px each) before it goes altogether
+// Save and Revert carry their labels when the whole chip fits labelled
+// (_PE_CHIP_FULL), and also once the name has gone, when the two labelled
+// buttons alone fit (_PE_BTNS_LABELLED); otherwise they are 26px icon squares
+var _PE_CHIP_FULL = 230;     // name + Edited + the labelled Save and Revert buttons
+var _PE_BTNS_LABELLED = 136; // the labelled Save and Revert buttons alone
+var _peLabels = null;
+function _peSetLabels(on) {
+  if (on === _peLabels) return;
+  _peLabels = on;
+  ['pe-save', 'pe-revert'].forEach(function(id) {
+    var b = document.getElementById(id);
+    if (!b) return;
+    var sp = b.querySelector('span'), sv = b.querySelector('svg');
+    if (sp) sp.style.display = on ? '' : 'none';
+    b.style.padding = on ? '' : '0 5px'; // (26 - 16) / 2: the icon centred in a square
+    if (sv) sv.style.marginRight = on ? '5px' : '0';
+  });
+}
 function _peNameFits(name, ed) {
   return _peRoom >= 9 + Math.min(name.length, 8) * 6.6 + (ed ? 5 + 40 + 3 + 2 * 31 : 9);
 }
@@ -4385,8 +4403,10 @@ function _presetEditSync(force) {
   var inf = _presetEditInfo();
   var id = inf ? String(inf.preset.id) : null, ed = !!(inf && inf.edited);
   var name = inf ? inf.preset.name : '';
-  var _peNameRoom = _peNameFits(name, ed);
-  var sig = id + '|' + ed + '|' + name + '|' + _curveColor + '|' + _peChipRoom + '|' + _peNameRoom;
+  var _peNameRoom = _peNameFits(name, ed) || _peRoom >= _PE_CHIP_FULL;
+  var labels = _peRoom >= _PE_CHIP_FULL || (!_peNameRoom && _peRoom >= _PE_BTNS_LABELLED);
+  _peSetLabels(labels);
+  var sig = id + '|' + ed + '|' + name + '|' + _curveColor + '|' + _peChipRoom + '|' + _peNameRoom + '|' + labels;
   if (!force && sig === _peSig) return;
   _peSig = sig;
   // Tiles: state classes on the tile itself (UXP restyles reliably that way)
@@ -6762,27 +6782,13 @@ function initPanel() {
   // (_peNameFits) it and "Edited" go and the two buttons stay; below
   // _PE_CHIP_BARE the chip hides (the dropdown then
   // lists Save and Revert). Written only when the value changes.
-  var _PE_CHIP_FULL = 230; // name + Edited + the labelled Save and Revert buttons
   var _PE_CHIP_BARE = 60;  // the two icon-only buttons alone
-  var _peChipMaxW = null, _peLabels = null;
-  function _peSetLabels(on) {
-    if (on === _peLabels) return;
-    _peLabels = on;
-    ['pe-save', 'pe-revert'].forEach(function(id) {
-      var b = document.getElementById(id);
-      if (!b) return;
-      var sp = b.querySelector('span'), sv = b.querySelector('svg');
-      if (sp) sp.style.display = on ? '' : 'none';
-      b.style.padding = on ? '' : '0 5px'; // (26 - 16) / 2: the icon centred in a square
-      if (sv) sv.style.marginRight = on ? '5px' : '0';
-    });
-  }
+  var _peChipMaxW = null;
   function _tbChipLayout(w) {
     var chip = document.getElementById('preset-edit-chip');
     if (!chip) return;
     var room = w - 2 * 36; // #pe-center's width: the bar between the menu button and Full Screen
     var fits = room >= _PE_CHIP_BARE;
-    _peSetLabels(room >= _PE_CHIP_FULL);
     var mw = fits ? Math.floor(room) + 'px' : '';
     if (mw !== _peChipMaxW) { _peChipMaxW = mw; chip.style.maxWidth = mw; }
     _peRoom = room;
