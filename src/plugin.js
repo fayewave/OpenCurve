@@ -1151,8 +1151,20 @@ function _styleViewBtns() {
   [['toggle-graph', _graphVisible], ['toggle-timeline', _tlVisible]].forEach(function(pair) {
     var btn = document.getElementById(pair[0]);
     if (!btn) return;
+    // Hover and press: the inline tint below beats the stylesheet's :hover, so
+    // the button tracks them itself and they deepen the tint (white while held)
+    if (!btn._ocViewWired) {
+      btn._ocViewWired = true;
+      btn.addEventListener('mouseenter', function() { btn._ocHov = true; _styleViewBtns(); });
+      btn.addEventListener('mouseleave', function() { btn._ocHov = false; btn._ocDown = false; _styleViewBtns(); });
+      btn.addEventListener('pointerdown', function() { btn._ocDown = true; _styleViewBtns(); });
+      btn.addEventListener('pointerup', function() { if (btn._ocDown) { btn._ocDown = false; _styleViewBtns(); } });
+      btn.addEventListener('pointercancel', function() { if (btn._ocDown) { btn._ocDown = false; _styleViewBtns(); } });
+    }
     // Green while the region is shown, red while it is hidden (the Settings rows use the same pair)
-    var bg = pair[1] ? 'rgba(61,220,132,0.18)' : 'rgba(255,144,144,0.18)', col = pair[1] ? '#3ddc84' : '#ff9090', op = '1';
+    var a = btn._ocDown ? 0.5 : btn._ocHov ? 0.32 : 0.18;
+    var bg = pair[1] ? 'rgba(61,220,132,' + a + ')' : 'rgba(255,144,144,' + a + ')';
+    var col = btn._ocDown ? '#ffffff' : pair[1] ? '#3ddc84' : '#ff9090', op = '1';
     // write only on change: UXP relayouts on every style write. Compared with the last
     // write, not a read-back (a host may hand the colour back reformatted)
     if (btn._ocBg !== bg) { btn._ocBg = bg; btn.style.backgroundColor = bg; }
@@ -7856,11 +7868,14 @@ function _applyPresetLayout(force) {
     var notifName = notifEl.querySelector('.preset-name');
     var notifBr = notifEl.querySelector('.notif-br');
     if (isGrid) {
-      if (notifIcon) { notifIcon.style.width = '22px'; notifIcon.style.height = '22px'; notifIcon.style.fontSize = '14px'; notifIcon.style.marginTop = '-4px'; }
+      // The SVG icon 8px under the thumbnail size (32/34px): with the name on two
+      // lines it takes the same height as a thumbnail and one line of name
+      var nis = (thumbSz - 8) + 'px';
+      if (notifIcon) { notifIcon.style.width = nis; notifIcon.style.height = nis; notifIcon.style.fontSize = ''; notifIcon.style.marginTop = '-2px'; }
       if (notifName) { notifName.style.fontSize = '12px'; notifName.style.marginTop = '2px'; notifName.style.lineHeight = '1.2'; }
       if (notifBr) notifBr.style.display = '';
     } else {
-      if (notifIcon) { notifIcon.style.width = '28px'; notifIcon.style.height = '28px'; notifIcon.style.fontSize = '16px'; notifIcon.style.marginTop = ''; }
+      if (notifIcon) { notifIcon.style.width = '28px'; notifIcon.style.height = '28px'; notifIcon.style.fontSize = ''; notifIcon.style.marginTop = ''; }
       if (notifName) { notifName.style.fontSize = ''; notifName.style.marginTop = ''; notifName.style.lineHeight = ''; }
       if (notifBr) notifBr.style.display = 'none';
     }
@@ -9111,7 +9126,7 @@ function _showSettingsModal() {
     densPick._ocIn.appendChild(db);
   });
   _densPaint();
-  var densCard = _card('Keyframe Spacing', 'Every frame follows the curve exactly; 2 or 4 write fewer keyframes, straight between', densPick);
+  var densCard = _card('Keyframe Spacing', 'A keyframe every 1, 2 or 4 frames. 1 fr follows the curve exactly', densPick);
 
   // Theme colour: swatches under the text, the hex field at the right
   var swatchColors = ['#ffffff','#4a9eff','#ff9090','#f0a030','#c97ff0','#ff6eb4','#38fbb2','#aaaaaa'];
