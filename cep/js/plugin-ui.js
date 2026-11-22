@@ -2643,6 +2643,12 @@ function _attachTooltip(el, text) {
 function _goSelectsAll(s) {
   return !!s && s.status === 'no-selection' && !s.isBaking && (s.validParamKeys || []).length > 0;
 }
+// The playhead is outside every keyframe pair ("Move playhead between
+// keyframes"): Go stays grey, but a press jumps to the nearest pair, the same
+// as a click on the status strip
+function _goJumps(s) {
+  return !!s && s.status === 'outside' && !s.isBaking && !!_nearestJumpParam(s);
+}
 // Select every property that is ready to bake (the status strip's click, and
 // Go's first press while nothing is selected)
 function _selectAllValid(s) {
@@ -2854,7 +2860,7 @@ function renderUI(s) {
     // Nothing selected yet: Go stays grey but its press selects everything
     // ready (see _goSelectsAll); go-select only swaps the not-allowed cursor
     // for a pointer
-    goBtn.classList.toggle('go-select', _goSelectsAll(s));
+    goBtn.classList.toggle('go-select', _goSelectsAll(s) || _goJumps(s));
     var goLabel = document.getElementById('go-label');
     // Change-only: isBaking is false on all but a handful of renders
     var onD = s.isBaking ? 'none' : 'inline', spD = s.isBaking ? 'inline-block' : 'none';
@@ -3017,7 +3023,7 @@ function initPanel() {
     if (isEnter) {
       if (e.repeat || modal) return;
       var go = document.getElementById('go-btn');
-      if (!go || (go.classList.contains('btn-disabled') && !_goSelectsAll(getState()))) { console.log('[OC] Enter: Go is disabled'); return; }
+      if (!go || (go.classList.contains('btn-disabled') && !_goSelectsAll(getState()) && !_goJumps(getState()))) { console.log('[OC] Enter: Go is disabled'); return; }
       e.preventDefault();
       console.log('[OC] Enter: pressing Go');
       go.click();
@@ -4358,6 +4364,7 @@ function initPanel() {
     _addPressState(goBtn); // mirrors hover as a class (the select-all highlight, see go-select)
     _attachTooltip(goBtn, function() {
       if (_goSelectsAll(getState())) return 'Select all ready properties (press Go again to apply)';
+      if (_goJumps(getState())) return 'Jump to the nearest keyframe pair';
       return goBtn.classList.contains('btn-disabled')
         ? 'Select a property that the playhead is over'
         : 'Apply the curve to the selected properties';
@@ -4365,6 +4372,7 @@ function initPanel() {
     goBtn.addEventListener('click', function() {
       var s = getState();
       if (_goSelectsAll(s)) { _selectAllValid(s); return; }
+      if (_goJumps(s)) { _jumpToParam({ jumpSec: _nearestJumpParam(s).nearSec }); return; }
       var bakedKeys = (s.selectedParamKeys || [])
         .filter(function(k){ return (s.validParamKeys || []).indexOf(k) >= 0 && s.paramContexts && s.paramContexts[k]; });
       if (s.status !== 'valid' || s.isBaking || bakedKeys.length === 0) return;
@@ -5478,8 +5486,10 @@ function _showSettingsModal() {
   // came out lumpy in the CCX (2026-11-22). The pill is a path (two arcs) rather
   // than a rect with rx; only attributes change on a toggle.
   function _switch(on) {
-    var wrap = _el('display:flex;flex-shrink:0;width:36px;height:20px;');
-    wrap.innerHTML = '<svg width="36" height="20" viewBox="0 0 36 20" fill="none">'
+    // 1px of room on every side (the negative margin keeps the layout): UXP
+    // clipped the anti-aliased edge along the SVG's bottom and right border
+    var wrap = _el('display:flex;flex-shrink:0;width:38px;height:22px;margin:-1px;');
+    wrap.innerHTML = '<svg width="38" height="22" viewBox="-1 -1 38 22" fill="none">'
       + '<path d="M10 0H26A10 10 0 0 1 26 20H10A10 10 0 0 1 10 0Z" fill="' + _SW_OFF + '"/>'
       + '<circle cx="10" cy="10" r="7" fill="#9a9a9a"/></svg>';
     var pill = wrap.querySelector('path'), knob = wrap.querySelector('circle');

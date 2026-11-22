@@ -5044,6 +5044,12 @@ function _attachTooltip(el, text) {
 function _goSelectsAll(s) {
   return !!s && s.status === 'no-selection' && !s.isBaking && (s.validParamKeys || []).length > 0;
 }
+// The playhead is outside every keyframe pair ("Move playhead between
+// keyframes"): Go stays grey, but a press jumps to the nearest pair, the same
+// as a click on the status strip
+function _goJumps(s) {
+  return !!s && s.status === 'outside' && !s.isBaking && !!_nearestJumpParam(s);
+}
 // Select every property that is ready to bake (the status strip's click, and
 // Go's first press while nothing is selected)
 function _selectAllValid(s) {
@@ -5258,7 +5264,7 @@ function renderUI(s) {
     // Nothing selected yet: Go stays grey but its press selects everything
     // ready (see _goSelectsAll); go-select only swaps the not-allowed cursor
     // for a pointer
-    goBtn.classList.toggle('go-select', _goSelectsAll(s));
+    goBtn.classList.toggle('go-select', _goSelectsAll(s) || _goJumps(s));
     var goLabel = document.getElementById('go-label');
     // Change-only: isBaking is false on all but a handful of renders
     var onD = s.isBaking ? 'none' : 'inline', spD = s.isBaking ? 'inline-block' : 'none';
@@ -5473,12 +5479,32 @@ var _HOLD_FIX_MS = 40; // after the last scroll event; the amplification's own w
 var _ocPtrDown   = false;
 var _ocHoldDeferred = null; // scroller whose refresh was skipped because a press was in progress
 var _ocCursorHeld   = null; // element carrying the hovered cursor across a swap (cleared on the next hover)
-document.addEventListener('pointerdown',   function() { _ocPtrDown = true;  }, true);
+document.addEventListener('pointerdown',   function(e) { _ocPtrDown = true; _ocPtrX = e.clientX; _ocPtrY = e.clientY; }, true);
 document.addEventListener('pointerup',     function() { _ocPtrDown = false; _holdFixResume(); }, true);
 document.addEventListener('pointercancel', function() { _ocPtrDown = false; _holdFixResume(); }, true);
 // The next real hover ends the carried cursor: UXP has hit-tested again by then
 document.addEventListener('pointerover', function() {
   if (_ocCursorHeld) { _ocCursorHeld.style.cursor = ''; document.body.style.cursor = ''; _ocCursorHeld = null; }
+}, true);
+// Native scrollbar drags (2026-11-22: dragging Settings' scrollbar in the CCX
+// kept letting go). Nothing showed the panel that the scrollbar was held, so a
+// drag's small steps were taken as wheel notches and eased away from the thumb,
+// and a pause of _HOLD_FIX_MS swapped the scroller out from under the drag.
+// The panel now remembers where the pointer was last seen; while that is in a
+// scroller's scrollbar strip (its right _SCROLLBAR_STRIP px, generous because
+// UXP may send no pointer events over the native scrollbar itself), scroll
+// steps aren't notches and the swap waits until the pointer is seen elsewhere.
+var _ocPtrX = -1, _ocPtrY = -1;
+var _SCROLLBAR_STRIP = 18;
+function _onScrollbar(el) {
+  if (_ocPtrX < 0 || !el || el.scrollHeight <= el.clientHeight) return false;
+  var r = el.getBoundingClientRect();
+  return _ocPtrY >= r.top && _ocPtrY <= r.bottom && _ocPtrX <= r.right && _ocPtrX >= r.right - _SCROLLBAR_STRIP;
+}
+document.addEventListener('pointermove', function(e) {
+  _ocPtrX = e.clientX; _ocPtrY = e.clientY;
+  // A swap held back for the scrollbar: do it once the pointer has left it
+  if (_ocHoldDeferred && !_ocPtrDown && !_onScrollbar(_ocHoldDeferred)) _holdFixResume();
 }, true);
 function _holdFixResume() {
   // A press skipped the refresh (so a drag was not broken); do it once the press ends
@@ -5488,7 +5514,7 @@ function _holdFixResume() {
 }
 function _holdFixTry(el) {
   if (!el.parentNode) return;
-  if (_ocPtrDown) { _ocHoldDeferred = el; return; }
+  if (_ocPtrDown || _onScrollbar(el)) { _ocHoldDeferred = el; return; } // a press, or the pointer on the scrollbar
   // A wheel ease still running (its frames stalled behind a heavy poll, so the
   // scroll events went quiet before it landed): swapping now would copy an
   // intermediate position and let the rest of the ease run on the detached
@@ -5593,7 +5619,7 @@ function _smoothWheel(el) {
     if (!d) return;
     var now = Date.now();
     var max = el.scrollHeight - el.clientHeight;
-    if (Math.abs(d) > _UXP_NOTCH_MAX || _ocPtrDown) {
+    if (Math.abs(d) > _UXP_NOTCH_MAX || _ocPtrDown || _onScrollbar(el)) {
       // scrollbar drag or a jump: not the wheel, stop easing and follow it
       if (_debugScroll) console.log('[OC-SCROLL] jump ' + ref + ' -> ' + top + (target !== null ? ' (ease to ' + target + ' cancelled)' : ''));
       if (raf) { cancelAnimationFrame(raf); raf = 0; }
@@ -5778,7 +5804,9 @@ function initPanel() {
   // focus to the sink when it is released elsewhere, or the selection is lost
   document.addEventListener('pointerdown', function(e) {
     _ocPressInField = _isField(e.target);
-    if (!_ocPressInField) setTimeout(function() { _focusSink('pointerdown'); }, 0);
+    // A press on a scroller's own scrollbar keeps its focus: moving focus to the
+    // sink mid-press could end the native drag
+    if (!_ocPressInField && !_onScrollbar(e.target)) setTimeout(function() { _focusSink('pointerdown'); }, 0);
   }, true);
   document.addEventListener('click', function(e) {
     if (_ocPressInField) return;
@@ -5802,7 +5830,7 @@ function initPanel() {
     if (isEnter) {
       if (e.repeat || modal) return;
       var go = document.getElementById('go-btn');
-      if (!go || (go.classList.contains('btn-disabled') && !_goSelectsAll(getState()))) { console.log('[OC] Enter: Go is disabled'); return; }
+      if (!go || (go.classList.contains('btn-disabled') && !_goSelectsAll(getState()) && !_goJumps(getState()))) { console.log('[OC] Enter: Go is disabled'); return; }
       e.preventDefault();
       console.log('[OC] Enter: pressing Go');
       go.click();
@@ -7203,6 +7231,7 @@ function initPanel() {
     _addPressState(goBtn); // mirrors hover as a class (the select-all highlight, see go-select)
     _attachTooltip(goBtn, function() {
       if (_goSelectsAll(getState())) return 'Select all ready properties (press Go again to apply)';
+      if (_goJumps(getState())) return 'Jump to the nearest keyframe pair';
       return goBtn.classList.contains('btn-disabled')
         ? 'Select a property that the playhead is over'
         : 'Apply the curve to the selected properties';
@@ -7210,6 +7239,7 @@ function initPanel() {
     goBtn.addEventListener('click', async function() {
       var s = getState();
       if (_goSelectsAll(s)) { _selectAllValid(s); return; }
+      if (_goJumps(s)) { _jumpToParam({ jumpSec: _nearestJumpParam(s).nearSec }); return; }
       var bakedKeys = (s.selectedParamKeys || [])
         .filter(function(k){ return (s.validParamKeys || []).indexOf(k) >= 0 && s.paramContexts && s.paramContexts[k]; });
       var contexts = bakedKeys.map(function(k){ return s.paramContexts[k]; });
@@ -8814,8 +8844,10 @@ function _showSettingsModal() {
   // came out lumpy in the CCX (2026-11-22). The pill is a path (two arcs) rather
   // than a rect with rx; only attributes change on a toggle.
   function _switch(on) {
-    var wrap = _el('display:flex;flex-shrink:0;width:36px;height:20px;');
-    wrap.innerHTML = '<svg width="36" height="20" viewBox="0 0 36 20" fill="none">'
+    // 1px of room on every side (the negative margin keeps the layout): UXP
+    // clipped the anti-aliased edge along the SVG's bottom and right border
+    var wrap = _el('display:flex;flex-shrink:0;width:38px;height:22px;margin:-1px;');
+    wrap.innerHTML = '<svg width="38" height="22" viewBox="-1 -1 38 22" fill="none">'
       + '<path d="M10 0H26A10 10 0 0 1 26 20H10A10 10 0 0 1 10 0Z" fill="' + _SW_OFF + '"/>'
       + '<circle cx="10" cy="10" r="7" fill="#9a9a9a"/></svg>';
     var pill = wrap.querySelector('path'), knob = wrap.querySelector('circle');

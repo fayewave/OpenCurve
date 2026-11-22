@@ -1046,7 +1046,8 @@ html, body {
   background-image: linear-gradient(to right, rgba(255,255,255,0.045), rgba(255,255,255,0));
   opacity: 1;
 }
-/* Grey, but pressing it selects every ready property (_goSelectsAll), so it
+/* Grey, but pressing it selects every ready property (_goSelectsAll) or, with
+   the playhead outside every pair, jumps to the nearest one (_goJumps), so it
    gets a hover highlight; a plain grey Go (nothing ready) gets none. .hover is
    the mirrored class from _addPressState: UXP applies compound :hover rules
    unreliably. */
