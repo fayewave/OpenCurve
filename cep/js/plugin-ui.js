@@ -1312,6 +1312,25 @@ function _undoBakeForKey(key) {
   if (_bridge && _bridge.onUndoParam) _bridge.onUndoParam(live.bakeIds, live.label || live.displayName);
 }
 
+// Row Replace button: the host swaps those bake records for the graph's
+// current curve on the same keyframe pairs (an undo brings the old curve back).
+function _replaceBakeForKey(key) {
+  var s = getState();
+  if (s.isBaking) return;
+  var live = (s.availableParams || []).filter(function(x){ return x.key === key; })[0];
+  if (!live || !live.bakeIds || !live.bakeIds.length) return;
+  _pvStop();
+  if (_bridge && _bridge.onReplaceParam) _bridge.onReplaceParam(live.bakeIds, _cloneCurve(s.curve), live.label || live.displayName);
+}
+
+// The Replace button's icon: two arrows going round
+var _icReplace = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none">'
+  + '<path d="M11.3 5.2A4.6 4.6 0 0 0 3 4.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'
+  + '<path d="M2.7 8.8A4.6 4.6 0 0 0 11 9.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'
+  + '<path d="M11.6 2.5v2.8H8.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>'
+  + '<path d="M2.4 11.5V8.7h2.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>'
+  + '</svg>';
+
 // Row curve button: the host attaches the curve its bake record used to the
 // availableParams entry as `bakeCurve`; put it back on the graph.
 function _loadBakedCurve(key) {
@@ -2522,6 +2541,18 @@ function renderUI(s) {
           ev.stopPropagation();
           _loadBakedCurve(p.key);
         });
+        // Replace: write the graph's current curve in place of this bake.
+        // Shown with the undo button, on every baked row.
+        var propReplace = document.createElement('span');
+        propReplace.className = 'prop-replace';
+        _addPressState(propReplace);
+        propReplace.style.display = 'none';
+        _attachTooltip(propReplace, 'Replace this bake with the current curve');
+        propReplace.innerHTML = _icReplace;
+        propReplace.addEventListener('click', function(ev) {
+          ev.stopPropagation();
+          _replaceBakeForKey(p.key);
+        });
         // Pin: jump the playhead to this property's keyframes (doesn't toggle selection)
         var propPin = document.createElement('span');
         propPin.className = 'prop-pin';
@@ -2536,11 +2567,12 @@ function renderUI(s) {
           _jumpToParam(live || p);
         });
         btn.appendChild(propCurve);
+        btn.appendChild(propReplace);
         btn.appendChild(propUndo);
         btn.appendChild(propPin);
         btn.dataset.key = p.key;
         // The sync pass below reads these instead of querying for them each tick
-        btn._oc = { mark: propDiamond, pin: propPin, undo: propUndo, curve: propCurve };
+        btn._oc = { mark: propDiamond, pin: propPin, undo: propUndo, curve: propCurve, replace: propReplace };
         // Hovering a row lights its lane in the mini timeline (a hovered lane lights the row)
         btn.addEventListener('mouseenter', function() { _tlHighlightLane(p.key); });
         btn.addEventListener('mouseleave', function() { _tlHighlightLane(null); });
@@ -2590,6 +2622,8 @@ function renderUI(s) {
       // Undo button only on rows with a bake to undo (inline style: UXP ignores class-driven display changes)
       var undoEl = els.undo || btn.querySelector('.prop-undo');
       if (undoEl) { var ud = isBakedRow ? 'flex' : 'none'; if (undoEl.style.display !== ud) undoEl.style.display = ud; }
+      var replEl = els.replace || btn.querySelector('.prop-replace');
+      if (replEl) { var rd = isBakedRow ? 'flex' : 'none'; if (replEl.style.display !== rd) replEl.style.display = rd; }
       var curveEl = els.curve || btn.querySelector('.prop-curve');
       if (curveEl) { var cd = hasCurve ? 'flex' : 'none'; if (curveEl.style.display !== cd) curveEl.style.display = cd; }
     });

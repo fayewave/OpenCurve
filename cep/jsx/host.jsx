@@ -999,6 +999,96 @@ function _ocFindNode(sequence, nodeId, isAudio) {
 
 // ─── bakeKeyframes ───────────────────────────────────────────────────────
 
+// Write one target's eased keyframes and build its bake record. tg: { prop,
+// kf0, kf1 (media seconds), frames, fps (frames per media second), val0, val1,
+// isCompound, ref { displayName, propIdx, compIdx, isAudio }, loc { clip,
+// trackIdx, clipIdx }, matchName, clipStart }. Returns { count, err, info }
+// (info is null when nothing was written). Shared by bakeKeyframes and the
+// Replace / undo-restore path (_ocRebake).
+function _ocWriteTarget(tg, curve, stepReq, bSeqId) {
+  var prop = tg.prop;
+  var startSec = tg.kf0;
+  var totalFrames = tg.frames;
+  var val0 = tg.val0, val1 = tg.val1;
+  var fps = tg.fps;
+  var isCompound = tg.isCompound;
+  var label = tg.ref.displayName || ('param ' + tg.ref.propIdx);
+  var isAudio = !!tg.ref.isAudio;
+  var count = 0, err = null;
+
+  // Short pairs are always written densely enough to get at least two keyframes
+  var step = Math.max(1, Math.min(stepReq, Math.floor((totalFrames - 1) / 2)));
+  var addedTimes = [];
+  var frames = [], eased = [];
+  for (var f = step; f < totalFrames; f += step) { frames.push(f); eased.push(_sampleBezier(f / totalFrames, curve)); }
+  var path = isCompound ? _ocSamplePath(prop, tg.kf0, tg.kf1, val0, val1, totalFrames) : null;
+  var retimed = (!isCompound && isAudio) ? _ocRetimed(prop, tg.kf0, tg.kf1, eased, val0, val1) : null;
+
+  for (var fi = 0; fi < frames.length; fi++) {
+    var easedT = eased[fi];
+    // Compound (Position / Anchor Point) values are passed as [x, y]
+    // arrays — the correct format for 2D spatial params (the old
+    // "illegal parameter type" bug was fixed in PPro 14.0.1).
+    var value;
+    if (isCompound) {
+      value = path ? _ocPathAt(path, easedT) : [
+        val0[0] + (val1[0] - val0[0]) * easedT,
+        val0[1] + (val1[1] - val0[1]) * easedT
+      ];
+    } else {
+      value = retimed ? retimed[fi]
+            : val0 + (val1 - val0) * (isAudio ? Math.max(0, Math.min(1, easedT)) : easedT);
+      // Overshoot curves: Opacity only goes 0..100
+      if (/opacity/i.test(label)) value = Math.max(0, Math.min(100, value));
+    }
+    var timeSec = startSec + frames[fi] / fps;
+
+    // Pass updateUI=true only on the final key of each property: one
+    // redraw per param (so the keyframes actually appear without
+    // re-selecting the clip) instead of a redraw on every frame, which
+    // would defeat the batching speed-up.
+    var doUpdate = (fi === frames.length - 1);
+
+    try {
+      prop.addKey(timeSec);
+      prop.setValueAtKey(timeSec, value, doUpdate);
+      // The exact value addKey received: _ocUndoInfo removes by matching
+      // these against the live keys, and a rounded copy risked missing
+      // the tick Premiere stored (rounding for size can happen at export).
+      addedTimes.push(timeSec);
+      count++;
+    } catch(e) { if (!err) err = label + ': ' + (e.message || String(e)); }
+  }
+  if (!addedTimes.length) return { count: count, err: err, info: null };
+
+  // Capture a stable clip/component identity alongside the indices so
+  // undo can detect a changed timeline and refuse to touch the wrong
+  // property.
+  var bClip = tg.loc.clip;
+  var bClipName = '';  try { bClipName = bClip.name; } catch(e) {}
+  var bNodeId = '';    try { bNodeId = String(bClip.nodeId || ''); } catch(e) {}
+  return { count: count, err: err, info: {
+    id: ++_ocBakeSeq,          // referenced by the panel's per-row undo button
+    fps: fps,                  // frames per media second the keyframes were spaced at
+    kf0Time: tg.kf0,           // range the bake filled, for spotting an external undo
+    kf1Time: tg.kf1,
+    trackIdx: tg.loc.trackIdx,
+    clipIdx: tg.loc.clipIdx,
+    isAudio: isAudio,
+    compIdx: tg.ref.compIdx,
+    propIdx: tg.ref.propIdx,
+    clipName: bClipName,
+    clipStart: tg.clipStart,
+    matchName: tg.matchName,
+    nodeId: bNodeId,
+    displayName: label,
+    times: addedTimes,
+    step: step,                // keyframe spacing used, so a wider pair inside the span means an outside undo
+    curve: curve,              // for the row's "load baked curve" button
+    seqId: bSeqId,             // records are restored across sessions; never match another sequence's clips
+  }};
+}
+
 function bakeKeyframes(argsJSON) {
   try {
     var args = _jsonParse(argsJSON);
@@ -1081,88 +1171,10 @@ function bakeKeyframes(argsJSON) {
     if (_hasUndoGroup) app.beginUndoGroup('OpenCurve bake');
     try {
       for (var pi = 0; pi < targets.length; pi++) {
-        var tg = targets[pi];
-        var prop = tg.prop;
-        var startSec = tg.kf0;
-        var totalFrames = tg.frames;
-        var val0 = tg.val0, val1 = tg.val1;
-        var fps = tg.fps;
-        var isCompound = tg.isCompound;
-        var label = tg.ref.displayName || ('param ' + tg.ref.propIdx);
-        var isAudio = !!tg.ref.isAudio;
-
-        // Short pairs are always written densely enough to get at least two keyframes
-        var step = Math.max(1, Math.min(stepReq, Math.floor((totalFrames - 1) / 2)));
-        var addedTimes = [];
-        var frames = [], eased = [];
-        for (var f = step; f < totalFrames; f += step) { frames.push(f); eased.push(_sampleBezier(f / totalFrames, curve)); }
-        var path = isCompound ? _ocSamplePath(prop, tg.kf0, tg.kf1, val0, val1, totalFrames) : null;
-        var retimed = (!isCompound && isAudio) ? _ocRetimed(prop, tg.kf0, tg.kf1, eased, val0, val1) : null;
-
-        for (var fi = 0; fi < frames.length; fi++) {
-          var easedT = eased[fi];
-          // Compound (Position / Anchor Point) values are passed as [x, y]
-          // arrays — the correct format for 2D spatial params (the old
-          // "illegal parameter type" bug was fixed in PPro 14.0.1).
-          var value;
-          if (isCompound) {
-            value = path ? _ocPathAt(path, easedT) : [
-              val0[0] + (val1[0] - val0[0]) * easedT,
-              val0[1] + (val1[1] - val0[1]) * easedT
-            ];
-          } else {
-            value = retimed ? retimed[fi]
-                  : val0 + (val1 - val0) * (isAudio ? Math.max(0, Math.min(1, easedT)) : easedT);
-            // Overshoot curves: Opacity only goes 0..100
-            if (/opacity/i.test(label)) value = Math.max(0, Math.min(100, value));
-          }
-          var timeSec = startSec + frames[fi] / fps;
-
-          // Pass updateUI=true only on the final key of each property: one
-          // redraw per param (so the keyframes actually appear without
-          // re-selecting the clip) instead of a redraw on every frame, which
-          // would defeat the batching speed-up.
-          var doUpdate = (fi === frames.length - 1);
-
-          try {
-            prop.addKey(timeSec);
-            prop.setValueAtKey(timeSec, value, doUpdate);
-            // The exact value addKey received: _ocUndoInfo removes by matching
-            // these against the live keys, and a rounded copy risked missing
-            // the tick Premiere stored (rounding for size can happen at export).
-            addedTimes.push(timeSec);
-            totalActions++;
-          } catch(e) { if (!firstErr) firstErr = label + ': ' + (e.message || String(e)); }
-        }
-
-        // Capture a stable clip/component identity alongside the indices so
-        // undo can detect a changed timeline and refuse to touch the wrong
-        // property.
-        var bClip = tg.loc.clip;
-        var bClipName = '';  try { bClipName = bClip.name; } catch(e) {}
-        var bNodeId = '';    try { bNodeId = String(bClip.nodeId || ''); } catch(e) {}
-
-        if (addedTimes.length) bakedKeys.push(tg.ref.key);
-        if (addedTimes.length) undoInfo.push({
-          id: ++_ocBakeSeq,          // referenced by the panel's per-row undo button
-          fps: fps,                  // frames per media second the keyframes were spaced at
-          kf0Time: tg.kf0,           // range the bake filled, for spotting an external undo
-          kf1Time: tg.kf1,
-          trackIdx: tg.loc.trackIdx,
-          clipIdx: tg.loc.clipIdx,
-          isAudio: isAudio,
-          compIdx: tg.ref.compIdx,
-          propIdx: tg.ref.propIdx,
-          clipName: bClipName,
-          clipStart: tg.clipStart,
-          matchName: tg.matchName,
-          nodeId: bNodeId,
-          displayName: label,
-          times: addedTimes,
-          step: step,                // keyframe spacing used, so a wider pair inside the span means an outside undo
-          curve: curve,              // for the row's "load baked curve" button
-          seqId: bSeqId,             // records are restored across sessions; never match another sequence's clips
-        });
+        var w = _ocWriteTarget(targets[pi], curve, stepReq, bSeqId);
+        totalActions += w.count;
+        if (w.err && !firstErr) firstErr = w.err;
+        if (w.info) { bakedKeys.push(targets[pi].ref.key); undoInfo.push(w.info); }
       }
     } finally {
       if (_hasUndoGroup) app.endUndoGroup();
@@ -1315,7 +1327,110 @@ function _ocUndoInfo(sequence, info) {
       } catch(e) {}
     }
   } catch(e) { return { removed: removed, skipped: 1 }; }
-  return { removed: removed, skipped: 0 };
+  // The clip and property it worked on, for a rebake on the same pair (_ocRebake)
+  return { removed: removed, skipped: 0, clip: clip, prop: prop };
+}
+
+// ─── Replace ─────────────────────────────────────────────────────────────
+// A record made by the row's Replace button carries `prev`, the bake it
+// replaced ({ curve, step, prev }), so an undo writes that curve back instead
+// of leaving the pair plain. Kept a few levels deep, oldest dropped.
+var _OC_PREV_DEPTH = 5;
+function _ocPrevOk(p) { return !!p && typeof p === 'object' && !!p.curve && typeof p.curve === 'object'; }
+function _ocSnap(info) {
+  if (!info || !info.curve) return null;
+  var src = _ocPrevOk(info.prev) ? _jsonParse(_jsonStringify(info.prev)) : null;
+  var snap = { curve: info.curve, step: info.step || 1, prev: src };
+  var p = snap, d = 1;
+  while (p.prev) { if (d >= _OC_PREV_DEPTH) { p.prev = null; break; } p = p.prev; d++; }
+  return snap;
+}
+// Write `curve` on the pair a record covered, once its own keyframes are gone
+// (the two original keyframes are never removed). `hit` is what _ocUndoInfo
+// returned: the clip and property. Works wherever the playhead is. Returns
+// _ocWriteTarget's answer with `prev` set on the new record, or null when the
+// pair can't be found any more.
+function _ocRebake(info, hit, curve, stepReq, prev) {
+  if (!hit || !hit.prop || !hit.clip) return null;
+  var prop = hit.prop, clip = hit.clip;
+  var keys = null;
+  try { keys = prop.getKeys(); } catch(e) { return null; }
+  var k0 = null, k1 = null;
+  for (var i = 0; keys && i < keys.length; i++) {
+    var t = keys[i].seconds;
+    if (k0 === null && Math.abs(t - info.kf0Time) < 0.0001) k0 = t;
+    if (k1 === null && Math.abs(t - info.kf1Time) < 0.0001) k1 = t;
+  }
+  if (k0 === null || k1 === null) return null;
+  var fps = info.fps || 0;
+  var frames = Math.round((k1 - k0) * fps);
+  if (frames < 2) return null;
+  var v0, v1;
+  try { v0 = prop.getValueAtKey(k0); v1 = prop.getValueAtKey(k1); } catch(e) { return null; }
+  var isCompound = (typeof v0 === 'object' && v0 !== null && v0.length === 2);
+  if (!isCompound && typeof v0 !== 'number') return null;
+  var cStart = info.clipStart; try { cStart = clip.start.seconds; } catch(e) {}
+  var tg = {
+    prop: prop, kf0: k0, kf1: k1, frames: frames, fps: fps,
+    val0: isCompound ? [v0[0], v0[1]] : v0, val1: isCompound ? [v1[0], v1[1]] : v1, isCompound: isCompound,
+    ref: { displayName: info.displayName, propIdx: info.propIdx, compIdx: info.compIdx, isAudio: !!info.isAudio },
+    loc: { clip: clip, trackIdx: info.trackIdx, clipIdx: info.clipIdx },
+    matchName: info.matchName, clipStart: cStart,
+  };
+  var w = _ocWriteTarget(tg, curve, Math.max(1, parseInt(stepReq, 10) || 1), info.seqId || '');
+  if (w.info) w.info.prev = prev || null;
+  return w;
+}
+// Put a replaced bake back after its replacement was undone. Returns the new
+// record or null.
+function _ocRestorePrev(info, hit) {
+  if (!_ocPrevOk(info.prev)) return null;
+  var w = _ocRebake(info, hit, info.prev.curve, info.prev.step || 1, info.prev.prev || null);
+  return (w && w.info) ? w.info : null;
+}
+
+// Row Replace button: swap the given bake records (ids from detectContext's
+// bakeIds) for `curve` on the same keyframe pairs, at the panel's keyframe
+// spacing. The new records form one batch, so the panel-wide Undo reverts the
+// whole replace in one press and gets the old curves back. If a new curve
+// can't be written, the old one is put back.
+function replaceBake(argsJSON) {
+  try {
+    var args = _jsonParse(argsJSON);
+    var ids = args.ids || [];
+    var stepReq = Math.max(1, parseInt(args.step, 10) || 1);
+    var sequence = app.project.activeSequence;
+    if (!sequence) return _jsonStringify({ success: false, error: 'No active sequence' });
+    var batch = [], replaced = 0, skipped = 0, gone = 0, failed = 0;
+    for (var i = 0; i < ids.length; i++) {
+      var loc = _ocFindBake(parseInt(ids[i], 10));
+      if (!loc) continue;
+      var info = loc.batch[loc.index];
+      var r = _ocUndoInfo(sequence, info);
+      if (r.skipped) { skipped++; continue; }                         // clip moved or changed: keep it
+      loc.batch.splice(loc.index, 1);
+      if (r.removed === 0) { gone++; continue; }                      // undone outside the panel: drop it
+      var w = _ocRebake(info, r, args.curve, stepReq, _ocSnap(info));
+      if (w && w.info) { batch.push(w.info); replaced++; continue; }
+      failed++;
+      var back = _ocRebake(info, r, info.curve, info.step || 1, info.prev || null);
+      if (back && back.info) loc.batch.splice(loc.index, 0, back.info);
+    }
+    if (batch.length) _undoStack.push(batch);
+    _ocPruneBatches();
+    _ocCacheKey = null; _ocParamCache = null;
+    if (!replaced) {
+      var why = failed ? 'The new curve could not be written'
+              : skipped ? 'The clip may have moved or changed. Select it and try again.'
+              : gone ? 'That bake is no longer on the clip' : 'Nothing to replace';
+      return _jsonStringify({ success: false, error: why, remaining: _ocSessionBatches() });
+    }
+    var warn = (failed || skipped) ? ((failed + skipped) + ' of the bakes could not be replaced') : null;
+    return _jsonStringify({ success: true, replaced: replaced, warning: warn, remaining: _ocSessionBatches() });
+  } catch(err) {
+    _ocCacheKey = null; _ocParamCache = null;
+    return _jsonStringify({ success: false, error: err.message || String(err) });
+  }
 }
 
 // Locate a clip anywhere in the sequence by its stable nodeId (cached
@@ -1432,7 +1547,7 @@ function undoBakeParam(idsStr) {
   try {
     var ids = String(idsStr).split(',');
     var sequence = app.project.activeSequence;
-    var removed = 0, skipped = 0, found = 0;
+    var removed = 0, skipped = 0, found = 0, restored = 0, restoreFailed = 0;
 
     var _hasUndoGroup = (typeof app.beginUndoGroup === 'function' && typeof app.endUndoGroup === 'function');
     if (_hasUndoGroup) app.beginUndoGroup('OpenCurve undo bake');
@@ -1441,10 +1556,16 @@ function undoBakeParam(idsStr) {
         var loc = _ocFindBake(parseInt(ids[i], 10));
         if (!loc) continue;
         found++;
-        var r = _ocUndoInfo(sequence, loc.batch[loc.index]);
+        var info = loc.batch[loc.index];
+        var r = _ocUndoInfo(sequence, info);
         removed += r.removed; skipped += r.skipped;
         // Keep the record if the clip moved, so the user can reselect and retry
         if (r.skipped === 0) loc.batch.splice(loc.index, 1);
+        // Undoing a Replace: the bake it replaced goes back in the same place
+        if (r.skipped === 0 && r.removed > 0 && _ocPrevOk(info.prev)) {
+          var back = _ocRestorePrev(info, r);
+          if (back) { loc.batch.splice(loc.index, 0, back); restored++; } else restoreFailed++;
+        }
       }
     } finally {
       if (_hasUndoGroup) app.endUndoGroup();
@@ -1463,7 +1584,8 @@ function undoBakeParam(idsStr) {
         : 'Nothing to undo: those keyframes are already gone';
       return _jsonStringify({ success: false, error: why, remaining: _ocSessionBatches() });
     }
-    return _jsonStringify({ success: true, removed: removed, skipped: skipped, remaining: _ocSessionBatches() });
+    return _jsonStringify({ success: true, removed: removed, skipped: skipped, restored: restored, restoreFailed: restoreFailed,
+                            remaining: _ocSessionBatches() });
   } catch(err) {
     return _jsonStringify({ success: false, error: err.message || String(err) });
   }
@@ -1497,6 +1619,8 @@ function undoBake() {
     var removed = 0;
     var skipped = 0;
     var kept = []; // records whose clip could not be found: keep them for a retry
+    var back = []; // bakes a Replace had taken the place of, written back
+    var restoreFailed = 0;
 
     var _hasUndoGroup = (typeof app.beginUndoGroup === 'function' && typeof app.endUndoGroup === 'function');
     if (_hasUndoGroup) app.beginUndoGroup('OpenCurve undo bake');
@@ -1508,6 +1632,10 @@ function undoBake() {
         // strands keyframes that are still on the clip with no record to undo
         // them, so the row loses its green state and its undo button for good.
         if (r.skipped !== 0) kept.push(batch[i]);
+        else if (r.removed > 0 && _ocPrevOk(batch[i].prev)) {
+          var rb = _ocRestorePrev(batch[i], r);
+          if (rb) back.push(rb); else restoreFailed++;
+        }
       }
     } finally {
       if (_hasUndoGroup) app.endUndoGroup();
@@ -1529,8 +1657,12 @@ function undoBake() {
     // so every later press would fail on it and the older session batches
     // behind it could no longer be undone with this button.
     if (kept.length) { _undoStack.unshift(kept); _ocSessionFloor++; }
+    // The restored bakes are the state before the Replace: the next press
+    // undoes them
+    if (back.length) _undoStack.push(back);
 
-    return _jsonStringify({ success: true, removed: removed, skipped: skipped, remaining: _ocSessionBatches() });
+    return _jsonStringify({ success: true, removed: removed, skipped: skipped, restored: back.length, restoreFailed: restoreFailed,
+                            remaining: _ocSessionBatches() });
   } catch(err) {
     return _jsonStringify({ success: false, error: err.message || String(err) });
   }

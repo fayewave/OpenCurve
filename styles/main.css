@@ -322,6 +322,7 @@ html, body {
 .prop-pin,
 .prop-undo,
 .prop-curve,
+.prop-replace,
 .pager-btn {
   position: relative;
 }
@@ -804,8 +805,10 @@ html, body {
   color: #ffffff;
 }
 
-/* Curve button on a baked row: loads the curve that bake used (same look as undo) */
-.prop-curve {
+/* Curve and Replace buttons on a baked row: load the curve that bake used, or
+   write the current curve in its place (same look as undo) */
+.prop-curve,
+.prop-replace {
   display: none;
   align-items: center;
   justify-content: center;
@@ -821,13 +824,15 @@ html, body {
   transition: background 0.12s, color 0.12s;
 }
 
-.prop-curve:hover {
+.prop-curve:hover,
+.prop-replace:hover {
   background-color: rgba(61,220,132,0.42);
   background-image: linear-gradient(to right, rgba(255,255,255,0.09), rgba(255,255,255,0));
   color: #ffffff;
 }
 
-.prop-curve:active, .prop-curve.pressed {
+.prop-curve:active, .prop-curve.pressed,
+.prop-replace:active, .prop-replace.pressed {
   background-color: rgba(61,220,132,0.62);
   background-image: linear-gradient(to right, rgba(255,255,255,0.09), rgba(255,255,255,0));
   color: #ffffff;

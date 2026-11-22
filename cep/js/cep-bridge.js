@@ -118,12 +118,38 @@
           if (res.success) {
             if (!res.remaining) _showUndoBtn(false);
             _saveBakeRecords();
-            OpenCurve.showCopyToast('Undone: ' + res.removed + ' keyframes removed from ' + (name || 'property'), '#f0a030');
+            _undoToast(res, name);
+            poll(); // a restored bake keeps the row green: let a scan repaint it
           } else {
             OpenCurve.showCopyToast(res.error || 'Undo failed', '#ff9090');
           }
         } catch(e) {
           OpenCurve.showCopyToast('Undo failed', '#ff9090');
+        }
+      });
+    },
+
+    // Row Replace button: the host removes those bakes and writes `curve` on
+    // the same keyframe pairs, at the current Keyframe Spacing.
+    onReplaceParam: function(ids, curve, name) {
+      OpenCurve.setState({ isBaking: true, status: 'baking' });
+      var args = JSON.stringify({ ids: ids, curve: curve, step: OpenCurve.bakeDensity || 1 });
+      var escaped = args.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      cs.evalScript("replaceBake('" + escaped + "')", function(result) {
+        var res = null;
+        try { res = JSON.parse(result); } catch(e) {}
+        _lastStatus = '';
+        if (res && res.success) {
+          _showUndoBtn(true);
+          _saveBakeRecords();
+          _skipPollUntil = Date.now() + OpenCurve.DONE_DISPLAY_MS;
+          OpenCurve.setState({ isBaking: false, status: 'done' });
+          OpenCurve.showCopyToast(res.warning || ('Replaced the curve on ' + (name || 'property')), res.warning ? '#f0a030' : undefined);
+          setTimeout(function() { _lastStatus = ''; OpenCurve.setState({ status: 'idle' }); }, OpenCurve.DONE_DISPLAY_MS);
+        } else {
+          if (res) _saveBakeRecords(); // the old bake may have been put back as a new record
+          _skipPollUntil = Date.now() + OpenCurve.ERROR_DISPLAY_MS;
+          OpenCurve.setState({ isBaking: false, status: 'error', hint: 'Replace failed: ' + ((res && res.error) || 'no answer from Premiere') });
         }
       });
     },
@@ -219,6 +245,15 @@
     });
   }
 
+  // Toast after an undo. A bake made by Replace gets the bake it replaced
+  // written back by the host (`restored`), so say that rather than a count.
+  function _undoToast(res, name) {
+    var where = name ? ' on ' + name : '';
+    if (res.restoreFailed) OpenCurve.showCopyToast('Undone, but the previous curve could not be put back' + where, '#ff9090');
+    else if (res.restored) OpenCurve.showCopyToast('Undone: the previous curve is back' + where, '#f0a030');
+    else OpenCurve.showCopyToast('Undone: ' + res.removed + ' keyframes removed' + (name ? ' from ' + name : ''), '#f0a030');
+  }
+
   // ─── Undo button ──────────────────────────────────────────────────────
   // The button always stays in place; with nothing to undo it is grey and inert
   function _showUndoBtn(show) {
@@ -249,7 +284,7 @@
           // green row and showed "Open a project and select a clip" until the
           // next poll. The host dropped its cache, so a scan now repaints it.
           poll();
-          OpenCurve.showCopyToast('Undone (' + res.removed + ' keyframes removed)', '#f0a030');
+          _undoToast(res, null);
         } else {
           OpenCurve.showCopyToast(res.error || 'Undo failed', '#ff9090');
         }

@@ -2732,7 +2732,9 @@ async function _retimedValues(param, t0, t1, es, val0, val1) {
   } catch(e) { return null; }
 }
 
-async function bakeKeyframes(contexts, curve) {
+// stepReq: keyframe spacing to use instead of the Settings value (an undo that
+// puts a replaced bake back uses that bake's own spacing)
+async function bakeKeyframes(contexts, curve, stepReq) {
   if (!contexts || contexts.length === 0) throw new Error('No contexts to bake.');
   var project = contexts[0].project;
 
@@ -2755,7 +2757,7 @@ async function bakeKeyframes(contexts, curve) {
     var isOpacity  = /opacity/i.test(context.displayName || '');
     // Keyframe spacing from Settings (1, 2 or 4 frames). Short pairs are always
     // written densely enough to get at least two keyframes.
-    var step  = Math.max(1, Math.min(_bakeDensity, Math.floor((totalFrames - 1) / 2)));
+    var step  = Math.max(1, Math.min(stepReq || _bakeDensity, Math.floor((totalFrames - 1) / 2)));
     var endSec = context.kf1.seconds;
     var frames = [], eased = [];
     for (var f = step; f < totalFrames; f += step) { frames.push(f); eased.push(sampleBezier(f / totalFrames, curve)); }
@@ -2826,7 +2828,7 @@ async function bakeKeyframes(contexts, curve) {
 // row and loads its curve, and its row undo works once the playhead is over
 // the clip again (the live handle comes from the scan). Only bakes made this
 // session feed the Undo button next to Go.
-var _bakeRecords = [];   // { id, batch, clipId, key, displayName, param, project, fps, kf0Sec, kf1Sec, times, step, curve }
+var _bakeRecords = [];   // { id, batch, clipId, key, displayName, param, project, fps, kf0Sec, kf1Sec, times, step, curve, prev }
 var _bakeSeq     = 0;
 var _bakeBatchSeq = 0;   // one batch per Go press; the panel-wide Undo button reverts the latest
 var _sessionBatchFloor = 0; // batches at or below this were loaded from a previous session
@@ -2844,6 +2846,7 @@ function _loadBakeRecords() {
         param: null, project: null, fps: r.fps || 0, kf0Sec: r.kf0Sec, kf1Sec: r.kf1Sec,
         times: r.times, step: r.step || 1, curve: r.curve || null,
         fp: Array.isArray(r.fp) ? r.fp : null, fpTol: r.fpTol || 0, place: r.place || null, fpPending: !!r.fpPending,
+        prev: _prevOk(r.prev) ? r.prev : null,
       });
       if (r.id > _bakeSeq) _bakeSeq = r.id;
       if (r.batch > _bakeBatchSeq) _bakeBatchSeq = r.batch;
@@ -2857,12 +2860,29 @@ function _saveBakeRecords() {
     var out = _bakeRecords.slice(-_BAKE_RECORDS_MAX).map(function(r) {
       return { id: r.id, batch: r.batch, clipId: r.clipId, key: r.key, displayName: r.displayName, label: r.label || '', fps: r.fps,
                kf0Sec: r.kf0Sec, kf1Sec: r.kf1Sec, times: r.times.map(r6), step: r.step || 1, curve: r.curve || null,
-               fp: r.fp || null, fpTol: r.fpTol || 0, place: r.place || null, fpPending: !!r.fpPending };
+               fp: r.fp || null, fpTol: r.fpTol || 0, place: r.place || null, fpPending: !!r.fpPending, prev: r.prev || null };
     });
     localStorage.setItem(_BAKE_RECORDS_KEY, JSON.stringify(out));
   } catch(_) {}
 }
 _loadBakeRecords();
+
+// Replace: a record made by the row's Replace button carries `prev`, the bake it
+// replaced ({ batch, curve, step, prev }), so an undo puts that curve back instead
+// of leaving the pair plain. Kept a few levels deep, oldest dropped.
+var _PREV_DEPTH = 5;
+function _prevOk(p) {
+  return !!p && typeof p === 'object' && !!p.curve && typeof p.curve === 'object';
+}
+function _prevSnap(rec) {
+  if (!rec || !rec.curve) return null;
+  var snap = { batch: rec.batch || 0, curve: _cloneCurve(rec.curve), step: rec.step || 1,
+               prev: _prevOk(rec.prev) ? JSON.parse(JSON.stringify(rec.prev)) : null };
+  for (var p = snap, d = 1; p.prev; p = p.prev, d++) {
+    if (d >= _PREV_DEPTH) { p.prev = null; break; }
+  }
+  return snap;
+}
 
 function _bakesFor(clipId, key) {
   return _bakeRecords.filter(function(r){ return r.clipId === clipId && (key === undefined || r.key === key); });
@@ -3261,8 +3281,8 @@ function _showUndoBtn(show) {
   _fitGoForUndo();
 }
 
-// Row undo button: remove every keyframe our bakes added to this property on
-// the current clip.
+// Row undo button: step this property back one bake on the current clip (a
+// replaced bake comes back; otherwise the keyframes the bake added go).
 async function _undoBakeForKey(key) {
   var s = getState();
   if (s.isBaking) return;
@@ -3302,64 +3322,130 @@ async function _retireBake(rec, sequence, here) {
   _saveBakeRecords();
 }
 
-// Shared core. Same two-phase shape as bakeKeyframes: await everything first,
-// then create the remove actions synchronously inside the transaction.
+// Phase 1 of an undo or a replace: confirm each record's fingerprint is still
+// on the property and list the keyframes it wrote that are still there.
+// Prefer the param handle from the current scan (a proxy kept from bake time
+// can go stale), but only when that row is the same-named property and the
+// record holds on it. Records whose bake is gone are retired here. Returns
+// { jobs: [{ rec, param, times }], unreachable }.
+async function _recJobs(recs, key, s, sequence) {
+  var jobs = [];
+  var unreachable = 0;
+  for (var ri = 0; ri < recs.length; ri++) {
+    var rec = recs[ri];
+    var liveRow = (rec.clipId === s.clipId)
+      ? (s.availableParams || []).filter(function(p){ return p.key === rec.key && _recForRow(rec, p) && _recOkOn(rec, p); })[0] : null;
+    var param = (liveRow && liveRow._param) ? liveRow._param : rec.param;
+    var have  = null;
+    if (param) {
+      if (typeof param.createRemoveKeyframeAction !== 'function') {
+        throw new Error('This Premiere version cannot remove keyframes from a plugin. Use Ctrl+Z in Premiere instead.');
+      }
+      try { have = await _kfSecsOf(param); } catch(_) { have = null; }
+      // Values too: a handle kept from bake time may now point at a copy of
+      // the clip that carries a different bake at the same times
+      if (have && _recAlive(rec, have) && !(await _recValsOk(rec, param))) have = [];
+    }
+    // No handle (loaded from a previous session), a stale one (the clip moved
+    // or the scan that made it is gone), or one that no longer carries the
+    // bake: look for the clip that does, by name and in-point, anywhere in
+    // the active sequence. Until 2.0.2 this said "Move the playhead over that
+    // clip" even with the playhead on it, and the Undo button did nothing.
+    // A row undo acts on the row's own clip only: if that clip doesn't carry
+    // the bake, a copy elsewhere is left alone
+    if (!have || !_recAlive(rec, have)) {
+      var found = null;
+      if (!(key && liveRow && liveRow._param)) {
+        try { found = await _findRecCarrier(rec, sequence, null); } catch(_) {}
+      }
+      if (found) {
+        param = found.param;
+        rec.param = param;
+        try { have = await _kfSecsOf(param); } catch(_) { have = null; }
+      } else if (!have) {
+        // The clip isn't in this sequence (or can't be read): keep the record
+        unreachable++;
+        continue;
+      }
+    }
+    if (!have || !_recAlive(rec, have)) { await _retireBake(rec, sequence, null); continue; }
+    var times = rec.times.filter(function(t){
+      return have.some(function(h){ return Math.abs(h - t) < 1e-4; });
+    });
+    if (times.length) jobs.push({ rec: rec, param: param, times: times });
+  }
+  return { jobs: jobs, unreachable: unreachable };
+}
+
+// Phase 2: remove the listed keyframes inside the locked transaction. One
+// remove action per keyframe we wrote, never a range, so keyframes the user
+// added inside the baked span are left alone. Returns how many went.
+async function _removeJobs(project, jobs) {
+  var removed = 0;
+  await project.lockedAccess(function() {
+    project.executeTransaction(function(compound) {
+      for (var ji = 0; ji < jobs.length; ji++) {
+        var param = jobs[ji].param;
+        var ts    = jobs[ji].times;
+        for (var ti = 0; ti < ts.length; ti++) {
+          // updateUI only on the last one: a single redraw per property
+          var action = param.createRemoveKeyframeAction(ppro.TickTime.createWithSeconds(ts[ti]), ti === ts.length - 1);
+          if (action) { compound.addAction(action); removed++; }
+        }
+      }
+    }, 'OpenCurve undo bake');
+  });
+  if (removed === 0) throw new Error('Premiere did not accept the change');
+  return removed;
+}
+
+// Bake `curve` on the pair a record covered (its two original keyframes are
+// never removed, so they are still there once its own keyframes are gone) and
+// record it. Works wherever the playhead is: the pair comes from the record,
+// not from a scan. `batch` and `prev` go on the new record. Returns it, or
+// throws.
+async function _bakeOnRecPair(job, project, curve, step, batch, prev) {
+  var rec = job.rec, param = job.param;
+  var kf0 = ppro.TickTime.createWithSeconds(rec.kf0Sec);
+  var kf1 = ppro.TickTime.createWithSeconds(rec.kf1Sec);
+  var val0 = _extractValue(await _getValue(param, kf0));
+  var val1 = _extractValue(await _getValue(param, kf1));
+  if (val0 === null || val1 === null) throw new Error('Could not read the keyframe values');
+  var ctx = {
+    param: param, kf0: kf0, kf1: kf1, val0: val0, val1: val1, fps: rec.fps,
+    displayName: rec.displayName, isAudio: !!(rec.place && rec.place.isAudio), project: project, place: rec.place || null,
+  };
+  var written = (await bakeKeyframes([ctx], curve, step)) || [];
+  if (!written.length) throw new Error('That keyframe pair is too short to bake');
+  var w = written[0];
+  var nr = {
+    id: ++_bakeSeq, batch: batch, clipId: rec.clipId, key: rec.key,
+    displayName: rec.displayName, label: rec.label || '',
+    param: param, project: project, fps: rec.fps,
+    kf0Sec: rec.kf0Sec, kf1Sec: rec.kf1Sec, times: w.times,
+    step: w.step || 1, curve: _cloneCurve(curve),
+    fp: w.fp || null, fpTol: _fpTolFor(val0, val1), place: rec.place || null, fpPending: !!w.fp,
+    prev: prev || null,
+  };
+  _bakeRecords.push(nr);
+  _saveBakeRecords();
+  return nr;
+}
+
+// Shared core of both undo buttons. Same two-phase shape as bakeKeyframes:
+// await everything first, then create the remove actions synchronously inside
+// the transaction. A record made by Replace then gets the bake it replaced
+// written back (its curve and spacing, in its old batch, so the panel-wide
+// Undo steps back in order).
 // `key` limits the bakedParamKeys update to one row; null clears them all.
 async function _undoRecords(recs, label, key) {
   var s = getState();
   try {
     var project  = await ppro.Project.getActiveProject();
     var sequence = project ? await project.getActiveSequence() : null;
-    // Phase 1: confirm each record's fingerprint is still on the property and
-    // list the keyframes we wrote that are still there. Prefer the param handle
-    // from the current scan (a proxy kept from bake time can go stale), but only
-    // when that row is the same-named property and the record holds on it.
-    var jobs = [];
-    var unreachable = 0;
-    for (var ri = 0; ri < recs.length; ri++) {
-      var rec = recs[ri];
-      var liveRow = (rec.clipId === s.clipId)
-        ? (s.availableParams || []).filter(function(p){ return p.key === rec.key && _recForRow(rec, p) && _recOkOn(rec, p); })[0] : null;
-      var param = (liveRow && liveRow._param) ? liveRow._param : rec.param;
-      var have  = null;
-      if (param) {
-        if (typeof param.createRemoveKeyframeAction !== 'function') {
-          throw new Error('This Premiere version cannot remove keyframes from a plugin. Use Ctrl+Z in Premiere instead.');
-        }
-        try { have = await _kfSecsOf(param); } catch(_) { have = null; }
-        // Values too: a handle kept from bake time may now point at a copy of
-        // the clip that carries a different bake at the same times
-        if (have && _recAlive(rec, have) && !(await _recValsOk(rec, param))) have = [];
-      }
-      // No handle (loaded from a previous session), a stale one (the clip moved
-      // or the scan that made it is gone), or one that no longer carries the
-      // bake: look for the clip that does, by name and in-point, anywhere in
-      // the active sequence. Until 2.0.2 this said "Move the playhead over that
-      // clip" even with the playhead on it, and the Undo button did nothing.
-      // A row undo acts on the row's own clip only: if that clip doesn't carry
-      // the bake, a copy elsewhere is left alone
-      if (!have || !_recAlive(rec, have)) {
-        var found = null;
-        if (!(key && liveRow && liveRow._param)) {
-          try { found = await _findRecCarrier(rec, sequence, null); } catch(_) {}
-        }
-        if (found) {
-          param = found.param;
-          rec.param = param;
-          try { have = await _kfSecsOf(param); } catch(_) { have = null; }
-        } else if (!have) {
-          // The clip isn't in this sequence (or can't be read): keep the record
-          unreachable++;
-          continue;
-        }
-      }
-      if (!have || !_recAlive(rec, have)) { await _retireBake(rec, sequence, null); continue; }
-      var times = rec.times.filter(function(t){
-        return have.some(function(h){ return Math.abs(h - t) < 1e-4; });
-      });
-      if (times.length) jobs.push({ rec: rec, param: param, times: times });
-    }
-    if (jobs.length === 0 && unreachable > 0) {
+    var pj = await _recJobs(recs, key, s, sequence);
+    var jobs = pj.jobs;
+    if (jobs.length === 0 && pj.unreachable > 0) {
       _showCopyToast('Open the sequence that clip is in to undo its bake', '#f0a030');
       return;
     }
@@ -3371,41 +3457,100 @@ async function _undoRecords(recs, label, key) {
       return;
     }
 
-    // Phase 2: remove them inside the locked transaction
     if (!project) project = jobs[0].rec.project;
-    var removed = 0;
-    await project.lockedAccess(function() {
-      project.executeTransaction(function(compound) {
-        for (var ji = 0; ji < jobs.length; ji++) {
-          var param = jobs[ji].param;
-          var ts    = jobs[ji].times;
-          // One remove action per keyframe we wrote; never a range, so keyframes
-          // the user added inside the baked span are left alone.
-          for (var ti = 0; ti < ts.length; ti++) {
-            // updateUI only on the last one: a single redraw per property
-            var action = param.createRemoveKeyframeAction(ppro.TickTime.createWithSeconds(ts[ti]), ti === ts.length - 1);
-            if (action) { compound.addAction(action); removed++; }
-          }
-        }
-      }, 'OpenCurve undo bake');
-    });
-    if (removed === 0) throw new Error('Premiere did not accept the change');
+    var removed = await _removeJobs(project, jobs);
 
-    // Forget each undone record, unless a copy of the clip still carries it
-    for (var jr = 0; jr < jobs.length; jr++) await _retireBake(jobs[jr].rec, sequence, null);
+    // Forget each undone record, unless a copy of the clip still carries it;
+    // put back the bake a replaced one took the place of
+    var restored = [], restoreFailed = 0;
+    for (var jr = 0; jr < jobs.length; jr++) {
+      var rec = jobs[jr].rec;
+      await _retireBake(rec, sequence, null);
+      if (!_prevOk(rec.prev)) continue;
+      try {
+        await _bakeOnRecPair(jobs[jr], project, rec.prev.curve, rec.prev.step || 1, rec.prev.batch || 0, rec.prev.prev || null);
+        restored.push(rec.key);
+      } catch(e) {
+        restoreFailed++;
+        console.error('[OC] undo: could not restore the replaced bake:', e);
+      }
+    }
     _showUndoBtn(_hasSessionBakes());
     _invalidateCache();
     _lastStatus   = '';
     _skipPollUntil = 0;
     setState({
-      bakedParamKeys: key ? (s.bakedParamKeys || []).filter(function(k){ return k !== key; }) : [],
+      bakedParamKeys: (s.bakedParamKeys || []).filter(function(k){ return key ? (k !== key || restored.indexOf(k) >= 0) : restored.indexOf(k) >= 0; }),
       status: 'idle',
     });
-    _showCopyToast('Undone: ' + removed + ' keyframes removed from ' + label, '#f0a030');
-    console.log('[OC] undo bake: removed ' + removed + ' keyframes from ' + label);
+    if (restoreFailed) _showCopyToast('Undone, but the previous curve could not be put back on ' + label, '#ff9090');
+    else if (restored.length) _showCopyToast('Undone: the previous curve is back on ' + label, '#f0a030');
+    else _showCopyToast('Undone: ' + removed + ' keyframes removed from ' + label, '#f0a030');
+    console.log('[OC] undo bake: removed ' + removed + ' keyframes from ' + label + (restored.length ? ', restored ' + restored.length : ''));
   } catch(err) {
     console.error('[OC] undo bake error:', err);
     _showCopyToast('Undo failed: ' + (err && err.message ? err.message : String(err)), '#ff9090');
+  }
+}
+
+// The Replace button's icon: two arrows going round
+var _icReplace = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none">'
+  + '<path d="M11.3 5.2A4.6 4.6 0 0 0 3 4.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'
+  + '<path d="M2.7 8.8A4.6 4.6 0 0 0 11 9.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'
+  + '<path d="M11.6 2.5v2.8H8.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
+  + '<path d="M2.4 11.5V8.7h2.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
+  + '</svg>';
+
+// Row Replace button: swap the bake on this property, where the playhead is,
+// for the curve on the graph now. The old bake's keyframes go and the new
+// curve is written on the same pair at the current Keyframe Spacing, as one
+// step for both undo buttons (an undo brings the old curve back). If the new
+// curve can't be written, the old one is put back.
+async function _replaceBakeForKey(key) {
+  var s = getState();
+  if (s.isBaking) return;
+  var row  = (s.availableParams || []).filter(function(p){ return p.key === key; })[0];
+  var recs = _recsForRow(s.clipId, row, key);
+  if (recs.length === 0) return;
+  var label = (row && row.label) || recs[0].label || recs[0].displayName || 'property';
+  var curve = _cloneCurve(s.curve);
+  _pvStop();
+  setState({ isBaking: true, status: 'baking' });
+  var failed = null;
+  try {
+    var project  = await ppro.Project.getActiveProject();
+    var sequence = project ? await project.getActiveSequence() : null;
+    var pj = await _recJobs(recs, key, s, sequence);
+    if (pj.jobs.length === 0) {
+      throw new Error(pj.unreachable ? 'Open the sequence that clip is in' : 'That bake is no longer on the clip');
+    }
+    await _removeJobs(project, pj.jobs);
+    var batch = ++_bakeBatchSeq;
+    for (var ji = 0; ji < pj.jobs.length; ji++) {
+      var job = pj.jobs[ji];
+      await _retireBake(job.rec, sequence, null);
+      try {
+        await _bakeOnRecPair(job, project, curve, 0, batch, _prevSnap(job.rec));
+      } catch(e) {
+        failed = e;
+        console.error('[OC] replace: new curve failed, putting the old one back:', e);
+        try { await _bakeOnRecPair(job, project, job.rec.curve, job.rec.step || 1, job.rec.batch || 0, job.rec.prev || null); }
+        catch(e2) { console.error('[OC] replace: could not put the old curve back:', e2); }
+      }
+    }
+    _showUndoBtn(_hasSessionBakes());
+    _invalidateCache();
+    _skipPollUntil = Date.now() + DONE_DISPLAY_MS;
+    _lastStatus = '';
+    if (failed) throw failed;
+    setState({ isBaking: false, status: 'done' });
+    _showCopyToast('Replaced the curve on ' + label);
+    setTimeout(function() { _lastStatus = ''; setState({ status: 'idle' }); }, DONE_DISPLAY_MS);
+  } catch(err) {
+    console.error('[OC] replace error:', err);
+    _invalidateCache();
+    _skipPollUntil = Date.now() + ERROR_DISPLAY_MS;
+    setState({ isBaking: false, status: 'error', hint: 'Replace failed: ' + (err && err.message ? err.message : String(err)) });
   }
 }
 
@@ -4760,6 +4905,18 @@ function renderUI(s) {
           ev.stopPropagation();
           _loadBakedCurve(p.key);
         });
+        // Replace: write the graph's current curve in place of this bake.
+        // Shown with the undo button, on every baked row.
+        var propReplace = document.createElement('span');
+        propReplace.className = 'prop-replace';
+        _addPressState(propReplace);
+        propReplace.style.display = 'none';
+        _attachTooltip(propReplace, 'Replace this bake with the current curve');
+        propReplace.innerHTML = _icReplace;
+        propReplace.addEventListener('click', function(ev) {
+          ev.stopPropagation();
+          _replaceBakeForKey(p.key);
+        });
         // Pin: jump the playhead to this property's keyframes (doesn't toggle selection)
         var propPin = document.createElement('span');
         propPin.className = 'prop-pin';
@@ -4774,11 +4931,12 @@ function renderUI(s) {
           _jumpToParam(live || p);
         });
         btn.appendChild(propCurve);
+        btn.appendChild(propReplace);
         btn.appendChild(propUndo);
         btn.appendChild(propPin);
         btn.dataset.key = p.key;
         // The sync pass below reads these instead of querying for them each tick
-        btn._oc = { mark: propDiamond, pin: propPin, undo: propUndo, curve: propCurve };
+        btn._oc = { mark: propDiamond, pin: propPin, undo: propUndo, curve: propCurve, replace: propReplace };
         // Hovering a row lights its lane in the mini timeline (a hovered lane lights the row)
         btn.addEventListener('mouseenter', function() { _tlHighlightLane(p.key); });
         btn.addEventListener('mouseleave', function() { _tlHighlightLane(null); });
@@ -4828,6 +4986,8 @@ function renderUI(s) {
       // Undo button only on rows with a bake to undo (inline style: UXP ignores class-driven display changes)
       var undoEl = els.undo || btn.querySelector('.prop-undo');
       if (undoEl) { var ud = isBakedRow ? 'flex' : 'none'; if (undoEl.style.display !== ud) undoEl.style.display = ud; }
+      var replEl = els.replace || btn.querySelector('.prop-replace');
+      if (replEl) { var rd = isBakedRow ? 'flex' : 'none'; if (replEl.style.display !== rd) replEl.style.display = rd; }
       var curveEl = els.curve || btn.querySelector('.prop-curve');
       if (curveEl) { var cd = hasCurve ? 'flex' : 'none'; if (curveEl.style.display !== cd) curveEl.style.display = cd; }
     });
@@ -4918,7 +5078,7 @@ function _statusMsg(s, showClip) {
 // pixel less put them a pixel up and left, so UXP paints the SVG content half
 // a pixel off its box (checked by eye, 2026-09). Run after every render
 // because the property rows are rebuilt there.
-var _ICON_OFF = { 'tool-btn': 5.5, 'prop-pin': 3.5, 'prop-undo': 3.5, 'prop-curve': 3.5, 'btn-undo': 3.5, 'pager-btn': 3.5 };
+var _ICON_OFF = { 'tool-btn': 5.5, 'prop-pin': 3.5, 'prop-undo': 3.5, 'prop-curve': 3.5, 'prop-replace': 3.5, 'btn-undo': 3.5, 'pager-btn': 3.5 };
 function _centerIcons() {
   Object.keys(_ICON_OFF).forEach(function(cls) {
     var off = _ICON_OFF[cls] + 'px';
