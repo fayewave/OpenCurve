@@ -15,6 +15,12 @@ console.log('[FS] plugin.js executing');
 // so nobody is stuck with logging they can't switch off.
 var _DEV_MENU = (function() { try { return localStorage.getItem('opencurve-dev-menu') === 'on'; } catch(_) { return false; } })();
 
+// Up here because the flyout menu (entrypoints.setup, just below) shows it in
+// its "OpenCurve 2, v2.1.0, CCX" row; the Exchange build strips the CCX line
+var CURRENT_VERSION = '2.1.0';
+var _EDITION_TAG = 'Exchange';
+_EDITION_TAG = 'CCX'; // [exchange-strip-line]
+
 // ─── Post-scroll freeze elimination: listener types dropped at registration ─
 // Windows' double-click time here is 500ms and the measured dead window is
 // 507-548ms, so the engine's own input state machine is the suspect. Every
@@ -116,6 +122,7 @@ try {
           { id: 'scroll-debug',  label: 'Scroll Debug' },
         ] : []).concat([
           { id: 'sep',           label: '-' },
+          { id: 'version',       label: 'OpenCurve 2, v' + CURRENT_VERSION + ', ' + _EDITION_TAG, enabled: false },
           { id: 'made-by',       label: 'made by faye', enabled: false },
         ]),
         invokeMenu: function(id) {
@@ -7653,7 +7660,6 @@ function _pollSig(u) {
 }
 
 // ─── Settings / flyout ─────────────────────────────────────────────────────
-var CURRENT_VERSION     = '2.1.0';
 var _CURVE_COLOR_KEY    = 'opencurve-line-color';
 var _curveColor         = localStorage.getItem(_CURVE_COLOR_KEY) || '#ffffff';
 // [exchange-strip]
@@ -9306,8 +9312,7 @@ function _showSettingsModal() {
 
   // Edition badge: the Exchange build strips the CCX line (scripts/build.js
   // exchange), so only the Exchange .ccx says Exchange
-  var editionTag = 'Exchange';
-  editionTag = 'CCX'; // [exchange-strip-line]
+  var editionTag = _EDITION_TAG; // CCX, or Exchange in the Exchange build
   // Header: the version and edition badges sit beside the wordmark
   var verBadge = _footerBadge('v' + CURRENT_VERSION), edBadge = _footerBadge(editionTag);
   verBadge.style.marginLeft = '12px';
