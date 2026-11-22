@@ -159,6 +159,7 @@ function _cloneCurve(c) {
       out.pts.push({ x: p.x, y: p.y, ix: p.ix, iy: p.iy, ox: p.ox, oy: p.oy, smooth: p.smooth !== false });
     }
   }
+  if (c.bounce) { var bn = _bnClean(c.bounce); if (bn) out.bounce = bn; } // Bounce mode's settings (see _bnBuild)
   return out;
 }
 
@@ -320,6 +321,7 @@ function _mirrorHandle(p, moved, loX, hiX, sameLen) {
 }
 
 function _commitCurve(c) {
+  delete c.bounce; // a hand edit: no longer the curve Bounce mode built (the mode ends, see _bnOnState)
   _cancelCurveAnim(); // a running tween would overwrite this edit on its next frame
   _normalizeCurve(c);
   setState({ curve: c });
@@ -509,6 +511,7 @@ function _invertCurve(c) {
 }
 // Replace the current curve with fn(curve), animated like a preset click
 function _applyCurveOp(fn) {
+  if (_bounceMode && fn === _flipCurve) { _bnSet({ dir: _bnOpts.dir === 'in' ? 'out' : 'in' }, false); return; } // Bounce mode: Flip switches Out / In
   var c = fn(_cloneCurve(getState().curve));
   clearPresetActive();
   _animateToCurve(c, function(cur) { if (_svgW > 0 && _svgH > 0) updateDynamicSVG(cur, _svgW, _svgH); });
@@ -740,15 +743,18 @@ function _svgShow(id, on) {
 
 // Handles, tangents and the diagonal in bezier mode; the peak marker and bezier ghost in peak mode
 function _applyPeakVisibility() {
-  _svgShow('sg-tan1', !_peakMode);
-  _svgShow('sg-tan2', !_peakMode);
-  _svgShow('sg-h1',   !_peakMode);
-  _svgShow('sg-h2',   !_peakMode);
-  _svgShow('sg-diag', !_peakMode);
+  var hd = !_peakMode && !_bounceMode; // Bounce mode hides the handles too: its two dots stand in
+  _svgShow('sg-tan1', hd);
+  _svgShow('sg-tan2', hd);
+  _svgShow('sg-h1',   hd);
+  _svgShow('sg-h2',   hd);
+  _svgShow('sg-diag', hd);
   _svgShow('sg-peak',  _peakMode);
   _svgShow('sg-ghost', _peakMode);
-  _svgShow('sg-pts',       !_peakMode);
-  _svgShow('sg-pts-lines', !_peakMode);
+  _svgShow('sg-pts',       hd);
+  _svgShow('sg-pts-lines', hd);
+  _svgShow('sg-bn',       _bounceMode);
+  _svgShow('sg-bn-floor', _bounceMode);
 }
 
 // Hover and press for a toolbar button whose tint is written inline (A-curve,
@@ -791,13 +797,14 @@ function _stylePeakBtn() {
   // mode stays visible while the A-curve button itself is hidden
   var mb = document.getElementById('graph-tools-menu');
   if (mb) {
-    var tint = _peakMode && btn.style.display === 'none';
+    var tint = (_peakMode || _bounceMode) && btn.style.display === 'none'; // Bounce mode's button collapses with it
     mb.style.backgroundColor = tint ? 'rgba(61,220,132,0.18)' : '';
     mb.style.color      = tint ? '#3ddc84' : '';
   }
 }
 
 function _setPeakMode(on) {
+  if (on && _bounceMode) _setBounceMode(false); // one mode at a time
   _peakMode = !!on;
   localStorage.setItem(_PEAK_KEY, _peakMode ? 'on' : 'off');
   _applyPeakVisibility();
@@ -807,6 +814,464 @@ function _setPeakMode(on) {
     updateStaticSVG(_svgW, _svgH); // puts the endpoints back in the corners when leaving peak mode
     updateDynamicSVG(getState().curve, _svgW, _svgH);
   }
+}
+
+// ─── Bounce mode (graph toolbar #bounce-mode, B key) ──────────────────────
+// A toolbar toggle like A-curve. While on, the graph's handles hide, two dots
+// sit on the curve (the first hit and the top of the first bounce) and a panel
+// of settings opens under the graph (#bounce-panel). Every change builds an
+// ordinary multi-point curve (_bnBuild), so baking, presets, copy, Replace and
+// undo need nothing new, and neither does the CEP host:
+//  - Bounce: hits a hard floor at the end value. The fall and every arc are
+//    parabolas, which a cubic segment draws exactly (handles at a third of the
+//    way to the quadratic's control point), with corners at each hit. Heights
+//    shrink by (1 - Friction) per bounce and each arc lasts sqrt(height), as
+//    under gravity, scaled to fill the time after Hit time.
+//  - Elastic: springs past the end value and settles. Anchors at the crossing
+//    (Hit time) and at every peak and dip, flat handles at the extremes: a
+//    flat-to-flat cubic with handles at 0.3645 of the span is within 0.0003 of
+//    a half cosine, the quarter sine after the crossing (0.326 / 0.362) within
+//    0.0001 (fitted numerically).
+//  - In flips the result (bounces at the start instead of the end).
+// The settings ride on the curve as curve.bounce (_cloneCurve keeps them), so a
+// preset saved in Bounce mode opens again with its sliders. Any other change to
+// the curve (a plain preset, a drag outside the mode, paste, numeric entry,
+// Invert) leaves no tag, and the state listener turns the mode off; Flip in
+// Bounce mode switches Out / In instead. The mode itself is session only (the
+// panel opens on the default curve); the settings persist (opencurve-bounce).
+// UXP: the sliders are SVG (attribute writes are cheap) and their number labels
+// and the hint are HTML text, written change-only and at most every
+// _BN_TEXT_MS while a drag runs (a text write relayouts the whole panel).
+var _BN_KEY    = 'opencurve-bounce';
+var _BN_DEF    = { style: 'bounce', dir: 'out', n: 3, bounce: 0.45, over: 0.3, fric: 0.35, hit: 0.4 };
+var _BN_RANGE  = { n: [0, 8], bounce: [0, 0.9], over: [0, 0.7], fric: [0, 0.9], hit: [0.15, 0.85] };
+var _BN_MIN_W  = 0.015;  // narrowest bounce or half swing kept (anchors must stay PT_MIN_GAP apart)
+var _BN_MIN_H  = 0.003;  // lower bounces than this are dropped
+var _BN_COS_F  = 0.3645; // flat-to-flat half cosine
+var _BN_SIN_B  = 0.326;  // quarter sine: handle along the start slope
+var _BN_SIN_C  = 0.362;  //               flat handle at the peak
+var _BN_TEXT_MS = 100;
+var _bounceMode = false;
+var _bnOpts = (function() { try { return _bnClean(JSON.parse(localStorage.getItem(_BN_KEY))); } catch(_) { return null; } })() || _bnClean(_BN_DEF);
+var _bnCur  = null;   // the last _bnBuild result (what the dots and the hint show)
+var _bnDrag = false;  // a slider or graph dot is being dragged (text writes throttle)
+
+function _bnClean(o) {
+  if (!o || typeof o !== 'object') return null;
+  var r = { style: o.style === 'elastic' ? 'elastic' : 'bounce', dir: o.dir === 'in' ? 'in' : 'out' };
+  ['n', 'bounce', 'over', 'fric', 'hit'].forEach(function(k) {
+    var v = parseFloat(o[k]);
+    if (!isFinite(v)) v = _BN_DEF[k];
+    v = Math.max(_BN_RANGE[k][0], Math.min(_BN_RANGE[k][1], v));
+    r[k] = k === 'n' ? Math.round(v) : Math.round(v * 1000) / 1000;
+  });
+  return r;
+}
+function _bnSig(o) { return o ? [o.style, o.dir, o.n, o.bounce, o.over, o.fric, o.hit].join('|') : ''; }
+function _bnHKey(o) { return o.style === 'elastic' ? 'over' : 'bounce'; } // the slider the height dot drives
+
+// Settings -> { curve, hitPt, topPt, minW, used }. hitPt / topPt are the two
+// graph dots in curve coordinates (null when there is nothing to drag), minW the
+// shortest bounce (or swing) as a fraction of the move, used how many fit.
+function _bnBuild(o) {
+  var hit = o.hit, r = 1 - o.fric, el = o.style === 'elastic';
+  var amp = [], a = el ? o.over : o.bounce, w = [];
+  for (var k = 0; k < o.n && a >= _BN_MIN_H; k++) { amp.push(a); a *= r; }
+  if (!el) {
+    // Arc widths go as sqrt(height); trailing arcs too narrow to keep are dropped
+    while (amp.length) {
+      var sum = 0;
+      for (var s = 0; s < amp.length; s++) sum += Math.sqrt(amp[s]);
+      w = amp.map(function(h) { return (1 - hit) * Math.sqrt(h) / sum; });
+      if (w[w.length - 1] >= _BN_MIN_W) break;
+      amp.pop();
+    }
+  } else {
+    while (amp.length && (1 - hit) / amp.length / 2 < _BN_MIN_W) amp.pop();
+  }
+  var out = { curve: null, hitPt: null, topPt: null, minW: 0, used: amp.length };
+  var c;
+  if (!amp.length) {
+    c = { p1x: 1 / 3, p1y: 0, p2x: 2 / 3, p2y: 1 / 3 }; // nothing to bounce: the fall alone
+  } else if (!el) {
+    var pts = [], x = hit, inX = 2 * hit / 3, inY = 1 / 3;
+    c = { p1x: hit / 3, p1y: 0, p2x: 0, p2y: 0, pts: pts };
+    for (var i = 0; i < amp.length; i++) {
+      var hy = 1 - 4 * amp[i] / 3, wi = w[i];
+      pts.push({ x: x, y: 1, ix: inX, iy: inY, ox: x + wi / 3, oy: hy, smooth: false });
+      inX = x + 2 * wi / 3; inY = hy;
+      x += wi;
+    }
+    c.p2x = inX; c.p2y = inY;
+    out.hitPt = { x: hit, y: 1 };
+    out.topPt = { x: hit + w[0] / 2, y: 1 - amp[0] };
+    out.minW  = w[w.length - 1];
+  } else {
+    var n = amp.length, T = (1 - hit) / n, q = T / 2;
+    var slope = amp[0] * Math.PI / T, d1 = Math.min(hit / 3, 0.8 / slope);
+    var ep = [{ x: hit, y: 1, ix: hit - d1, iy: 1 - slope * d1,
+                ox: hit + q * _BN_SIN_B, oy: 1 + amp[0] * _BN_SIN_B * Math.PI / 2, smooth: true }];
+    for (var j = 0; j < n; j++) {
+      var ex = hit + q + j * T, ey = 1 + (j % 2 ? -1 : 1) * amp[j];
+      var inL  = j === 0 ? q * _BN_SIN_C : T * _BN_COS_F;
+      var outL = j === n - 1 ? q * _BN_COS_F : T * _BN_COS_F;
+      ep.push({ x: ex, y: ey, ix: ex - inL, iy: ey, ox: ex + outL, oy: ey, smooth: true });
+    }
+    c = { p1x: hit / 3, p1y: 0, p2x: 1 - q * _BN_COS_F, p2y: 1, pts: ep };
+    out.hitPt = { x: hit, y: 1 };
+    out.topPt = { x: hit + q, y: 1 + amp[0] };
+    out.minW  = T;
+  }
+  c = _normalizeCurve(c);
+  if (o.dir === 'in') {
+    c = _flipCurve(c);
+    if (out.hitPt) out.hitPt = { x: 1 - out.hitPt.x, y: 1 - out.hitPt.y };
+    if (out.topPt) out.topPt = { x: 1 - out.topPt.x, y: 1 - out.topPt.y };
+  }
+  c.bounce = _bnClean(o);
+  out.curve = c;
+  return out;
+}
+
+function _bnRedraw(curve) {
+  if (_svgW > 0 && _svgH > 0) updateDynamicSVG(curve || getState().curve, _svgW, _svgH);
+}
+// Build from _bnOpts and show it. live: a drag is running, draw only (the
+// state is set once, on release, like a handle drag). animate: tween to it.
+function _bnApply(live, animate) {
+  _bnCur = _bnBuild(_bnOpts);
+  if (live) { _bnRedraw(_bnCur.curve); _bnSyncUI(); return; }
+  try { localStorage.setItem(_BN_KEY, JSON.stringify(_bnOpts)); } catch(_) {}
+  clearPresetActive();
+  if (animate) {
+    _animateToCurve(_bnCur.curve, function(cur) { _bnRedraw(cur); });
+  } else {
+    _cancelCurveAnim();
+    setState({ curve: _bnCur.curve });
+    _autoZoomFor(_bnCur.curve);
+    _bnRedraw();
+  }
+  _bnSyncUI();
+}
+function _bnSet(changes, live) {
+  var o = {};
+  for (var k in _bnOpts) o[k] = _bnOpts[k];
+  for (var c in changes) o[c] = changes[c];
+  o = _bnClean(o);
+  if (!live && _bnSig(o) === _bnSig(_bnOpts) && _bnSig(getState().curve.bounce) === _bnSig(o)) { _bnSyncUI(); return; }
+  _bnOpts = o;
+  _bnApply(live, false);
+}
+
+function _styleBounceBtn() {
+  var btn = document.getElementById('bounce-mode');
+  if (!btn) return;
+  _toolStates(btn, _styleBounceBtn);
+  _toolPaint(btn, _bounceMode ? '61,220,132' : null, 0.18, '#3ddc84');
+  btn.style.opacity = _bounceMode ? '1' : '';
+  _stylePeakBtn(); // tints the menu button for either mode while the bar is collapsed
+}
+
+function _setBounceMode(on) {
+  on = !!on;
+  if (on === _bounceMode) return;
+  if (on && _peakMode) _setPeakMode(false);
+  _bounceMode = on;
+  var panel = document.getElementById('bounce-panel');
+  var disp = on ? 'flex' : 'none';
+  if (panel && panel.style.display !== disp) panel.style.display = disp; // inline: UXP ignores class-driven display
+  _applyPeakVisibility();
+  _styleBounceBtn();
+  if (on) {
+    _bnLayout();
+    var tag = getState().curve.bounce;
+    if (tag) { _bnOpts = _bnClean(tag); _bnCur = _bnBuild(_bnOpts); _bnRedraw(); _bnSyncUI(); }
+    else _bnApply(false, true);
+  } else {
+    _bnRedraw();
+  }
+}
+
+// State listener: a curve that lost its tag was changed by something else, so
+// the mode ends; a tagged curve from elsewhere (a Bounce preset) is adopted.
+// Also keeps the hint current as the poll changes the selected pairs.
+function _bnOnState(s) {
+  if (!_bounceMode) return;
+  var tag = s.curve && s.curve.bounce;
+  if (!tag) { _setBounceMode(false); return; }
+  if (_bnSig(tag) !== _bnSig(_bnOpts)) {
+    _bnOpts = _bnClean(tag);
+    _bnCur = _bnBuild(_bnOpts);
+    _bnRedraw();
+  }
+  _bnSyncUI(false, s);
+}
+
+// ── Graph dots ──
+function _bnInitSVG() {
+  var content = document.getElementById('sg-content'), curve = document.getElementById('sg-curve');
+  if (!content || document.getElementById('sg-bn')) return;
+  var NS = 'http://www.w3.org/2000/svg';
+  var floor = document.createElementNS(NS, 'line');
+  floor.setAttribute('id', 'sg-bn-floor');
+  floor.setAttribute('stroke', '#ffffff'); floor.setAttribute('stroke-opacity', '0.16');
+  floor.setAttribute('stroke-width', '1'); floor.setAttribute('stroke-dasharray', '4,4');
+  floor.setAttribute('opacity', '0'); floor.setAttribute('visibility', 'hidden');
+  content.insertBefore(floor, curve || null);
+  var g = document.createElementNS(NS, 'g');
+  g.setAttribute('id', 'sg-bn');
+  g.setAttribute('opacity', '0'); g.setAttribute('visibility', 'hidden');
+  function dot(id, col) {
+    var d = document.createElementNS(NS, 'g');
+    d.setAttribute('id', id);
+    d.appendChild(_mkCircle(9, 'rgba(' + col + ',0.16)'));
+    d.appendChild(_mkCircle(5.5, 'rgb(' + col + ')', '#ffffff', 1.5));
+    g.appendChild(d);
+    return d;
+  }
+  dot('sg-bn-hit', '74,158,255');
+  dot('sg-bn-top', '240,170,60');
+  content.appendChild(g);
+}
+function _bnPlaceDots(W, H) {
+  var b = _bnCur;
+  if (!b) return;
+  var f = document.getElementById('sg-bn-floor');
+  if (f) {
+    var fy = normToSVG(0, _bnOpts.dir === 'in' ? 0 : 1, W, H).cy, b0 = _rangeBox(W, H);
+    f.setAttribute('x1', b0.x - b0.s); f.setAttribute('x2', b0.x + 2 * b0.s);
+    f.setAttribute('y1', fy); f.setAttribute('y2', fy);
+  }
+  [['sg-bn-hit', b.hitPt], ['sg-bn-top', b.topPt]].forEach(function(pr) {
+    var el = document.getElementById(pr[0]);
+    if (!el) return;
+    if (!pr[1]) { _svgShow(pr[0], false); return; }
+    _svgShow(pr[0], true);
+    var p = normToSVG(pr[1].x, pr[1].y, W, H);
+    el.setAttribute('transform', 'translate(' + p.cx + ',' + p.cy + ')');
+  });
+}
+// The dot nearest a graph point (raw SVG coords at zoom 1); within px, or any visible one when px is null
+function _bnDotAt(raw, px) {
+  var b = _bnCur, best = null, bd = Infinity;
+  if (!b) return null;
+  [['hit', b.hitPt], ['top', b.topPt]].forEach(function(pr) {
+    if (!pr[1]) return;
+    var p = normToSVG(pr[1].x, pr[1].y, _svgW, _svgH), d = Math.hypot(raw.cx - p.cx, raw.cy - p.cy);
+    if (d < bd) { bd = d; best = pr[0]; }
+  });
+  return (px == null || bd <= px) ? best : null;
+}
+// Drag a dot to normalised (nx, ny): the hit dot sets Hit time, the top dot the
+// height (Bounce or Overshoot). In mirrors both, as the curve is flipped.
+function _bnDragTo(which, nx, ny, snap) {
+  if (_bnOpts.dir === 'in') { nx = 1 - nx; ny = 1 - ny; }
+  if (snap) { nx = Math.round(nx * _gridSize) / _gridSize; ny = Math.round(ny * _gridSize) / _gridSize; }
+  var ch = {};
+  if (which === 'hit') ch.hit = nx;
+  else if (_bnOpts.style === 'elastic') ch.over = ny - 1;
+  else ch.bounce = 1 - ny;
+  _bnSet(ch, true);
+}
+// Arrow keys in Bounce mode: left/right move the hit, up/down the height
+function _bnNudge(dx, dy) {
+  var ch = {}, hk = _bnHKey(_bnOpts), inv = _bnOpts.dir === 'in' ? -1 : 1;
+  if (dx) ch.hit = _bnOpts.hit + dx * inv;
+  if (dy) ch[hk] = _bnOpts[hk] + dy;
+  _bnSet(ch, false);
+}
+
+// ── The settings panel ──
+var _bnEls = null;
+var _BN_SLIDERS = [
+  { key: 'n',    label: 'Bounces',  tip: 'How many times it bounces (or swings)' },
+  { key: 'h',    label: 'Bounce',   tip: 'How high the first bounce goes, as a share of the move. Drag the amber dot on the graph too' },
+  { key: 'fric', label: 'Friction', tip: 'How much each bounce loses: higher dies out faster' },
+  { key: 'hit',  label: 'Hit time', tip: 'When it first reaches the end value. Drag the blue dot on the graph too' },
+];
+function _bnInit() {
+  var panel = document.getElementById('bounce-panel');
+  _bnInitSVG();
+  if (!panel || _bnEls) return;
+  _bnEls = { seg: {}, sl: {} };
+  panel.style.cssText = 'display:none;flex-direction:column;flex-shrink:0;padding:6px 10px 9px 10px;background:#111111;';
+  var top = document.createElement('div');
+  top.style.cssText = 'display:flex;align-items:center;justify-content:space-between;height:28px;margin-bottom:4px;';
+  function seg(key, items) {
+    var box = document.createElement('div');
+    box.style.cssText = 'display:flex;align-items:center;height:24px;padding:2px;border-radius:5px;background-color:#1e1e1e;';
+    _bnEls.seg[key] = [];
+    items.forEach(function(it) {
+      var b = document.createElement('div');
+      b.textContent = it[1];
+      b.style.cssText = 'display:flex;align-items:center;justify-content:center;height:20px;padding:0 10px;border-radius:4px;font-size:12px;cursor:pointer;color:#9a9a9a;';
+      b._ocVal = it[0];
+      b.addEventListener('mouseenter', function() { b._ocHov = true; _bnPaintSeg(key); });
+      b.addEventListener('mouseleave', function() { b._ocHov = false; _bnPaintSeg(key); });
+      b.addEventListener('click', function() { var ch = {}; ch[key] = it[0]; _bnSet(ch, false); });
+      if (it[2]) _attachTooltip(b, it[2]);
+      box.appendChild(b);
+      _bnEls.seg[key].push(b);
+    });
+    return box;
+  }
+  top.appendChild(seg('style', [['bounce', 'Bounce', 'Hits a hard floor at the end value and bounces back'],
+                                ['elastic', 'Elastic', 'Springs past the end value and settles']]));
+  top.appendChild(seg('dir', [['out', 'Out', 'Bounce at the end of the move'],
+                              ['in', 'In', 'Bounce at the start of the move (F switches too)']]));
+  panel.appendChild(top);
+  var wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;flex-wrap:wrap;';
+  _BN_SLIDERS.forEach(function(def) {
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;height:26px;width:100%;';
+    var lb = document.createElement('div');
+    lb.textContent = def.label;
+    lb.style.cssText = 'flex-shrink:0;width:66px;font-size:12px;color:#9a9a9a;white-space:nowrap;overflow:hidden;';
+    _attachTooltip(lb, function() { return def.key === 'h' && _bnOpts.style === 'elastic' ? 'How far the first swing goes past the end value, as a share of the move. Drag the amber dot on the graph too' : def.tip; });
+    var sv = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    sv.style.cssText = 'display:block;flex-shrink:0;width:100px;height:22px;cursor:pointer;touch-action:none;'; // width: _bnLayout
+    var NS = 'http://www.w3.org/2000/svg';
+    var track = document.createElementNS(NS, 'rect'), fill = document.createElementNS(NS, 'rect');
+    [track, fill].forEach(function(r) { r.setAttribute('y', '9.5'); r.setAttribute('height', '3'); r.setAttribute('rx', '1.5'); sv.appendChild(r); });
+    track.setAttribute('fill', '#2c2c2c');
+    fill.setAttribute('fill', '#6f6f6f');
+    var thumb = _mkCircle(6, '#d8d8d8');
+    thumb.setAttribute('cy', '11');
+    sv.appendChild(thumb);
+    var val = document.createElement('div');
+    val.style.cssText = 'flex-shrink:0;width:38px;text-align:right;font-size:12px;color:#d4d4d4;white-space:nowrap;';
+    row.appendChild(lb); row.appendChild(sv); row.appendChild(val);
+    wrap.appendChild(row);
+    var el = { row: row, lb: lb, sv: sv, track: track, fill: fill, thumb: thumb, val: val, w: 0, def: def };
+    _bnEls.sl[def.key] = el;
+    _bnWireSlider(el);
+  });
+  panel.appendChild(wrap);
+  var hint = document.createElement('div');
+  hint.style.cssText = 'font-size:11px;color:#808080;line-height:14px;min-height:14px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+  panel.appendChild(hint);
+  _bnEls.hint = hint;
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(function() { _bnLayout(); }).observe(panel);
+}
+function _bnKeyOf(def) { return def.key === 'h' ? _bnHKey(_bnOpts) : def.key; }
+function _bnWireSlider(el) {
+  var dragging = false, rect = null;
+  function valAt(e) {
+    var r = _BN_RANGE[_bnKeyOf(el.def)], pad = 7, w = Math.max(1, rect.width - 2 * pad); // rect: measured once, at the press
+    var f = Math.max(0, Math.min(1, (e.clientX - rect.left - pad) / w));
+    return r[0] + f * (r[1] - r[0]);
+  }
+  function set(e, live) { var ch = {}; ch[_bnKeyOf(el.def)] = valAt(e); _bnSet(ch, live); }
+  el.sv.addEventListener('pointerdown', function(e) {
+    if (e.button !== 0) return;
+    dragging = true; _bnDrag = true;
+    rect = el.sv.getBoundingClientRect();
+    try { el.sv.setPointerCapture(e.pointerId); } catch(_) {}
+    e.preventDefault();
+    set(e, true);
+  });
+  el.sv.addEventListener('pointermove', function(e) { if (dragging) set(e, true); });
+  function end(e) {
+    if (!dragging) return;
+    dragging = false; _bnDrag = false;
+    try { el.sv.releasePointerCapture(e.pointerId); } catch(_) {}
+    _bnSet({}, false); // commit what the drag left
+  }
+  el.sv.addEventListener('pointerup', end);
+  el.sv.addEventListener('pointercancel', end);
+  el.sv.addEventListener('mouseenter', function() { el.thumb.setAttribute('fill', '#ffffff'); });
+  el.sv.addEventListener('mouseleave', function() { el.thumb.setAttribute('fill', '#d8d8d8'); });
+}
+// One column below 400px, two from there (Bounces | Bounce, Friction | Hit time).
+// Pixel widths, written only when the panel's width changes (no calc() or flex
+// order, which UXP may not honour); the sliders' SVG widths are set here too,
+// so a drag never has to measure anything.
+var _bnLayW = -1;
+function _bnLayout() {
+  var panel = document.getElementById('bounce-panel');
+  if (!panel || !_bnEls || !_bounceMode) return;
+  var w = panel.clientWidth;
+  if (!(w > 0)) return;
+  if (w !== _bnLayW) {
+    _bnLayW = w;
+    var inner = w - 20, cols = inner >= 380 ? 2 : 1; // 10px padding each side
+    var rw = cols === 2 ? Math.floor((inner - 16) / 2) : inner, sw = Math.max(40, rw - 66 - 38);
+    _BN_SLIDERS.forEach(function(def, i) {
+      var el = _bnEls.sl[def.key];
+      el.row.style.width = rw + 'px';
+      el.row.style.marginRight = cols === 2 && i % 2 === 0 ? '16px' : '0px';
+      el.sv.style.width = sw + 'px';
+      el.w = sw;
+      el.sv.setAttribute('viewBox', '0 0 ' + sw + ' 22');
+      el.track.setAttribute('x', '7'); el.track.setAttribute('width', String(Math.max(0, sw - 14)));
+      el.fill.setAttribute('x', '7');
+      el._ocX = null;
+    });
+  }
+  _bnSyncUI(true);
+}
+function _bnPaintSeg(key) {
+  (_bnEls && _bnEls.seg[key] || []).forEach(function(b) {
+    var on = _bnOpts[key] === b._ocVal;
+    var bg = on ? '#3a3a3a' : b._ocHov ? '#2a2a2a' : 'transparent', col = on ? '#ffffff' : b._ocHov ? '#d4d4d4' : '#9a9a9a';
+    if (b._ocBg !== bg) { b._ocBg = bg; b.style.backgroundColor = bg; }
+    if (b._ocCol !== col) { b._ocCol = col; b.style.color = col; }
+  });
+}
+// Text writes: change-only, and at most every _BN_TEXT_MS while dragging
+var _bnTextQ = {}, _bnTextAt = 0, _bnTextTimer = null;
+function _bnText(id, el, txt, col) {
+  _bnTextQ[id] = { el: el, txt: txt, col: col };
+  var now = Date.now();
+  if (!_bnDrag || now - _bnTextAt >= _BN_TEXT_MS) { _bnTextFlush(); return; }
+  if (!_bnTextTimer) _bnTextTimer = setTimeout(_bnTextFlush, _BN_TEXT_MS - (now - _bnTextAt));
+}
+function _bnTextFlush() {
+  if (_bnTextTimer) { clearTimeout(_bnTextTimer); _bnTextTimer = null; }
+  _bnTextAt = Date.now();
+  for (var id in _bnTextQ) {
+    var q = _bnTextQ[id];
+    if (q.el._ocTxt !== q.txt) { q.el._ocTxt = q.txt; q.el.textContent = q.txt; }
+    if (q.col && q.el._ocCol !== q.col) { q.el._ocCol = q.col; q.el.style.color = q.col; }
+  }
+  _bnTextQ = {};
+}
+// The hint under the sliders: how long the last bounce lasts on the selected
+// pair, and a warning when it is too short to show or Keyframe Spacing is wide
+function _bnHintFor(s) {
+  var b = _bnCur;
+  if (!b || !b.used) return { t: '', warn: false };
+  var word = _bnOpts.style === 'elastic' ? 'swing' : 'bounce';
+  var keys = (s.selectedParamKeys || []).filter(function(k) { return (s.validParamKeys || []).indexOf(k) >= 0; });
+  if (!keys.length) keys = s.validParamKeys || [];
+  var fr = 0;
+  keys.forEach(function(k) { var c = s.paramContexts && s.paramContexts[k]; if (c && c.frameCount > fr) fr = c.frameCount; });
+  var parts = [], warn = false;
+  if (b.used < _bnOpts.n) parts.push(b.used + ' of ' + _bnOpts.n + ' fit');
+  if (fr > 0) {
+    var f = b.minW * fr;
+    if (f < 2) { warn = true; parts.push('Last ' + word + ' under 2 frames on this ' + fr + '-frame pair, so it will barely show'); }
+    else parts.push('Last ' + word + ' about ' + Math.round(f) + ' frames on this ' + fr + '-frame pair');
+  }
+  if (_bakeDensity > 1) { warn = true; parts.push('Keyframe Spacing is every ' + _bakeDensity + ' frames: short ' + word + 's get cut'); }
+  return { t: parts.join(' · '), warn: warn };
+}
+function _bnSyncUI(force, s) {
+  if (!_bnEls || !_bounceMode) return;
+  if (!_bnCur) _bnCur = _bnBuild(_bnOpts);
+  ['style', 'dir'].forEach(_bnPaintSeg);
+  _BN_SLIDERS.forEach(function(def) {
+    var el = _bnEls.sl[def.key], k = _bnKeyOf(def), r = _BN_RANGE[k], v = _bnOpts[k];
+    if (el.w > 0) {
+      var x = 7 + (v - r[0]) / (r[1] - r[0]) * Math.max(0, el.w - 14);
+      if (el._ocX !== x) { el._ocX = x; el.thumb.setAttribute('cx', String(x)); el.fill.setAttribute('width', String(Math.max(0, x - 7))); }
+    }
+    _bnText('v' + def.key, el.val, k === 'n' ? String(v) : Math.round(v * 100) + '%');
+    if (def.key === 'h') _bnText('lh', el.lb, _bnOpts.style === 'elastic' ? 'Overshoot' : 'Bounce');
+  });
+  var h = _bnHintFor(s || getState());
+  _bnText('hint', _bnEls.hint, h.t, h.warn ? '#e0a030' : '#808080');
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────
@@ -1095,6 +1560,7 @@ function updateDynamicSVG(curve, W, H) {
   var h2 = _ocEl('sg-h2');
   if (h2) h2.setAttribute('transform', 'translate('+p2.cx+','+p2.cy+')');
   _updatePtsSVG(hc, W, H);
+  if (_bounceMode) _bnPlaceDots(W, H);
 }
 
 function initGraphEditor(svg) {
@@ -1111,7 +1577,7 @@ function initGraphEditor(svg) {
   // rect and curve are optional: the hover path measures and clones once per
   // move and passes them in, instead of each helper doing its own.
   function hitTest(e, rect, curve) {
-    if (_peakMode) return null;
+    if (_peakMode || _bounceMode) return null;
     rect = rect || dragRect || svg.getBoundingClientRect();
     var raw  = _unscale(e.clientX - rect.left, e.clientY - rect.top);
     var c    = curve || liveCurve || getState().curve;
@@ -1136,6 +1602,23 @@ function initGraphEditor(svg) {
     if (e.button !== 0) return;
     _cancelCurveAnim(); // settle on the target first: never drag a tween intermediate
     _showDragGhost(getState().curve, _svgW, _svgH); // before any snap moves the curve
+    if (_bounceMode) {
+      // Bounce mode: drag the dot under the pointer; a press elsewhere brings the nearest one there
+      var bRect = svg.getBoundingClientRect();
+      var bRaw  = _unscale(e.clientX - bRect.left, e.clientY - bRect.top);
+      var which = _bnDotAt(bRaw, null);
+      if (!which) { _hideDragGhost(); return; }
+      svg.setPointerCapture(e.pointerId);
+      dragging    = 'bn-' + which;
+      dragMoved   = false;
+      dragRect    = bRect;
+      _isDragging = true;
+      _bnDrag     = true;
+      e.preventDefault();
+      setCursor('grabbing');
+      if (!_bnDotAt(bRaw, HANDLE_R + HIT_TOLERANCE + 4)) _applyBnPointer(e);
+      return;
+    }
     if (_peakMode) {
       // The peak solver only produces a single-segment cubic, so a curve with
       // added points can't be shaped here; refuse rather than flatten it
@@ -1161,6 +1644,7 @@ function initGraphEditor(svg) {
       var rect = svg.getBoundingClientRect();
       var raw  = _unscale(e.clientX - rect.left, e.clientY - rect.top);
       var c    = _cloneCurve(getState().curve);
+      delete c.bounce; // hand-edited
       var cands = [{ k: 'p1' }, { k: 'p2' }];
       for (var pi = 0; pi < (c.pts || []).length; pi++) { cands.push({ k: 'in', i: pi }); cands.push({ k: 'out', i: pi }); }
       var best = null, bestD = Infinity;
@@ -1198,6 +1682,7 @@ function initGraphEditor(svg) {
 
   svg.addEventListener('pointermove', function(e) {
     if (dragging === 'peak') { _applyPeakPointer(e); return; }
+    if (dragging === 'bn-hit' || dragging === 'bn-top') { _applyBnPointer(e); return; }
     if (dragging) {
       // coords updated in hot path below
     } else {
@@ -1211,6 +1696,11 @@ function initGraphEditor(svg) {
         var hx = Math.max(0, Math.min(1, np.nx)), hy = Math.max(0, Math.min(1, np.ny));
         var hp = _peakOf(_solvePeak(hx, hy), 48);
         _showPeakCoords(hp.v <= 1.02 ? hx : hp.x, hp.v);
+        return;
+      }
+      if (_bounceMode) {
+        var hw = _bnDotAt(_unscale(e.clientX - rectH.left, e.clientY - rectH.top), HANDLE_R + HIT_TOLERANCE + 4);
+        setCursor(hw === 'hit' ? 'ew-resize' : hw === 'top' ? 'ns-resize' : 'pointer');
         return;
       }
       var curveH = liveCurve || getState().curve;
@@ -1242,6 +1732,16 @@ function initGraphEditor(svg) {
   // Peak mode readout: peak position and how many times faster than linear it is
   function _showPeakCoords(nx, v) {
     if (_coordsEl) _coordsEl.textContent = nx.toFixed(3) + ',  ' + v.toFixed(2) + '\u00d7';
+  }
+
+  // Bounce mode drag: the hit dot sets Hit time, the top dot the height (see _bnDragTo)
+  function _applyBnPointer(e) {
+    dragMoved = true;
+    var rect = dragRect || svg.getBoundingClientRect();
+    var raw  = _unscale(e.clientX - rect.left, e.clientY - rect.top);
+    var n    = svgToNorm(raw.cx, raw.cy, _svgW, _svgH);
+    _bnDragTo(dragging === 'bn-hit' ? 'hit' : 'top', n.nx, n.ny, e.shiftKey);
+    _setSnapBg(e.shiftKey);
   }
 
   // Peak mode drag: pointer x = where the peak sits, pointer height = how narrow the bell is.
@@ -1293,7 +1793,11 @@ function initGraphEditor(svg) {
     // un-highlighted although the curve was identical. (A press on empty graph
     // space snaps the nearest handle and commits in pointerdown, so that path
     // is already committed by the time we get here.)
-    if (dragMoved) {
+    if (dragging === 'bn-hit' || dragging === 'bn-top') {
+      _bnDrag = false;
+      if (dragMoved) _bnSet({}, false); // commit what the drag left, as a slider release does
+    } else if (dragMoved) {
+      if (liveCurve) delete liveCurve.bounce; // hand-edited: no longer the curve Bounce mode built
       setState({ curve: liveCurve });
       clearPresetActive();
     }
@@ -1563,7 +2067,7 @@ function _jumpToParam(p) {
 // ─── Panel shortcuts ─────────────────────────────────────────────────────
 // Keys reach the panel through #oc-key-sink (see initPanel). Space play/stop ·
 // J K L shuttle · P preview the pair · 1-9 the first presets · arrows nudge
-// the last-touched handle (Shift: a grid step) · F flip · I invert · A A-curve
+// the last-touched handle (Shift: a grid step; Bounce mode: hit and height) · F flip · I invert · A A-curve · B bounce
 // · G ghost · N numeric entry · U undo the last bake · Esc stops a preview or
 // leaves full screen. Enter (Go) is handled by the caller.
 var _lastHandle = { k: 'p1' }; // last handle pressed on the graph, for the arrow keys
@@ -1573,6 +2077,11 @@ function _panelShortcut(e) {
   var k = e.key || '', code = e.code || '';
   var lk = k.length === 1 ? k.toLowerCase() : k;
   if (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'ArrowUp' || k === 'ArrowDown') {
+    if (_bounceMode) { // Bounce mode: left/right move the hit, up/down the height
+      var bs = e.shiftKey ? 1 / _gridSize : 0.01;
+      _bnNudge(k === 'ArrowLeft' ? -bs : k === 'ArrowRight' ? bs : 0, k === 'ArrowUp' ? bs : k === 'ArrowDown' ? -bs : 0);
+      return true;
+    }
     var st = e.shiftKey ? 1 / _gridSize : 0.01;
     _nudgeHandle(k === 'ArrowLeft' ? -st : k === 'ArrowRight' ? st : 0,
                  k === 'ArrowUp'   ?  st : k === 'ArrowDown'  ? -st : 0);
@@ -1594,6 +2103,7 @@ function _panelShortcut(e) {
   if (lk === 'f') { _applyCurveOp(_flipCurve);   return true; }
   if (lk === 'i') { _applyCurveOp(_invertCurve); return true; }
   if (lk === 'a') { _setPeakMode(!_peakMode);    return true; }
+  if (lk === 'b') { _setBounceMode(!_bounceMode); return true; }
   if (lk === 'g') { _setDragGhost(!_dragGhost);  return true; }
   if (lk === 'n') { _showNumericPanel();         return true; }
   if (lk === 'u') {
@@ -2961,6 +3471,20 @@ function initPanel() {
   _stylePeakBtn();
   _applyPeakVisibility();
 
+  // Bounce mode toggle (see _setBounceMode); its panel is #bounce-panel under the graph
+  var bounceBtn = document.getElementById('bounce-mode');
+  _bnInit();
+  if (bounceBtn) {
+    _attachTooltip(bounceBtn, function() {
+      return _bounceMode
+        ? 'Bounce mode is on. Click to go back to the bezier handles (the curve stays)'
+        : 'Bounce mode: build a bounce or elastic ease from a few settings';
+    });
+    bounceBtn.addEventListener('click', function() { _setBounceMode(!_bounceMode); });
+  }
+  _styleBounceBtn();
+  stateListeners.push(_bnOnState);
+
   // Add Point: splits the curve's widest segment; unavailable in A-curve mode
   var addPtBtn = document.getElementById('add-point');
   if (addPtBtn) {
@@ -3250,8 +3774,8 @@ function initPanel() {
   // its dropdown (their toolbar buttons stay in the HTML, hidden, as icon sources).
   // Ghost is a Settings row now; its hidden button is kept for _setDragGhost and
   // the drag ghost's icon. The other tools join the dropdown once the bar is narrow.
-  var _tbTools = [peakBtn, addPtBtn, zoomBtn];
-  var _TB_NEED = (3 * 26 + 2 * 5) + (2 * 26 + 1 * 5) + 10 + 8;
+  var _tbTools = [peakBtn, bounceBtn, addPtBtn, zoomBtn];
+  var _TB_NEED = (4 * 26 + 3 * 5) + (2 * 26 + 1 * 5) + 10 + 8;
   var _tbCollapsed = null;
   var _tbDismiss   = null;
   function _hideToolsMenu() {
@@ -3309,6 +3833,7 @@ function initPanel() {
     }
     if (_tbCollapsed) {
       item(_peakMode ? 'A-curve Mode: On' : 'A-curve Mode', peakBtn, function() { _setPeakMode(!_peakMode); }, { active: _peakMode });
+      item(_bounceMode ? 'Bounce Mode: On' : 'Bounce Mode', bounceBtn, function() { _setBounceMode(!_bounceMode); }, { active: _bounceMode });
       item('Add Point', addPtBtn, function() { if (_peakMode) _setPeakMode(false); _addPoint(); });
     }
     item('Flip',      flipBtn,   function() { _applyCurveOp(_flipCurve); });
@@ -5284,7 +5809,7 @@ function _confirmReset() {
     // project, not a setting, and the dialog does not offer to clear them.
     ['opencurve-presets-v10', 'opencurve-sidebar-width', _WELCOME_KEY,
      _CURVE_COLOR_KEY, _GRID_KEY, _LAYOUT_KEY, _ANIM_KEY, _AUTO_ZOOM_KEY, _UPDATE_NOTIF_KEY, _GRAPH_KEY,
-     _PEAK_KEY, _DRAG_GHOST_KEY, _DENSITY_KEY, _TL_KEY, _TL_ZOOM_KEY, _TL_PROPS_KEY, _TL_H_KEY
+     _PEAK_KEY, _BN_KEY, _DRAG_GHOST_KEY, _DENSITY_KEY, _TL_KEY, _TL_ZOOM_KEY, _TL_PROPS_KEY, _TL_H_KEY
     ].forEach(function(k) { try { localStorage.removeItem(k); } catch(_) {} });
 
     // Everything below used to be left to the reload. If that call is a no-op
@@ -5303,6 +5828,8 @@ function _confirmReset() {
     _tlZoomKeys     = false;
     _tlUserH        = null;
     _peakMode       = false;
+    _setBounceMode(false);
+    _bnOpts         = _bnClean(_BN_DEF);
     _dragGhost      = true;
     _graphVisible   = true;
     _tlVisible      = true;
