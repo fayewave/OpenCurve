@@ -325,7 +325,6 @@ function _commitCurve(c) {
   _cancelCurveAnim(); // a running tween would overwrite this edit on its next frame
   _normalizeCurve(c);
   setState({ curve: c });
-  clearPresetActive();
   if (_svgW > 0 && _svgH > 0) updateDynamicSVG(getState().curve, _svgW, _svgH);
 }
 
@@ -513,7 +512,6 @@ function _invertCurve(c) {
 function _applyCurveOp(fn) {
   if (_bounceMode && fn === _flipCurve) { _bnSet({ dir: _bnOpts.dir === 'in' ? 'out' : 'in' }, false); return; } // Bounce mode: Flip switches Out / In
   var c = fn(_cloneCurve(getState().curve));
-  clearPresetActive();
   _animateToCurve(c, function(cur) { if (_svgW > 0 && _svgH > 0) updateDynamicSVG(cur, _svgW, _svgH); });
 }
 
@@ -942,7 +940,6 @@ function _bnApply(live, animate) {
   _bnCur = _bnBuild(_bnOpts);
   if (live) { _bnRedraw(_bnCur.curve); _bnSyncUI(); return; }
   try { localStorage.setItem(_BN_KEY, JSON.stringify(_bnOpts)); } catch(_) {}
-  clearPresetActive();
   if (animate) {
     _animateToCurve(_bnCur.curve, function(cur) { _bnRedraw(cur); });
   } else {
@@ -1696,7 +1693,6 @@ function initGraphEditor(svg) {
       var n  = svgToNorm(raw.cx, raw.cy, _svgW, _svgH);
       _setHandle(c, hit, Math.max(0, Math.min(1, n.nx)), n.ny, e.altKey, e.ctrlKey || e.metaKey);
       setState({ curve: c });
-      clearPresetActive();
       updateDynamicSVG(getState().curve, _svgW, _svgH);
     }
     svg.setPointerCapture(e.pointerId);
@@ -1838,7 +1834,6 @@ function initGraphEditor(svg) {
     } else if (dragMoved) {
       if (liveCurve) delete liveCurve.bounce; // hand-edited: no longer the curve Bounce mode built
       setState({ curve: liveCurve });
-      clearPresetActive();
     }
     dragMoved = false;
     dragging  = null;
@@ -1959,15 +1954,99 @@ var STATUS_CONFIG = {
   'done':         { cls:'status-done',  text: 'Done! Keyframes baked.' },
 };
 
-function clearPresetActive() {
-  document.querySelectorAll('.preset-btn').forEach(function(b){
-    b.classList.remove('active'); b.removeAttribute('data-active');
+// ─── Edited preset (2.1.0) ────────────────────────────────────────────────
+// The preset the graph's curve came from (_srcPresetId) is remembered until a
+// curve from somewhere else replaces it. While the curve still matches it
+// (_sameCurve) its tile is lit as before ('active'); once the curve differs the
+// tile turns 'edited' (a softer fill and a dot in the theme colour) and the
+// graph bar shows a chip, "Name edited", with Save (overwrites the preset,
+// built-ins too) and Revert (eases back to it). Edits never touch the source:
+// every curve change goes through setState, and the state listener below
+// compares the curve with the preset's, so dragging back to the same shape
+// lights the tile normally again. clearPresetActive() forgets the source (a
+// curve from elsewhere: Load Baked Curve with no matching preset, Reset).
+// _presetEditSync runs on every setState (10Hz polls) and writes nothing
+// unless its signature changed.
+var _srcPresetId = null;
+var _presetByIdRef = null;      // set in initPanel (_presetList lives there): id -> preset, or null
+var _presetOverwriteRef = null; // set in initPanel: (preset, curve) -> overwrite, save, redraw its thumbnail
+var _peSig = null;
+var _peDot = null;              // the one dot, moved into the edited tile
+var _peChipRoom = true;         // set by the graph bar's layout (_tbLayout): room for the chip
+function _presetEditInfo() {
+  if (_srcPresetId === null || !_presetByIdRef) return null;
+  var p = _presetByIdRef(_srcPresetId);
+  if (!p) return null;
+  return { preset: p, edited: !_sameCurve(p.curve, state.curve) };
+}
+function _presetEdited() { var inf = _presetEditInfo(); return inf && inf.edited ? inf.preset : null; }
+function _presetChipShown() {
+  var c = document.getElementById('preset-edit-chip');
+  return !!(c && c.style.display !== 'none');
+}
+function _presetEditSync(force) {
+  var inf = _presetEditInfo();
+  var id = inf ? String(inf.preset.id) : null, ed = !!(inf && inf.edited);
+  var name = inf ? inf.preset.name : '';
+  var sig = id + '|' + ed + '|' + name + '|' + _curveColor + '|' + _peChipRoom;
+  if (!force && sig === _peSig) return;
+  _peSig = sig;
+  // Tiles: state classes on the tile itself (UXP restyles reliably that way)
+  var edTile = null;
+  document.querySelectorAll('.preset-btn').forEach(function(b) {
+    var mine = id !== null && b.dataset.id === id;
+    var a = mine && !ed, e = mine && ed;
+    if (a) { if (!b.classList.contains('active')) b.classList.add('active'); if (b.dataset.active !== 'true') b.dataset.active = 'true'; }
+    else { if (b.classList.contains('active')) b.classList.remove('active'); if (b.hasAttribute('data-active')) b.removeAttribute('data-active'); }
+    if (e) { if (!b.classList.contains('edited')) b.classList.add('edited'); edTile = b; }
+    else if (b.classList.contains('edited')) b.classList.remove('edited');
   });
+  if (edTile) {
+    if (!_peDot) {
+      _peDot = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      _peDot.setAttribute('class', 'preset-edit-dot');
+      _peDot.setAttribute('width', '8'); _peDot.setAttribute('height', '8'); _peDot.setAttribute('viewBox', '0 0 8 8');
+      _peDot.style.cssText = 'position:absolute;top:5px;right:5px;pointer-events:none;';
+      var dc = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      dc.setAttribute('cx', '4'); dc.setAttribute('cy', '4'); dc.setAttribute('r', '3');
+      _peDot.appendChild(dc);
+    }
+    _peDot.firstChild.setAttribute('fill', _curveColor);
+    if (_peDot.parentNode !== edTile) edTile.appendChild(_peDot);
+  } else if (_peDot && _peDot.parentNode) _peDot.parentNode.removeChild(_peDot);
+  // Graph bar chip
+  var chip = document.getElementById('preset-edit-chip');
+  if (chip) {
+    var show = ed && _peChipRoom;
+    if (show) {
+      var nm = document.getElementById('pe-name');
+      if (nm && nm.textContent !== name) nm.textContent = name;
+    }
+    var disp = show ? 'flex' : 'none';
+    if (chip.style.display !== disp) chip.style.display = disp;
+  }
+}
+stateListeners.push(function() { _presetEditSync(); });
+// Save: write the graph's curve into the preset it came from (built-ins too)
+function _presetEditSave() {
+  var p = _presetEdited();
+  if (!p || !_presetOverwriteRef) return;
+  _presetOverwriteRef(p, state.curve);
+  _showCopyToast('Saved to "' + p.name + '"', '#3ddc84');
+}
+// Revert: ease back to the preset's curve, like clicking its tile
+function _presetEditRevert() {
+  var p = _presetEdited();
+  if (!p) return;
+  _animateToCurve(p.curve, function(cur) { if (_svgW > 0 && _svgH > 0) updateDynamicSVG(cur, _svgW, _svgH); });
+}
+function clearPresetActive() {
+  _srcPresetId = null;
+  _presetEditSync(true);
 }
 function setPresetActive(id) {
-  clearPresetActive();
-  var btn = document.querySelector('.preset-btn[data-id="'+id+'"]');
-  if (btn) { btn.classList.add('active'); btn.dataset.active='true'; }
+  _srcPresetId = (id === null || id === undefined) ? null : String(id);
+  _presetEditSync(true);
 }
 
 // Pin button: ask the CEP bridge to move the playhead (ExtendScript does the work)
@@ -3829,10 +3908,26 @@ function initPanel() {
     if (m && m.parentNode) m.parentNode.removeChild(m);
     if (_tbDismiss) { window.removeEventListener('pointerdown', _tbDismiss); _tbDismiss = null; }
   }
+  // Edited preset chip (#preset-edit-chip, between the two groups): it gets the
+  // room the tools leave, capped by an inline max-width so it can never push the
+  // right group over it, and hides below _PE_CHIP_MIN (the dropdown then lists
+  // Save and Revert). Written only when the value changes.
+  var _PE_CHIP_MIN = 130;
+  var _peChipMaxW = null;
+  function _tbChipLayout(w) {
+    var chip = document.getElementById('preset-edit-chip');
+    if (!chip) return;
+    var room = w - _TB_NEED - 8; // the chip's own left margin
+    var fits = room >= _PE_CHIP_MIN;
+    var mw = fits ? Math.floor(room) + 'px' : '';
+    if (mw !== _peChipMaxW) { _peChipMaxW = mw; chip.style.maxWidth = mw; }
+    if (fits !== _peChipRoom) { _peChipRoom = fits; _presetEditSync(); }
+  }
   function _tbLayout() {
     if (!toolbar || !menuBtn) return;
     var w = toolbar.clientWidth;
     if (!(w > 0)) return;
+    _tbChipLayout(w);
     var collapse = w < _TB_NEED;
     if (collapse === _tbCollapsed) return;
     _tbCollapsed = collapse;
@@ -3877,6 +3972,11 @@ function initPanel() {
       });
       menu.appendChild(it);
     }
+    var edP = _presetEdited();
+    if (edP && !_presetChipShown()) { // no room for the chip: its two actions come first here
+      item('Save to "' + edP.name + '"', document.getElementById('pe-save'), _presetEditSave);
+      item('Revert to "' + edP.name + '"', document.getElementById('pe-revert'), _presetEditRevert);
+    }
     if (_tbCollapsed) {
       item(_peakMode ? 'A-curve Mode: On' : 'A-curve Mode', peakBtn, function() { _setPeakMode(!_peakMode); }, { active: _peakMode });
       item(_bounceMode ? 'Bounce Mode: On' : 'Bounce Mode', bounceBtn, function() { _setBounceMode(!_bounceMode); }, { active: _bounceMode });
@@ -3906,6 +4006,15 @@ function initPanel() {
     // Deferred so the press that opened it doesn't dismiss it
     var d = _tbDismiss;
     setTimeout(function() { if (_tbDismiss === d) window.addEventListener('pointerdown', d); }, 0);
+  }
+  var peSave = document.getElementById('pe-save'), peRevert = document.getElementById('pe-revert');
+  if (peSave) {
+    _attachTooltip(peSave, function() { var p = _presetEdited(); return p ? 'Save to "' + p.name + '"' : ''; });
+    peSave.addEventListener('click', _presetEditSave);
+  }
+  if (peRevert) {
+    _attachTooltip(peRevert, function() { var p = _presetEdited(); return p ? 'Revert to "' + p.name + '"' : ''; });
+    peRevert.addEventListener('click', _presetEditRevert);
   }
   if (menuBtn) {
     _attachTooltip(menuBtn, 'Graph tools');
@@ -4167,11 +4276,8 @@ function initPanel() {
   }, _icCopy);
   _ctxItem('Overwrite with current', false, function(t) {
     if (!t) return;
-    var c = getState().curve;
-    t.preset.curve = _cloneCurve(c);
-    _savePresetList(_presetList);
-    var thumb = t.btn.querySelector('.preset-thumb path');
-    if (thumb) thumb.setAttribute('d', _thumbPathD(t.preset.curve));
+    _presetOverwriteRef(t.preset, getState().curve);
+    setPresetActive(t.preset.id); // it now holds the graph's curve: it is the one the curve came from
     _showCopyToast('Preset updated');
   }, _icOverwrite);
   _ctxItem('Delete Preset', true, function(t) {
@@ -4180,6 +4286,7 @@ function initPanel() {
       _presetList = _presetList.filter(function(p) { return p.id !== t.preset.id; });
       _savePresetList(_presetList);
       if (t.btn && t.btn.parentNode) t.btn.parentNode.removeChild(t.btn);
+      if (_srcPresetId === String(t.preset.id)) clearPresetActive(); // the curve stays, the link goes
       _presetUpdateFade();
     });
   }, _icDelete);
@@ -4327,6 +4434,7 @@ function initPanel() {
       _renamePresetDialog(preset.name, function(v) {
         preset.name = v; nameSpan.textContent = v;
         _savePresetList(_presetList);
+        _presetEditSync(); // the chip shows the name
       }, opts && opts.title ? opts : null);
     }
     btn._ocRename = startRename; // New Preset / Paste open it for the fresh tile
@@ -4497,6 +4605,20 @@ function initPanel() {
   // preset edit wrote it straight back.
   // Load Baked Curve lights the preset the bake used: the first preset whose
   // curve has the same shape (_sameCurve), or null
+  // Edited preset (see _presetEditSync): look a preset up by id, and overwrite one
+  _presetByIdRef = function(id) {
+    for (var i = 0; i < _presetList.length; i++) if (String(_presetList[i].id) === id) return _presetList[i];
+    return null;
+  };
+  _presetOverwriteRef = function(preset, curve) {
+    preset.curve = _cloneCurve(curve);
+    preset.builtIn = false; // no longer the shipped curve: export it like any custom preset
+    _savePresetList(_presetList);
+    var tile = document.querySelector('.preset-btn[data-id="' + preset.id + '"]');
+    var thumb = tile && tile.querySelector('.preset-thumb path');
+    if (thumb) thumb.setAttribute('d', _thumbPathD(preset.curve));
+    _presetEditSync();
+  };
   _presetMatchRef = function(curve) {
     for (var i = 0; i < _presetList.length; i++) if (_sameCurve(_presetList[i].curve, curve)) return _presetList[i].id;
     return null;
@@ -4914,6 +5036,7 @@ function initPanel() {
         var list = document.getElementById('all-presets-list');
         if (list) list.appendChild(btn);
         _applyPresetLayout(true);
+        setPresetActive(preset.id); // the graph's curve is this preset now (an edited one is left as it was)
         if (btn._ocRename) btn._ocRename({ title: 'New Preset', ok: 'Save' });
       });
     }
@@ -5446,7 +5569,10 @@ function _applyCurveColor(color) {
     root.style.setProperty('--oc-active-color', color);
     root.style.setProperty('--oc-active-bg',    bg);
     root.style.setProperty('--oc-active-bg2',   bg2);
+    root.style.setProperty('--oc-edited-bg',    _hexToRgba(color, 0.07));
+    root.style.setProperty('--oc-edited-bg2',   _hexToRgba(color, 0.16));
   }
+  _presetEditSync(); // the edited tile's dot
 }
 
 function _showCopyToast(msg, color) {
@@ -5976,8 +6102,7 @@ function _showNumericPanel() {
   overlay.appendChild(box);
 
   var start = _cloneCurve(getState().curve);
-  var activeBtn = document.querySelector('.preset-btn.active');
-  var startPreset = activeBtn ? activeBtn.dataset.id : null;
+  var startPreset = _srcPresetId; // the preset it came from, edited or not
 
   function close() {
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay);

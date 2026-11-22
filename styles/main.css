@@ -15,6 +15,8 @@
   --oc-active-color:  #ffffff;
   --oc-active-bg:     rgba(255,255,255,0.15);
   --oc-active-bg2:    rgba(255,255,255,0.28);
+  --oc-edited-bg:     rgba(255,255,255,0.07);
+  --oc-edited-bg2:    rgba(255,255,255,0.16);
   --green:      #4ce890;
   --green-dim:  rgba(61,220,132,0.22);
   --amber:      #f0a030;
@@ -426,6 +428,53 @@ html, body {
   background-color: var(--oc-active-bg2);
   background-image: linear-gradient(to right, rgba(255,255,255,0.09), rgba(255,255,255,0));
   color: var(--oc-active-color);
+}
+
+/* Edited preset (2.1.0): the tile the graph's curve came from, once the curve
+   no longer matches it. A softer fill than .active and a theme-coloured dot in
+   the top-right corner (plugin.js _presetEditSync moves the one dot there). */
+.preset-btn {
+  position: relative;
+}
+.preset-btn.edited {
+  color: var(--oc-active-color);
+  background-color: var(--oc-edited-bg);
+  background-image: linear-gradient(to right, rgba(255,255,255,0.06), rgba(255,255,255,0));
+}
+.preset-btn.edited:hover {
+  background-color: var(--oc-edited-bg2);
+  background-image: linear-gradient(to right, rgba(255,255,255,0.08), rgba(255,255,255,0));
+  color: var(--oc-active-color);
+}
+
+/* Graph bar chip for the edited preset: name, "edited", Save, Revert. Shown
+   with inline display; its max-width is set inline by the bar's layout */
+#preset-edit-chip {
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 26px;
+  margin-left: 8px;
+  padding-left: 9px;
+  border-radius: 3px;
+  background-color: var(--oc-edited-bg);
+  font-family: var(--font);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.pe-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--oc-active-color);
+}
+.pe-tag {
+  flex-shrink: 0;
+  margin-left: 5px;
+  margin-right: 3px;
+  color: var(--text-dim);
 }
 
 .preset-name {
