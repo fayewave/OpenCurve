@@ -145,7 +145,7 @@ var targets = {
     var res = strip(read('src/plugin.js'));
     var man = JSON.parse(JSON.stringify(uxpMan));
     man.id = EXCHANGE_ID;
-    man.name = 'OpenCurve'; // the Exchange listing's name; the panel label stays as in the source
+    man.name = 'OpenCurve 2'; // the panel tab shows this name (2.0.2 shipped 'OpenCurve', so the tab lacked the 2)
     man.host.minVersion = EXCHANGE_MIN_HOST;
     delete man.requiredPermissions.network;
     delete man.requiredPermissions.launchProcess;
