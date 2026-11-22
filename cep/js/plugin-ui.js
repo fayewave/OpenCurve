@@ -5949,7 +5949,7 @@ function _showSettingsModal() {
   var footerLeft = document.createElement('div');
   footerLeft.style.cssText = 'display:flex;align-items:center;flex:0 1 auto;min-width:0;overflow:hidden;margin-right:12px;color:#888;font-size:12px;';
   var madeByText = document.createElement('span');
-  madeByText.textContent = 'made by faye';
+  madeByText.textContent = 'made by faye!';
   madeByText.style.cssText = 'flex-shrink:0;white-space:nowrap;line-height:16px;';
   footerLeft.appendChild(madeByText);
   var ghIc = '<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M8.2 2.5h3.3v3.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M11.5 2.5L6.6 7.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 8.6v2.1a.8.8 0 01-.8.8H3.3a.8.8 0 01-.8-.8V4.6a.8.8 0 01.8-.8h2.1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>', ghTip = 'Open OpenCurve on GitHub in your browser';
@@ -5957,7 +5957,7 @@ function _showSettingsModal() {
   ghLink._ocLooks = [['#2b507c', '#161c24'], ['#6796b8', '#1a2635'], ['#8bb3d6', '#22324a']];
   ghLink._ocHot(0);
   ghLink._ocIn.style.color = '#4a9eff';
-  ghLink.style.marginLeft = '12px';
+  ghLink.style.marginRight = '8px'; // right-aligned, just before Report an Issue
   var ghIcon = document.createElement('span');
   ghIcon.style.cssText = 'display:inline-flex;width:15px;height:15px;margin-right:6px;';
   ghIcon.innerHTML = ghIc;
@@ -5965,13 +5965,12 @@ function _showSettingsModal() {
   ghLink.addEventListener('mouseenter', function() { ghLink._ocIn.style.color = '#8ccfff'; });
   ghLink.addEventListener('mouseleave', function() { ghLink._ocIn.style.color = '#4a9eff'; });
   _attachTooltip(ghLink, ghTip);
-  footerLeft.appendChild(ghLink);
 
   // Veil: the mark and wordmark (one evenodd path, from the Veil site's
   // veil-lockup-white.svg), grey at rest, white on hover, a tint while
   // pressed; opens veil.page. The viewBox has room round the edge (UXP clips
   // an SVG's anti-aliased border).
-  var veilBtn = _el('display:flex;align-items:center;justify-content:center;flex-shrink:0;box-sizing:border-box;height:30px;padding:0 2px 0 8px;margin-left:8px;border-radius:6px;cursor:pointer;');
+  var veilBtn = _el('display:flex;align-items:center;justify-content:center;flex-shrink:0;box-sizing:border-box;height:30px;padding:0 2px 0 8px;margin-left:6px;border-radius:6px;cursor:pointer;');
   veilBtn.innerHTML = '<svg width="109" height="26" viewBox="-6 -6 1213 288" fill="none">' // a little under the buttons' 30px
     + '<path fill-rule="evenodd" d="M322.26,0.67L1200.74,0.67L1200.74,275.87L322.26,275.87ZM393.17 64.79H437.62L506.75 185.31H510.87L580.01 64.79H623.63L539.26 211.76H477.54ZM646.26 211.76V64.79H847.91V91.24H687.41V125.05H806.76V151.5H687.41V185.31H847.91V211.76ZM924.04 64.79V211.76H882.89V64.79ZM1006.35 64.79V185.31H1129.8V211.76H965.19V64.79ZM0.63,0.67L275.83,0.67L275.83,275.87L0.63,275.87ZM232.75,138.27L138.23,212.35L43.7,138.27L138.23,64.19Z" fill="#a6a6a6"/></svg>';
   // "for more plugins visit" ahead of the logo, part of the same button
@@ -6010,6 +6009,7 @@ function _showSettingsModal() {
 
   var footerRight = document.createElement('div');
   footerRight.style.cssText = 'display:flex;align-items:center;flex-shrink:0;';
+  footerRight.appendChild(ghLink);
   footerRight.appendChild(issueRow);
   footerRight.appendChild(resetRow);
   footerRow.appendChild(footerLeft);
