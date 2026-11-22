@@ -990,10 +990,10 @@ html, body {
 /* Undo button: reverts the last Go press. plugin.js toggles display inline. */
 .btn-undo {
   position: absolute;
-  right: 5px;
-  top: 5px;
-  width: 22px;
-  height: 22px;
+  right: 4px;
+  top: 4px;            /* centred in the 32px Go row */
+  width: 24px;         /* the same size as the timeline row buttons */
+  height: 24px;
   padding: 0;          /* override .btn's padding, which squashed the icon to a dot */
   border: none;
   box-sizing: border-box;
@@ -1015,8 +1015,7 @@ html, body {
 /* Nothing to undo: stays in place, grey and inert (colours are also set inline
    by _showUndoBtn so UXP repaints the icon) */
 .btn-undo.btn-dim {
-  background-color: rgba(255,255,255,0.06);
-  color: #666;
+  opacity: 0.35;   /* the normal look, faded: background and icon dim together */
   cursor: default;
 }
 
@@ -1044,20 +1043,30 @@ html, body {
   background-image: linear-gradient(to right, rgba(255,255,255,0.045), rgba(255,255,255,0));
   opacity: 1;
 }
-/* Grey, but pressing it selects every ready property (_goSelectsAll) */
+/* Grey, but pressing it selects every ready property (_goSelectsAll), so it
+   gets a hover highlight; a plain grey Go (nothing ready) gets none. .hover is
+   the mirrored class from _addPressState: UXP applies compound :hover rules
+   unreliably. */
 #go-btn.btn-disabled.go-select {
   cursor: pointer;
+}
+#go-btn.btn-disabled.go-select:hover,
+#go-btn.btn-disabled.go-select.hover {
+  color: #f2f2f2;
+  background-color: rgba(255,255,255,0.15);
+  background-image: linear-gradient(to right, rgba(255,255,255,0.09), rgba(255,255,255,0));
 }
 
 /* ─── Context menu ──────────────────────────────────────────── */
 .ctx-menu {
   position: fixed;
   z-index: 9999;
-  background: var(--bg);
+  background: #2a2a2a;   /* a step brighter than the panel (was var(--bg)) */
   border: none;
   border-radius: 0;
   padding: 4px 0;
   min-width: 160px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.6), 0 1px 3px rgba(0,0,0,0.5);
 }
 
 .ctx-menu-item {
@@ -1070,7 +1079,7 @@ html, body {
 }
 
 .ctx-menu-item:hover {
-  background: var(--surface);
+  background: #383838;
   color: var(--text);
 }
 

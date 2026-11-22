@@ -255,13 +255,15 @@
   }
 
   // ─── Undo button ──────────────────────────────────────────────────────
-  // The button always stays in place; with nothing to undo it is grey and inert
+  // The button always stays in place; with nothing to undo the whole button
+  // (background and icon) is dimmed and inert
   function _showUndoBtn(show) {
     var btn = document.getElementById('undo-btn');
     if (btn) {
       btn.classList.toggle('btn-dim', !show);
-      btn.style.backgroundColor = show ? '' : 'rgba(255,255,255,0.06)';
-      btn.style.color      = show ? '' : '#666';
+      btn.style.backgroundColor = '';
+      btn.style.color      = '';
+      btn.style.opacity    = show ? '' : '0.35';
       btn.style.cursor     = show ? '' : 'default';
     }
     if (OpenCurve.fitGoForUndo) OpenCurve.fitGoForUndo();

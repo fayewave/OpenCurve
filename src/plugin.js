@@ -3337,16 +3337,19 @@ function _recordBakes(s, keys, contexts, written) {
 }
 
 // Panel-wide Undo button (next to Go, same control as the CEP edition)
-// The button always stays in place; with nothing to undo it is grey and inert.
+// The button always stays in place; with nothing to undo the whole button
+// (background and icon) is dimmed and inert.
 function _showUndoBtn(show) {
   var btn = document.getElementById('undo-btn');
   if (!btn) return;
   btn.classList.toggle('btn-dim', !show);
   btn.style.display = 'flex';
-  // Inline colours: UXP doesn't restyle the icon when only the class changes.
-  // Cleared when live so the CSS hover works again.
-  btn.style.backgroundColor = show ? '' : 'rgba(255,255,255,0.06)';
-  btn.style.color      = show ? '' : '#666';
+  // Inline, since UXP doesn't restyle on a class change alone. Until 2.1.0 the
+  // dim state swapped in a faint white background and a #666 icon, which on a
+  // green Go read as a dark icon on a still-bright square; opacity fades both.
+  btn.style.backgroundColor = '';
+  btn.style.color      = '';
+  btn.style.opacity    = show ? '' : '0.35';
   btn.style.cursor     = show ? '' : 'default';
   _fitGoForUndo();
 }
@@ -5191,7 +5194,7 @@ function _statusMsg(s, showClip) {
 // pixel less put them a pixel up and left, so UXP paints the SVG content half
 // a pixel off its box (checked by eye, 2026-09). Run after every render
 // because the property rows are rebuilt there.
-var _ICON_OFF = { 'tool-btn': 4.5, 'prop-pin': 3.5, 'prop-undo': 3.5, 'prop-curve': 3.5, 'prop-replace': 3.5, 'btn-undo': 2.5, 'pager-btn': 2.5 };
+var _ICON_OFF = { 'tool-btn': 4.5, 'prop-pin': 3.5, 'prop-undo': 3.5, 'prop-curve': 3.5, 'prop-replace': 3.5, 'btn-undo': 3.5, 'pager-btn': 2.5 };
 function _centerIcons() {
   Object.keys(_ICON_OFF).forEach(function(cls) {
     var off = _ICON_OFF[cls] + 'px';
@@ -6791,8 +6794,8 @@ function initPanel() {
     mini.style.display = 'block';
 
     var _icSettings = '<svg width="16" height="16" viewBox="0 0 12 12" fill="none"><path d="M10.18 5 L11.53 5.12 L11.53 6.88 L10.18 7 A4.3 4.3 0 0 1 9.67 8.25 L9.67 8.25 L10.53 9.29 L9.29 10.53 L8.25 9.67 A4.3 4.3 0 0 1 7 10.18 L7 10.18 L6.88 11.53 L5.12 11.53 L5 10.18 A4.3 4.3 0 0 1 3.75 9.67 L3.75 9.67 L2.71 10.53 L1.47 9.29 L2.33 8.25 A4.3 4.3 0 0 1 1.82 7 L1.82 7 L0.47 6.88 L0.47 5.12 L1.82 5 A4.3 4.3 0 0 1 2.33 3.75 L2.33 3.75 L1.47 2.71 L2.71 1.47 L3.75 2.33 A4.3 4.3 0 0 1 5 1.82 L5 1.82 L5.12 0.47 L6.88 0.47 L7 1.82 A4.3 4.3 0 0 1 8.25 2.33 L8.25 2.33 L9.29 1.47 L10.53 2.71 L9.67 3.75 A4.3 4.3 0 0 1 10.18 5 Z M8.3 6 A2.3 2.3 0 0 0 3.7 6 A2.3 2.3 0 0 0 8.3 6 Z" fill="currentColor" fill-rule="evenodd"/></svg>';
-    var _icTlKeys = '<svg width="16" height="16" viewBox="0 0 12 12" fill="none"><path d="M3.2 1.5H1.5v9h1.7M8.8 1.5h1.7v9H8.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><polygon points="6,3.4 8.6,6 6,8.6 3.4,6" fill="currentColor"/></svg>';
-    var _icTlClip = '<svg width="16" height="16" viewBox="0 0 12 12" fill="none"><rect x="0.9" y="2.6" width="10.2" height="6.8" rx="1" fill="none" stroke="currentColor" stroke-width="1.6"/><polygon points="6,4.2 7.6,6 6,7.8 4.4,6" fill="currentColor"/></svg>';
+    var _icTlKeys = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M1.6 4.2V1.6h2.6M9.8 1.6h2.6v2.6M12.4 9.8v2.6H9.8M4.2 12.4H1.6V9.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.7 5.4L6.3 7L4.7 8.6L3.1 7Z" fill="currentColor"/><path d="M9.3 5.4L10.9 7L9.3 8.6L7.7 7Z" fill="currentColor"/></svg>';
+    var _icTlClip = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><rect x="1.3" y="3.6" width="11.4" height="6.8" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4.9 5.6L6.3 7L4.9 8.4L3.5 7Z" fill="currentColor"/><path d="M9.1 5.6L10.5 7L9.1 8.4L7.7 7Z" fill="currentColor"/></svg>';
 
 
     function _miniItem(label, icon, onClick) {
@@ -7088,6 +7091,7 @@ function initPanel() {
   // Go button
   var goBtn = document.getElementById('go-btn');
   if (goBtn) {
+    _addPressState(goBtn); // mirrors hover as a class (the select-all highlight, see go-select)
     _attachTooltip(goBtn, function() {
       if (_goSelectsAll(getState())) return 'Select all ready properties (press Go again to apply)';
       return goBtn.classList.contains('btn-disabled')
