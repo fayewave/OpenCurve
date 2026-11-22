@@ -85,7 +85,7 @@ try {
           _panelInitialised = true;
           initPanel();
           _applyCurveColor(_curveColor);
-          var _welcomed = _showWelcome(); // first launch of a 2.x build; stands in for the toast
+          var _welcomed = _showWelcome(); // first launch of a release with a What's new card; stands in for the toast
           // [exchange-strip]
           if (localStorage.getItem('opencurve-post-update') === '1') {
             localStorage.removeItem('opencurve-post-update');
@@ -9199,26 +9199,28 @@ function _modalBtn(label, onClick, kind) {
 
 // Modal confirmation: title, message, a red action button and Cancel.
 // onOk runs after the dialog has closed. Used by reset-all and preset delete.
-// ─── Welcome to v2 (first launch of a 2.x build) ─────────────────────────
-// A one-time card listing what 2.0 brought, shown the first time any 2.x
-// build runs: a fresh install and an upgrade from 1.x both get it. The key
-// stores the major version it was shown for, so a future 3.0 can show its
-// own by bumping _WELCOME_FOR. Returns true when it was shown, so the bridge
-// / panel create can skip the "Updated to vX" toast that same launch.
+// ─── What's new card (first launch of a release that has one) ───────────
+// A one-time card listing what the release brought, shown the first time a
+// build with a new _WELCOME_FOR runs: a fresh install and an upgrade both get
+// it. The key stores the release it was shown for (2.0 stored '2'), so a
+// release with its own list bumps _WELCOME_FOR and _WELCOME_TITLE. Returns
+// true when it was shown, so the bridge / panel create can skip the
+// "Updated to vX" toast that same launch.
 // Replaced the CEP edition's first-run warning about the .zxp's limitations.
 var _WELCOME_KEY = 'opencurve-welcome-seen';
-var _WELCOME_FOR = '2';
+var _WELCOME_FOR = '2.1';
+var _WELCOME_TITLE = 'What\u2019s New in 2.1.0';
 var _WELCOME_ITEMS = [ // titles only, split over two columns
-  'Improved performance',
-  'Multi-point curves',
-  'A-curve (speed graph) mode',
-  'Mini timeline',
-  'Per-property undo',
-  'Playhead jump buttons',
-  'Preset export and import',
-  'Keyboard shortcuts',
-  'Numeric entry, flip and invert',
-  'Full-screen graph'
+  'Bounce mode',
+  'Save edits to presets',
+  'Replace a baked curve',
+  'Auto zoom',
+  'Smarter Go button',
+  'Right-click property actions',
+  'Graph tools down the side',
+  'Redesigned Settings',
+  'Smarter Load Baked Curve',
+  'Smoother graph and timeline'
 ];
 
 function _showWelcome() {
@@ -9239,7 +9241,7 @@ function _showWelcome() {
   box.appendChild(logo);
 
   var title = document.createElement('div');
-  title.textContent = 'What\u2019s New in 2.0.0';
+  title.textContent = _WELCOME_TITLE;
   title.style.cssText = 'color:#e4e4e4;font-size:14px;margin-bottom:12px;text-align:center;';
   box.appendChild(title);
 

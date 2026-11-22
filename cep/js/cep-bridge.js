@@ -569,7 +569,7 @@
       OpenCurve.attachTooltip(undoBtn, function() { return undoBtn.classList.contains('btn-dim') ? 'Nothing to undo' : 'Undo last bake'; });
     }
 
-    // First launch of a 2.x build: the welcome card (shared, in plugin-ui.js).
+    // First launch of a release with a What's new card (shared, in plugin-ui.js).
     // It replaced this edition's first-run warning about the .zxp's limits,
     // whose key is dropped here. The card stands in for the update toast.
     localStorage.removeItem('opencurve-cep-splash-seen');
