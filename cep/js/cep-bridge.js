@@ -528,7 +528,7 @@
     + '<MenuItem Id="fake-update" Label="Test: Fake Update (temporary)" Enabled="true" Checked="false"/>' // [dev-fake-update]
     + (_DEV_MENU ? '<MenuItem Id="poll-timing" Label="Poll Timing (Debug)" Enabled="true" Checked="false"/>' : '')
     + '<MenuItem Label="---"/>'
-    + '<MenuItem Id="version" Label="OpenCurve 2, v' + OpenCurve.CURRENT_VERSION + ', ZXP" Enabled="false" Checked="false"/>'
+    + '<MenuItem Id="version" Label="OpenCurve 2 - v' + OpenCurve.CURRENT_VERSION + ' - ZXP" Enabled="false" Checked="false"/>'
     + '<MenuItem Id="made-by" Label="made by faye" Enabled="false" Checked="false"/>'
     + '</Menu>';
 
