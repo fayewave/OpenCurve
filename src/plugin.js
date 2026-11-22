@@ -8682,24 +8682,35 @@ function _openTextFile() {
 // Settings footer: the version and the edition (ZXP, CCX or Exchange) as small
 // outlined badges. Inline styles only (UXP), margin instead of flex gap.
 function _footerBadge(label) {
-  var b = document.createElement('span');
-  b.textContent = label;
-  b.style.cssText = 'display:inline-block;box-sizing:border-box;height:24px;text-align:center;flex-shrink:0;white-space:nowrap;margin-left:8px;padding:3px 7px;border:1px solid #454545;border-radius:4px;'
-    + 'background-color:rgba(255,255,255,0.04);color:#b0b0b0;font-size:12px;font-weight:600;letter-spacing:0.5px;line-height:16px;';
+  var b = _crispBox(24, '3px 7px', '#454545', '#1a1a1a', 'inline-flex');
+  b.style.marginLeft = '8px';
+  b._ocInner.style.cssText += 'color:#b0b0b0;font-size:12px;font-weight:600;letter-spacing:0.5px;line-height:16px;';
+  b._ocInner.textContent = label;
   return b;
 }
 
-// UXP doesn't snap borders to the pixel grid the way Chromium does: a 1px
-// border at a fractional x or y is drawn as two half-bright pixels, so the
-// footer's badges and buttons looked soft and thick in the CCX next to the
-// ZXP (2026-11-22). Their heights are fixed in whole pixels; this rounds
-// each width up once, after the first layout, so every edge after them lands
-// on a whole pixel too (text widths are fractional).
-function _snapWidths(els) {
-  var ws = els.map(function(el) { return el.getBoundingClientRect().width; });
-  els.forEach(function(el, i) {
-    if (ws[i] > 0) { el.style.boxSizing = 'border-box'; el.style.width = Math.ceil(ws[i]) + 'px'; }
-  });
+// An outlined box with a crisp 1px outline. UXP draws a CSS border (rounded or
+// square, on whole pixels or not) as two half-bright pixels on its top and left
+// edges and one on the others, so the Settings footer's badges and buttons
+// looked soft and thick in the CCX next to the ZXP; filled boxes come out sharp
+// (measured from screenshots, 2026-11-22). So the outline is the outer box's
+// fill, showing round a 1px inset inner box. Fills must be opaque: the inner
+// one hides the outline colour behind it. Content goes in `box._ocInner`;
+// `_crispTint(box, outline, fill)` recolours both (hover).
+function _crispBox(h, pad, outline, fill, display) {
+  var box = document.createElement('div');
+  box.style.cssText = 'display:' + (display || 'flex') + ';box-sizing:border-box;height:' + h + 'px;padding:1px;'
+    + 'border-radius:4px;background-color:' + outline + ';flex-shrink:0;';
+  var inner = document.createElement('div');
+  inner.style.cssText = 'display:flex;align-items:center;justify-content:center;box-sizing:border-box;height:' + (h - 2) + 'px;'
+    + 'padding:' + pad + ';border-radius:3px;background-color:' + fill + ';white-space:nowrap;';
+  box.appendChild(inner);
+  box._ocInner = inner;
+  return box;
+}
+function _crispTint(box, outline, fill) {
+  box.style.backgroundColor = outline;
+  box._ocInner.style.backgroundColor = fill;
 }
 
 function _showSettingsModal() {
@@ -9119,46 +9130,51 @@ function _showSettingsModal() {
   var ghIc = '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="4.6" y="4.6" width="7" height="7" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.4 2.5H3.7a1.2 1.2 0 00-1.2 1.2v5.7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>', ghTip = 'Copy the GitHub link';
   ghIc = '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M8.2 2.5h3.3v3.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M11.5 2.5L6.6 7.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 8.6v2.1a.8.8 0 01-.8.8H3.3a.8.8 0 01-.8-.8V4.6a.8.8 0 01.8-.8h2.1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'; // [exchange-strip-line]
   ghTip = 'Open OpenCurve on GitHub in your browser'; // [exchange-strip-line]
-  var ghLink = document.createElement('span');
-  ghLink.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;height:24px;flex-shrink:0;margin-left:8px;padding:3px 7px;border:1px solid #2b507c;border-radius:4px;'
-    + 'background-color:rgba(74,158,255,0.08);color:#4a9eff;font-size:12px;font-weight:600;letter-spacing:0.5px;line-height:16px;cursor:pointer;white-space:nowrap;';
+  // Fills are the old translucent blues (0.08, hover 0.15) flattened onto #111
+  var ghLink = _crispBox(24, '3px 7px', '#2b507c', '#161c24', 'inline-flex');
+  ghLink.style.marginLeft = '8px';
+  ghLink.style.cursor = 'pointer';
+  ghLink._ocInner.style.cssText += 'color:#4a9eff;font-size:12px;font-weight:600;letter-spacing:0.5px;line-height:16px;';
   var ghIcon = document.createElement('span');
   ghIcon.style.cssText = 'display:inline-flex;width:12px;height:12px;margin-right:5px;';
   ghIcon.innerHTML = ghIc;
   var ghText = document.createElement('span');
   ghText.textContent = 'GitHub';
-  ghLink.appendChild(ghIcon);
-  ghLink.appendChild(ghText);
+  ghLink._ocInner.appendChild(ghIcon);
+  ghLink._ocInner.appendChild(ghText);
   _attachTooltip(ghLink, ghTip);
-  ghLink.addEventListener('mouseenter', function() { ghLink.style.color = '#8ccfff'; ghLink.style.borderColor = '#6796b8'; ghLink.style.backgroundColor = 'rgba(74,158,255,0.15)'; });
-  ghLink.addEventListener('mouseleave', function() { ghLink.style.color = '#4a9eff'; ghLink.style.borderColor = '#2b507c'; ghLink.style.backgroundColor = 'rgba(74,158,255,0.08)'; });
+  ghLink.addEventListener('mouseenter', function() { ghLink._ocInner.style.color = '#8ccfff'; _crispTint(ghLink, '#6796b8', '#1a2635'); });
+  ghLink.addEventListener('mouseleave', function() { ghLink._ocInner.style.color = '#4a9eff'; _crispTint(ghLink, '#2b507c', '#161c24'); });
   ghLink.addEventListener('click', function() {
     _openUrl('https://github.com/fayewave/OpenCurve');
   });
   footerLeft.appendChild(ghLink);
 
-  var resetRow = document.createElement('div');
-  resetRow.style.cssText = 'display:flex;align-items:center;justify-content:center;box-sizing:border-box;height:28px;white-space:nowrap;padding:5px 10px;cursor:pointer;color:#e4e4e4;font-size:13px;line-height:16px;background-color:transparent;border:1px solid #4c4c4c;border-radius:4px;flex-shrink:0;';
+  var resetRow = _crispBox(28, '5px 10px', '#4c4c4c', '#111111');
+  resetRow.style.cursor = 'pointer';
+  resetRow._ocInner.style.cssText += 'color:#e4e4e4;font-size:13px;line-height:16px;';
   var resetLabel = document.createElement('span');
   resetLabel.textContent = 'Reset All Settings';
   _attachTooltip(resetRow, 'Restore defaults and remove all presets');
-  resetRow.appendChild(resetLabel);
-  resetRow.addEventListener('mouseenter', function() { resetRow.style.borderColor = '#888888'; resetRow.style.backgroundColor = 'rgba(255,255,255,0.06)'; });
-  resetRow.addEventListener('mouseleave', function() { resetRow.style.borderColor = '#4c4c4c'; resetRow.style.backgroundColor = 'transparent'; });
+  resetRow._ocInner.appendChild(resetLabel);
+  resetRow.addEventListener('mouseenter', function() { _crispTint(resetRow, '#888888', '#1f1f1f'); });
+  resetRow.addEventListener('mouseleave', function() { _crispTint(resetRow, '#4c4c4c', '#111111'); });
   resetRow.addEventListener('click', function() {
     modal.remove();
     _confirmReset();
   });
 
   // Report an Issue: opens the GitHub issues page in the browser
-  var issueRow = document.createElement('div');
-  issueRow.style.cssText = 'display:flex;align-items:center;justify-content:center;box-sizing:border-box;height:28px;white-space:nowrap;padding:5px 10px;margin-right:8px;cursor:pointer;color:#e4e4e4;font-size:13px;line-height:16px;background-color:transparent;border:1px solid #4c4c4c;border-radius:4px;flex-shrink:0;';
+  var issueRow = _crispBox(28, '5px 10px', '#4c4c4c', '#111111');
+  issueRow.style.cursor = 'pointer';
+  issueRow.style.marginRight = '8px';
+  issueRow._ocInner.style.cssText += 'color:#e4e4e4;font-size:13px;line-height:16px;';
   var issueLabel = document.createElement('span');
   issueLabel.textContent = 'Report an Issue';
   _attachTooltip(issueRow, 'Open the OpenCurve issues page on GitHub');
-  issueRow.appendChild(issueLabel);
-  issueRow.addEventListener('mouseenter', function() { issueRow.style.borderColor = '#888888'; issueRow.style.backgroundColor = 'rgba(255,255,255,0.06)'; });
-  issueRow.addEventListener('mouseleave', function() { issueRow.style.borderColor = '#4c4c4c'; issueRow.style.backgroundColor = 'transparent'; });
+  issueRow._ocInner.appendChild(issueLabel);
+  issueRow.addEventListener('mouseenter', function() { _crispTint(issueRow, '#888888', '#1f1f1f'); });
+  issueRow.addEventListener('mouseleave', function() { _crispTint(issueRow, '#4c4c4c', '#111111'); });
   issueRow.addEventListener('click', function() {
     _openUrl('https://github.com/fayewave/OpenCurve/issues');
   });
@@ -9192,7 +9208,6 @@ function _showSettingsModal() {
   modal.appendChild(content);
   modal.appendChild(footer);
   document.body.appendChild(modal);
-  _snapWidths([madeByText, verBadge, edBadge, ghLink, issueRow, resetRow]);
   _layoutFooter(vw);
 
   // Resize with the panel
