@@ -3938,7 +3938,7 @@ function initPanel() {
   function _tbChipLayout(w) {
     var chip = document.getElementById('preset-edit-chip');
     if (!chip) return;
-    var room = w - _TB_NEED - 8; // the chip's own left margin
+    var room = w - _TB_NEED - 5; // the chip's own left margin
     var fits = room >= _PE_CHIP_MIN;
     var mw = fits ? Math.floor(room) + 'px' : '';
     if (mw !== _peChipMaxW) { _peChipMaxW = mw; chip.style.maxWidth = mw; }
