@@ -14,6 +14,17 @@
 
   var cs = new CSInterface();
 
+  // Chromium's own right-click menu (Back, Forward, Print..., View page source)
+  // must never show in the panel. Capture phase on window, so it covers every
+  // element; it only cancels the browser's default, so the panel's own menus
+  // (preset tiles, graph, timeline, rows) still open from their listeners.
+  // Text fields keep the native menu for Cut / Copy / Paste.
+  window.addEventListener('contextmenu', function(e) {
+    var t = e.target, tag = t && t.tagName ? String(t.tagName).toUpperCase() : '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || (t && t.isContentEditable)) return;
+    e.preventDefault();
+  }, true);
+
   // ─── Poll state ────────────────────────────────────────────────────────
   var POLL_MS        = 300; // slightly slower than UXP (200ms) due to evalScript overhead
   var pollTimer      = null;
