@@ -8136,31 +8136,19 @@ function _refreshUpdateNotification() {
   _applyPresetLayout(true);
 }
 
+// Settings > Updates card: the button and the line under the title follow the
+// last check (Check now, or Download once a newer release is out)
 function _applyUpdateBtnState(btn, label) {
-  var old = btn.querySelector('._update-icon');
-  if (old) btn.removeChild(old);
-  var oldLeft = btn.querySelector('._update-left-icon');
-  if (oldLeft) btn.removeChild(oldLeft);
-  var leftIcon = document.createElement('span');
-  leftIcon.className = '_update-left-icon';
-  leftIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
+  var txt = btn._ocText || btn;
   if (_updateAvailable) {
-    btn.style.backgroundColor = 'rgba(240,180,0,0.08)';
-    label.textContent = 'Update Available';
+    txt.textContent = 'Download';
+    label.textContent = 'Version ' + _latestVersion + ' is out (you have v' + CURRENT_VERSION + ')';
     label.style.color = '#e6b800';
-    leftIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill="none" d="M13.5 8a5.5 5.5 0 11-1.5-3.8" stroke="#e6b800" stroke-width="1.6" stroke-linecap="round"/><polyline fill="none" points="12,2 12,5.5 8.5,5.5" stroke="#e6b800" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    var icon = document.createElement('span');
-    icon.className = '_update-icon';
-    icon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
-    icon.innerHTML = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M7 2L13 12H1L7 2Z" stroke="#e6b800" stroke-width="1.8" stroke-linejoin="round"/><line x1="7" y1="6" x2="7" y2="9" stroke="#e6b800" stroke-width="1.8" stroke-linecap="round"/><circle cx="7" cy="10.5" r="0.75" fill="#e6b800"/></svg>';
-    btn.appendChild(icon);
   } else {
-    btn.style.backgroundColor = 'rgba(230,184,0,0.08)';
-    label.textContent = 'Check for Updates';
-    label.style.color = '#d4d4d4';
-    leftIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill="none" d="M13.5 8a5.5 5.5 0 11-1.5-3.8" stroke="#e6b800" stroke-width="1.6" stroke-linecap="round"/><polyline fill="none" points="12,2 12,5.5 8.5,5.5" stroke="#e6b800" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    txt.textContent = 'Check now';
+    label.textContent = 'You have v' + CURRENT_VERSION + (_latestVersion ? ', the latest' : '');
+    label.style.color = '#8c8c8c';
   }
-  btn.insertBefore(leftIcon, btn.firstChild);
 }
 
 function _openReleasesPage() {
@@ -8756,14 +8744,6 @@ function _showSettingsModal() {
   // the top one could be closed and the buried one kept its body ResizeObserver
   // running for the session. The patched remove() disconnects that observer.
   if (document.getElementById('settings-modal')) return;
-  // Sheen like the rest of the panel: a white gradient, brighter at the left, over
-  // each control's own colour (0.045 on rows, 0.06 on buttons, a step more on hover).
-  // The colour goes to backgroundColor and the gradient to backgroundImage: the
-  // background shorthand would drop the sheen.
-  function _tint(el, color, sheen) {
-    el.style.backgroundColor = color;
-    el.style.backgroundImage = sheen ? 'linear-gradient(to right, rgba(255,255,255,' + sheen + '), rgba(255,255,255,0))' : '';
-  }
 
   var modal = document.createElement('div');
   modal.id = 'settings-modal';
@@ -8771,9 +8751,86 @@ function _showSettingsModal() {
   var vh = document.documentElement.clientHeight || document.body.clientHeight;
   modal.style.cssText = 'position:fixed;top:0;left:0;width:'+vw+'px;height:'+vh+'px;background:#111111;z-index:9998;display:flex;flex-direction:column;font-family:system-ui,sans-serif;';
 
-  // Logo + close row
+  // Layout (2.1.0): a column of rounded cards, each a title, a grey line saying
+  // what it does and its control at the right (a switch, the spacing picker, a
+  // button), two columns once the panel is wide enough. Outlines are an outer
+  // box filled with the outline colour round an opaque inner box: UXP draws a
+  // 1px CSS border soft (see _crispBox).
+  var _uxpLift = 1;
+  var _CARD_LINE = '#262626', _CARD_FILL = '#191919', _CARD_HOT = '#1f1f1f';
+  var _SW_ON = '#4a9eff', _SW_OFF = '#3a3a3a';
+  function _el(css, text) {
+    var e = document.createElement('div');
+    e.style.cssText = css;
+    if (text) e.textContent = text;
+    return e;
+  }
+  // Outlined box: `outline` round a 1px inset `fill`, content in box._ocIn
+  function _outlined(css, innerCss, outline, fill, r) {
+    var box = _el('box-sizing:border-box;padding:1px;flex-shrink:0;border-radius:' + r + 'px;background-color:' + outline + ';' + css);
+    var inner = _el('box-sizing:border-box;border-radius:' + (r - 1) + 'px;background-color:' + fill + ';' + innerCss);
+    box.appendChild(inner);
+    box._ocIn = inner;
+    return box;
+  }
+  // One setting: title, description, control at the right, optional extra row
+  // under them (the swatches). onClick makes the whole card the control.
+  function _card(title, desc, control, onClick, below) {
+    var card = _outlined('margin-bottom:6px;', 'display:flex;flex-direction:column;padding:10px 12px 11px 14px;min-height:58px;justify-content:center;'
+      + (onClick ? 'cursor:pointer;' : ''), _CARD_LINE, _CARD_FILL, 8);
+    var row = _el('display:flex;flex-direction:row;align-items:center;');
+    var text = _el('display:flex;flex-direction:column;flex:1 1 auto;min-width:0;margin-right:12px;');
+    text.appendChild(_el('color:#ececec;font-size:13px;font-weight:600;line-height:18px;', title));
+    var d = _el('color:#8c8c8c;font-size:12px;line-height:16px;margin-top:2px;', desc);
+    text.appendChild(d);
+    row.appendChild(text);
+    if (control) row.appendChild(control);
+    card._ocIn.appendChild(row);
+    if (below) card._ocIn.appendChild(below);
+    card._ocDesc = d;
+    if (onClick) {
+      card.addEventListener('mouseenter', function() { card._ocIn.style.backgroundColor = _CARD_HOT; });
+      card.addEventListener('mouseleave', function() { card._ocIn.style.backgroundColor = _CARD_FILL; });
+      card.addEventListener('click', onClick);
+    }
+    return card;
+  }
+  // On/off switch: a pill with a round knob, blue and right while on
+  function _switch(on) {
+    var track = _el('position:relative;flex-shrink:0;width:36px;height:20px;border-radius:10px;');
+    var knob = _el('position:absolute;top:3px;width:14px;height:14px;border-radius:7px;');
+    track.appendChild(knob);
+    track._ocSet = function(v) {
+      track.style.backgroundColor = v ? _SW_ON : _SW_OFF;
+      knob.style.backgroundColor  = v ? '#ffffff' : '#9a9a9a';
+      knob.style.left             = v ? '19px' : '3px';
+    };
+    track._ocSet(on);
+    return track;
+  }
+  // A switch card: get() reads the setting, set(v) applies and saves it
+  function _toggleCard(title, desc, get, set) {
+    var sw = _switch(get());
+    return _card(title, desc, sw, function() { set(!get()); sw._ocSet(get()); });
+  }
+  // A small outlined button (the Updates card's)
+  function _cardBtn(label, onClick) {
+    var b = _outlined('height:30px;cursor:pointer;', 'display:flex;align-items:center;justify-content:center;height:28px;padding:' + (4 - _uxpLift) + 'px 12px ' + (4 + _uxpLift) + 'px;'
+      + 'color:#e4e4e4;font-size:13px;line-height:18px;white-space:nowrap;', '#3c3c3c', '#222222', 6);
+    var t = document.createElement('span');
+    t.textContent = label;
+    b._ocIn.appendChild(t);
+    b._ocText = t;
+    b.addEventListener('mouseenter', function() { b.style.backgroundColor = '#5a5a5a'; b._ocIn.style.backgroundColor = '#2a2a2a'; });
+    b.addEventListener('mouseleave', function() { b.style.backgroundColor = '#3c3c3c'; b._ocIn.style.backgroundColor = '#222222'; });
+    b.addEventListener('click', function(ev) { ev.stopPropagation(); onClick(); });
+    return b;
+  }
+
+  // Header: the wordmark and a plain close cross. The whole banner still closes
+  // the modal; hovering it lights the cross.
   var header = document.createElement('div');
-  header.style.cssText = 'display:flex;align-items:center;padding:10px 8px 10px 12px;border-bottom:4px solid #080808;flex-shrink:0;cursor:pointer;transition:background 0.12s;';
+  header.style.cssText = 'display:flex;align-items:center;padding:12px 10px 4px 14px;flex-shrink:0;cursor:pointer;';
   var logoWrap = document.createElement('div');
   logoWrap.style.cssText = 'flex:1;display:flex;align-items:center;justify-content:flex-start;';
   var logo = document.createElement('img');
@@ -8784,16 +8841,12 @@ function _showSettingsModal() {
   logo.style.cssText = 'width:145px;height:22px;opacity:0.9;margin-top:6px;'; // margin centres 3px lower, the artwork sat high
   logoWrap.appendChild(logo);
   var closeBtn = document.createElement('div');
-  closeBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 12 12" fill="none"><line x1="2.5" y1="2.5" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="9.5" y1="2.5" x2="2.5" y2="9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+  closeBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 12 12" fill="none"><line x1="2.5" y1="2.5" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="9.5" y1="2.5" x2="2.5" y2="9.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
   _attachTooltip(closeBtn, 'Close settings');
-  // A 22px square like the row pin/undo buttons, in the panel's red
-  closeBtn.style.cssText = 'display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:3px;flex-shrink:0;cursor:pointer;background-color:rgba(255,144,144,0.18);background-image:linear-gradient(to right, rgba(255,255,255,0.06), rgba(255,255,255,0));color:#ff9090;transition:background 0.12s,color 0.12s;';
-  // The whole banner is the close control: hovering anywhere on it lights the
-  // banner and the cross, and a press anywhere on it closes the modal
+  closeBtn.style.cssText = 'display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:6px;flex-shrink:0;cursor:pointer;color:#bdbdbd;';
   function _closeHot(on) {
-    _tint(closeBtn, on ? 'rgba(255,144,144,0.45)' : 'rgba(255,144,144,0.18)', on ? 0.09 : 0.06);
-    closeBtn.style.color      = on ? '#ffffff' : '#ff9090';
-    header.style.background   = on ? 'rgba(255,255,255,0.05)' : '';
+    closeBtn.style.backgroundColor = on ? 'rgba(255,255,255,0.08)' : '';
+    closeBtn.style.color           = on ? '#ffffff' : '#bdbdbd';
   }
   header.addEventListener('mouseenter', function() { _closeHot(true); });
   header.addEventListener('mouseleave', function() { _closeHot(false); });
@@ -8801,12 +8854,9 @@ function _showSettingsModal() {
   header.appendChild(logoWrap);
   header.appendChild(closeBtn);
 
-  // Content
+  // Content: the scroller, holding the card columns
   var content = document.createElement('div');
-  var dualCol = vw > 520;
-  content.style.cssText = dualCol
-    ? 'flex:1;overflow-y:auto;display:flex;flex-direction:row;'
-    : 'flex:1;overflow-y:auto;display:flex;flex-direction:column;';
+  content.style.cssText = 'flex:1;overflow-y:auto;display:flex;flex-direction:column;align-items:center;';
   function _wireContent(c) { // re-run on the fresh element _refreshScroller swaps in after a scroll
     content = c;
     _smoothWheel(c);           // UXP: proper wheel steps with easing
@@ -8815,28 +8865,70 @@ function _showSettingsModal() {
     c._ocRewire = _wireContent;
   }
   _wireContent(content);
-  var rowsCol = document.createElement('div');
-  rowsCol.style.cssText = dualCol ? 'flex:1;display:flex;flex-direction:column;' : 'flex-shrink:0;display:flex;flex-direction:column;';
+  var cols = _el('display:flex;flex-direction:row;align-items:flex-start;flex-shrink:0;box-sizing:border-box;width:100%;max-width:1000px;padding:10px 12px 6px;');
+  var colA = _el('display:flex;flex-direction:column;flex:1 1 0;min-width:0;');
+  var colB = _el('display:flex;flex-direction:column;flex:1 1 0;min-width:0;');
+  cols.appendChild(colA);
+  cols.appendChild(colB);
+  content.appendChild(cols);
 
-  // Graph line colour section
-  var colorSection = document.createElement('div');
-  colorSection.style.cssText = dualCol
-    ? 'padding:10px 12px 12px;width:50%;box-sizing:border-box;border-left:4px solid #080808;'
-    : 'padding:10px 12px 12px;border-top:4px solid #080808;flex-shrink:0;';
+  // Left column: what the panel shows and how the graph behaves
+  var cardsA = [
+    _toggleCard('Graph', 'The curve editor. Off, the presets fill the panel',
+      function() { return _graphVisible; }, function(v) { _setGraphVisible(v); }),
+    _toggleCard('Timeline', 'Keyframe lanes beside the property rows',
+      function() { return _tlVisible; }, function(v) { _setTimelineVisible(v); }),
+    _toggleCard('Ghost', 'While you drag, the curve\'s starting shape stays faintly behind it',
+      function() { return _dragGhost; }, function(v) { _setDragGhost(v); }),
+    _toggleCard('Hover Preview', 'A dot runs along a preset\'s thumbnail to show the pace of the ease',
+      function() { return _animationsOn; }, function(v) {
+        _animationsOn = v;
+        localStorage.setItem(_ANIM_KEY, v ? 'on' : 'off');
+      }),
+    _toggleCard('Auto Zoom', 'Zooms out when a curve goes past the box, and back when it fits',
+      function() { return _autoZoomOn; }, function(v) {
+        _autoZoomOn = v;
+        localStorage.setItem(_AUTO_ZOOM_KEY, v ? 'on' : 'off');
+        // Off: go back to the user's own zoom; on: fit the curve on the graph now
+        if (!v && _autoZoomFrom !== null) { _zoomAnimTo(_autoZoomFrom); _autoZoomFrom = null; }
+        else if (v) _autoZoomFor(getState().curve);
+      }),
+  ];
 
-  var colorLabel = document.createElement('div');
-  colorLabel.textContent = 'Theme';
-  colorLabel.style.cssText = 'color:#d4d4d4;font-size:14px;margin-bottom:10px;';
-  colorSection.appendChild(colorLabel);
+  // Keyframe spacing: a segmented picker, the active step raised
+  var densSteps = [1, 2, 4];
+  var densBtnEls = [];
+  var densPick = _outlined('height:30px;', 'display:flex;flex-direction:row;height:28px;padding:2px;', '#2e2e2e', '#121212', 6);
+  function _densPaint() {
+    densBtnEls.forEach(function(el, idx) {
+      var a = densSteps[idx] === _bakeDensity;
+      el.style.backgroundColor = a ? '#333333' : (el._ocHot ? '#222222' : 'transparent');
+      el.style.color = a ? '#ffffff' : '#8c8c8c';
+    });
+  }
+  densSteps.forEach(function(step, idx) {
+    var db = _el('display:flex;align-items:center;justify-content:center;box-sizing:border-box;height:24px;min-width:44px;padding:'
+      + (3 - _uxpLift) + 'px 8px ' + (3 + _uxpLift) + 'px;border-radius:4px;font-size:12px;line-height:18px;cursor:pointer;white-space:nowrap;'
+      + (idx ? 'margin-left:2px;' : ''), step + ' fr');
+    db.addEventListener('mouseenter', function() { db._ocHot = true; _densPaint(); });
+    db.addEventListener('mouseleave', function() { db._ocHot = false; _densPaint(); });
+    db.addEventListener('click', function() {
+      _bakeDensity = step;
+      localStorage.setItem(_DENSITY_KEY, step);
+      _densPaint();
+    });
+    densBtnEls.push(db);
+    densPick._ocIn.appendChild(db);
+  });
+  _densPaint();
+  var densCard = _card('Keyframe Spacing', 'Every frame follows the curve exactly; 2 or 4 write fewer keyframes, straight between', densPick);
 
-  // Swatches
-  // The default green first; red and orange are the property panel's --red / --amber tones
+  // Theme colour: swatches under the text, the hex field at the right
   var swatchColors = ['#ffffff','#4a9eff','#ff9090','#f0a030','#c97ff0','#ff6eb4','#38fbb2','#aaaaaa'];
-  var swatchRow = document.createElement('div');
-  swatchRow.style.cssText = 'display:flex;margin-bottom:4px;flex-wrap:wrap;'; // spacing via swatch margins (UXP ignores flex gap)
+  var swatchRow = _el('display:flex;flex-wrap:wrap;margin-top:10px;'); // spacing via swatch margins (UXP ignores flex gap)
   swatchColors.forEach(function(col) {
     var sw = document.createElement('div');
-    sw.style.cssText = 'width:22px;height:22px;background:'+col+';cursor:pointer;border:2px solid '+(col===_curveColor?'#fff':'transparent')+';flex-shrink:0;margin-right:6px;margin-bottom:6px;';
+    sw.style.cssText = 'width:22px;height:22px;border-radius:6px;background:'+col+';cursor:pointer;border:2px solid '+(col===_curveColor?'#fff':'transparent')+';box-sizing:border-box;flex-shrink:0;margin-right:6px;';
     sw.addEventListener('mouseenter', function() {
       if (sw.style.borderColor !== '#ffffff') sw.style.borderColor = 'rgba(255,255,255,0.45)';
     });
@@ -8853,31 +8945,22 @@ function _showSettingsModal() {
     });
     swatchRow.appendChild(sw);
   });
-  colorSection.appendChild(swatchRow);
-
-  // Hex input
-  var hexRow = document.createElement('div');
-  hexRow.style.cssText = 'display:flex;align-items:center;';
-  var hexLabel = document.createElement('span');
-  hexLabel.textContent = 'Hex';
-  hexLabel.style.cssText = 'color:#888;font-size:13px;';
+  var hexRow = _el('display:flex;align-items:center;flex-shrink:0;');
   var hexInput = document.createElement('input');
   hexInput.type = 'text';
   hexInput.value = _curveColor.toUpperCase();
   hexInput.maxLength = 7;
   var hexTf = _mkTextField(13, true, 'hex');
-  hexTf.wrap.style.width = '90px'; hexTf.wrap.style.marginLeft = '8px'; hexTf.wrap.style.flexShrink = '0';
+  hexTf.wrap.style.width = '90px'; hexTf.wrap.style.flexShrink = '0';
   hexTf.wrap.replaceChild(hexInput, hexTf.input); // keep the input the rest of this code refers to
   hexInput.className = hexTf.input.className;
   var hexPreview = document.createElement('div');
-  hexPreview.style.cssText = 'width:20px;height:20px;background:'+_curveColor+';flex-shrink:0;border:1px solid rgba(255,255,255,0.12);margin-left:8px;';
+  hexPreview.style.cssText = 'width:22px;height:22px;border-radius:6px;background:'+_curveColor+';flex-shrink:0;margin-left:8px;';
   hexInput.addEventListener('input', function() {
     var val = hexInput.value;
-    // Strip anything that isn't # or hex digits
+    // Strip anything that isn't # or hex digits, start with #, cap at 7 chars
     val = val.toUpperCase().replace(/[^#0-9A-F]/g, '');
-    // Ensure it starts with #
     if (val.charAt(0) !== '#') val = '#' + val;
-    // Cap at 7 chars
     val = val.slice(0, 7);
     hexInput.value = val;
     // Apply immediately once we have a full valid code
@@ -8891,23 +8974,16 @@ function _showSettingsModal() {
   hexInput.addEventListener('blur', function() {
     if (!/^#[0-9A-F]{6}$/.test(hexInput.value)) hexInput.value = _curveColor.toUpperCase();
   });
-  hexRow.appendChild(hexLabel);
   hexRow.appendChild(hexTf.wrap);
   hexRow.appendChild(hexPreview);
-  colorSection.appendChild(hexRow);
+  var colorCard = _card('Theme Colour', 'The curve, its handles and the active preset', hexRow, null, swatchRow);
+
+  // Right column: baking, the look, updates
+  var cardsB = [densCard, colorCard];
   // [exchange-strip]
-  // Check for updates row
-  var updatesRow = document.createElement('div');
-  updatesRow.id = '_updates-row';
-  updatesRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid #080808;cursor:pointer;background-color:rgba(230,184,0,0.08);background-image:linear-gradient(to right, rgba(255,255,255,0.045), rgba(255,255,255,0));';
-  var updatesLabel = document.createElement('span');
-  updatesLabel.id = '_updates-label';
-  updatesLabel.style.cssText = 'font-size:14px;flex:1;';
-  updatesRow.appendChild(updatesLabel);
-  _applyUpdateBtnState(updatesRow, updatesLabel);
-  updatesRow.addEventListener('mouseenter', function() { _tint(updatesRow, 'rgba(230,184,0,0.15)', 0.07); });
-  updatesRow.addEventListener('mouseleave', function() { _tint(updatesRow, 'rgba(230,184,0,0.08)', 0.045); });
-  updatesRow.addEventListener('click', function() {
+  // Updates: the line under the title says where you stand, the button checks
+  // GitHub (or opens the release once a newer one is out); _applyUpdateBtnState
+  var updBtn = _cardBtn('Check now', function() {
     if (_updateAvailable) {
       modal.remove();
       _openReleasesPage();
@@ -8915,234 +8991,37 @@ function _showSettingsModal() {
       _checkForUpdates();
     }
   });
-  rowsCol.appendChild(updatesRow);
-
-  // Update notifications toggle row
-  var notifRow = document.createElement('div');
-  notifRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid #080808;cursor:pointer;';
-  var notifLabel = document.createElement('span');
-  notifLabel.style.cssText = 'font-size:14px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d4d4d4;';
-  notifLabel.textContent = 'Update Notifications';
-  var notifCheck = document.createElement('span');
-  notifCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
-  // [/exchange-strip]
-  var _svgCheck = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><polyline points="1.5,6 4.5,9 10.5,3" stroke="#3ddc84" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  var _svgCross = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><line x1="2" y1="2" x2="10" y2="10" stroke="#ff9090" stroke-width="1.8" stroke-linecap="round"/><line x1="10" y1="2" x2="2" y2="10" stroke="#ff9090" stroke-width="1.8" stroke-linecap="round"/></svg>';
-  // [exchange-strip]
-  function _updateNotifCheck() {
-    notifCheck.innerHTML = _updateNotifsOn ? _svgCheck : _svgCross;
-    notifLabel.textContent = 'Update Notifications ' + (_updateNotifsOn ? 'On' : 'Off');
-    _tint(notifRow, _updateNotifsOn ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)', 0.045);
-  }
-  var notifIcon = document.createElement('span');
-  notifIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
-  notifIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill="none" d="M8 2a4.5 4.5 0 014.5 4.5v3l1 1.5H2.5l1-1.5V6.5A4.5 4.5 0 018 2z" stroke="#b0b0b0" stroke-width="1.8" stroke-linejoin="round"/><path fill="none" d="M6 12.5a2 2 0 004 0" stroke="#b0b0b0" stroke-width="1.8" stroke-linecap="round"/></svg>';
-  _updateNotifCheck();
-  notifRow.appendChild(notifIcon);
-  notifRow.appendChild(notifLabel);
-  notifRow.appendChild(notifCheck);
-  notifRow.addEventListener('mouseenter', function() { _tint(notifRow, _updateNotifsOn ? 'rgba(61,220,132,0.15)' : 'rgba(255,144,144,0.15)', 0.07); });
-  notifRow.addEventListener('mouseleave', function() { _tint(notifRow, _updateNotifsOn ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)', 0.045); });
-  notifRow.addEventListener('click', function() {
-    _updateNotifsOn = !_updateNotifsOn;
-    localStorage.setItem(_UPDATE_NOTIF_KEY, _updateNotifsOn ? 'on' : 'off');
-    _updateNotifCheck();
-    _refreshUpdateNotification();
-  });
-  rowsCol.appendChild(notifRow);
-  // [/exchange-strip]
-
-  // Graph visibility toggle row
-  var graphRow = document.createElement('div');
-  graphRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid #080808;cursor:pointer;';
-  var graphLabel = document.createElement('span');
-  graphLabel.style.cssText = 'font-size:14px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d4d4d4;';
-  graphLabel.textContent = 'Graph';
-  var graphCheck = document.createElement('span');
-  graphCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
-  function _updateGraphCheck() {
-    graphCheck.innerHTML = _graphVisible ? _svgCheck : _svgCross;
-    graphLabel.textContent = 'Graph ' + (_graphVisible ? 'On' : 'Off');
-    _tint(graphRow, _graphVisible ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)', 0.045);
-  }
-  var graphIcon = document.createElement('span');
-  graphIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
-  graphIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2.5 13.5C6 13.5 10 2.5 13.5 2.5" fill="none" stroke="#b0b0b0" stroke-width="1.7" stroke-linecap="round"/><circle cx="2.5" cy="13.5" r="1.4" fill="#b0b0b0"/><circle cx="13.5" cy="2.5" r="1.4" fill="#b0b0b0"/></svg>';
-  _updateGraphCheck();
-  graphRow.appendChild(graphIcon);
-  graphRow.appendChild(graphLabel);
-  graphRow.appendChild(graphCheck);
-  graphRow.addEventListener('mouseenter', function() { _tint(graphRow, _graphVisible ? 'rgba(61,220,132,0.15)' : 'rgba(255,144,144,0.15)', 0.07); });
-  graphRow.addEventListener('mouseleave', function() { _tint(graphRow, _graphVisible ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)', 0.045); });
-  graphRow.addEventListener('click', function() {
-    _setGraphVisible(!_graphVisible);
-    _updateGraphCheck();
-  });
-  rowsCol.appendChild(graphRow);
-
-  // Timeline visibility toggle row (the keyframe strip along the bottom of the panel)
-  var tlRow = document.createElement('div');
-  tlRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid #080808;cursor:pointer;';
-  var tlLabel = document.createElement('span');
-  tlLabel.style.cssText = 'font-size:14px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d4d4d4;';
-  var tlCheck = document.createElement('span');
-  tlCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
-  function _updateTlCheck() {
-    tlCheck.innerHTML = _tlVisible ? _svgCheck : _svgCross;
-    tlLabel.textContent = 'Timeline ' + (_tlVisible ? 'On' : 'Off');
-    _tint(tlRow, _tlVisible ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)', 0.045);
-  }
-  var tlIcon = document.createElement('span');
-  tlIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
-  tlIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><line x1="1.5" y1="8" x2="14.5" y2="8" stroke="#b0b0b0" stroke-width="1.4"/><polygon points="5,5.2 7.8,8 5,10.8 2.2,8" fill="#b0b0b0"/><polygon points="11,5.2 13.8,8 11,10.8 8.2,8" fill="#b0b0b0"/></svg>';
-  _updateTlCheck();
-  tlRow.appendChild(tlIcon);
-  tlRow.appendChild(tlLabel);
-  tlRow.appendChild(tlCheck);
-  tlRow.addEventListener('mouseenter', function() { _tint(tlRow, _tlVisible ? 'rgba(61,220,132,0.15)' : 'rgba(255,144,144,0.15)', 0.07); });
-  tlRow.addEventListener('mouseleave', function() { _tint(tlRow, _tlVisible ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)', 0.045); });
-  tlRow.addEventListener('click', function() {
-    _setTimelineVisible(!_tlVisible);
-    _updateTlCheck();
-  });
-  rowsCol.appendChild(tlRow);
-
-  // Ghost toggle row (the curve's press-time shape behind a drag; also the G key)
-  var ghostRow = document.createElement('div');
-  ghostRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid #080808;cursor:pointer;';
-  _attachTooltip(ghostRow, 'While you drag a handle, point or the A-curve peak, the curve\'s starting shape stays faintly behind it');
-  var ghostLabel = document.createElement('span');
-  ghostLabel.style.cssText = 'font-size:14px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d4d4d4;';
-  var ghostCheck = document.createElement('span');
-  ghostCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
-  function _updateGhostCheck() {
-    ghostCheck.innerHTML = _dragGhost ? _svgCheck : _svgCross;
-    ghostLabel.textContent = 'Ghost ' + (_dragGhost ? 'On' : 'Off');
-    _tint(ghostRow, _dragGhost ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)', 0.045);
-  }
-  var ghostIcon = document.createElement('span');
-  ghostIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
-  ghostIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1.3 11.3C6.7 11.3 7.3 2 13.3 2" fill="none" stroke="#b0b0b0" stroke-opacity="0.35" stroke-width="1.7" stroke-linecap="round"/><path d="M2.7 14C8.7 14 8.7 4.7 14.7 4.7" fill="none" stroke="#b0b0b0" stroke-width="1.7" stroke-linecap="round"/></svg>';
-  _updateGhostCheck();
-  ghostRow.appendChild(ghostIcon);
-  ghostRow.appendChild(ghostLabel);
-  ghostRow.appendChild(ghostCheck);
-  ghostRow.addEventListener('mouseenter', function() { _tint(ghostRow, _dragGhost ? 'rgba(61,220,132,0.15)' : 'rgba(255,144,144,0.15)', 0.07); });
-  ghostRow.addEventListener('mouseleave', function() { _tint(ghostRow, _dragGhost ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)', 0.045); });
-  ghostRow.addEventListener('click', function() {
-    _setDragGhost(!_dragGhost);
-    _updateGhostCheck();
-  });
-  rowsCol.appendChild(ghostRow);
-
-  // Hover Preview toggle row (the dot that runs along a preset tile's thumbnail)
-  var animRow = document.createElement('div');
-  animRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid #080808;cursor:pointer;';
-  _attachTooltip(animRow, 'While you hover a preset, a dot runs along its thumbnail to show the pace of the ease');
-  var animLabel = document.createElement('span');
-  animLabel.style.cssText = 'font-size:14px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d4d4d4;';
-  var animCheck = document.createElement('span');
-  animCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
-  function _updateAnimCheck() {
-    animCheck.innerHTML = _animationsOn ? _svgCheck : _svgCross;
-    animLabel.textContent = 'Hover Preview ' + (_animationsOn ? 'On' : 'Off');
-    _tint(animRow, _animationsOn ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)', 0.045);
-  }
-  var animIcon = document.createElement('span');
-  animIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
-  animIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1.7 14.3C8 14.3 8 1.7 14.3 1.7" fill="none" stroke="#b0b0b0" stroke-opacity="0.55" stroke-width="1.7" stroke-linecap="round"/><circle cx="8" cy="8" r="2.5" fill="#b0b0b0"/></svg>';
-  _updateAnimCheck();
-  animRow.appendChild(animIcon);
-  animRow.appendChild(animLabel);
-  animRow.appendChild(animCheck);
-  animRow.addEventListener('mouseenter', function() { _tint(animRow, _animationsOn ? 'rgba(61,220,132,0.15)' : 'rgba(255,144,144,0.15)', 0.07); });
-  animRow.addEventListener('mouseleave', function() { _tint(animRow, _animationsOn ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)', 0.045); });
-  animRow.addEventListener('click', function() {
-    _animationsOn = !_animationsOn;
-    localStorage.setItem(_ANIM_KEY, _animationsOn ? 'on' : 'off');
-    _updateAnimCheck();
-  });
-  rowsCol.appendChild(animRow);
-
-  // Auto Zoom toggle row (the graph zooms out for a curve past the range box)
-  var azRow = document.createElement('div');
-  azRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid #080808;cursor:pointer;';
-  _attachTooltip(azRow, 'Zoom the graph out to show the whole curve when a preset goes past the box, and back when it fits');
-  var azLabel = document.createElement('span');
-  azLabel.style.cssText = 'font-size:14px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d4d4d4;';
-  var azCheck = document.createElement('span');
-  azCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
-  function _updateAzCheck() {
-    azCheck.innerHTML = _autoZoomOn ? _svgCheck : _svgCross;
-    azLabel.textContent = 'Auto Zoom ' + (_autoZoomOn ? 'On' : 'Off');
-    _tint(azRow, _autoZoomOn ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)', 0.045);
-  }
-  var azIcon = document.createElement('span');
-  azIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
-  azIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="6.8" cy="6.8" r="4.6" fill="none" stroke="#b0b0b0" stroke-width="1.6"/><path d="M10.2 10.2L14 14" fill="none" stroke="#b0b0b0" stroke-width="1.7" stroke-linecap="round"/><path d="M4.6 6.8H9" fill="none" stroke="#b0b0b0" stroke-width="1.6" stroke-linecap="round"/></svg>';
-  _updateAzCheck();
-  azRow.appendChild(azIcon);
-  azRow.appendChild(azLabel);
-  azRow.appendChild(azCheck);
-  azRow.addEventListener('mouseenter', function() { _tint(azRow, _autoZoomOn ? 'rgba(61,220,132,0.15)' : 'rgba(255,144,144,0.15)', 0.07); });
-  azRow.addEventListener('mouseleave', function() { _tint(azRow, _autoZoomOn ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)', 0.045); });
-  azRow.addEventListener('click', function() {
-    _autoZoomOn = !_autoZoomOn;
-    localStorage.setItem(_AUTO_ZOOM_KEY, _autoZoomOn ? 'on' : 'off');
-    _updateAzCheck();
-    // Off: go back to the user's own zoom; on: fit the curve on the graph now
-    if (!_autoZoomOn && _autoZoomFrom !== null) { _zoomAnimTo(_autoZoomFrom); _autoZoomFrom = null; }
-    else if (_autoZoomOn) _autoZoomFor(getState().curve);
-  });
-  rowsCol.appendChild(azRow);
-
-  // Keyframe spacing row (how far apart the baked keyframes are)
-  var densRow = document.createElement('div');
-  densRow.style.cssText = 'display:flex;align-items:center;padding:0 0 0 12px;height:36px;border-bottom:1px solid #080808;background-image:linear-gradient(to right, rgba(255,255,255,0.045), rgba(255,255,255,0));';
-  _attachTooltip(densRow, 'How far apart the baked keyframes are. Every frame follows the curve exactly; 2 or 4 frames writes fewer keyframes, with straight lines between them');
-  var densIcon = document.createElement('span');
-  densIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
-  densIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><line x1="1" y1="8" x2="15" y2="8" stroke="#b0b0b0" stroke-width="1.2"/><polygon points="3.5,5.5 6,8 3.5,10.5 1,8" fill="#b0b0b0"/><polygon points="8,5.5 10.5,8 8,10.5 5.5,8" fill="#b0b0b0"/><polygon points="12.5,5.5 15,8 12.5,10.5 10,8" fill="#b0b0b0"/></svg>';
-  var densLabel = document.createElement('span');
-  densLabel.style.cssText = 'font-size:14px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d4d4d4;';
-  densLabel.textContent = 'Keyframe Spacing';
-  var densBtns = document.createElement('div');
-  densBtns.style.cssText = 'display:flex;gap:0;flex-shrink:0;align-self:stretch;';
-  var densSteps = [1, 2, 4];
-  var densBtnEls = [];
-  densSteps.forEach(function(step) {
-    var db = document.createElement('div');
-    db.textContent = step + ' fr';
-    var isActive = _bakeDensity === step;
-    db.style.cssText = 'font-size:12px;padding:0 8px;cursor:pointer;display:flex;align-items:center;justify-content:center;min-width:48px;'
-      + 'color:' + (isActive ? '#3ddc84' : '#666') + ';'
-      + 'background-color:' + (isActive ? 'rgba(61,220,132,0.08)' : 'transparent') + ';'
-      + (isActive ? 'background-image:linear-gradient(to right, rgba(255,255,255,0.06), rgba(255,255,255,0));' : '');
-    db.addEventListener('mouseenter', function() { _tint(db, _bakeDensity === step ? 'rgba(61,220,132,0.15)' : 'rgba(255,255,255,0.05)', 0.09); });
-    db.addEventListener('mouseleave', function() { _tint(db, _bakeDensity === step ? 'rgba(61,220,132,0.08)' : 'transparent', _bakeDensity === step ? 0.06 : 0); });
-    db.addEventListener('click', function() {
-      _bakeDensity = step;
-      localStorage.setItem(_DENSITY_KEY, step);
-      densBtnEls.forEach(function(el, idx) {
-        var a = densSteps[idx] === step;
-        el.style.color = a ? '#3ddc84' : '#666';
-        _tint(el, a ? 'rgba(61,220,132,0.08)' : 'transparent', a ? 0.06 : 0);
-      });
+  updBtn.id = '_updates-row';
+  var updCard = _card('Updates', '', updBtn);
+  updCard._ocDesc.id = '_updates-label';
+  _applyUpdateBtnState(updBtn, updCard._ocDesc);
+  var notifCard = _toggleCard('Update Notifications', 'A tile in the preset list when a new version is out',
+    function() { return _updateNotifsOn; }, function(v) {
+      _updateNotifsOn = v;
+      localStorage.setItem(_UPDATE_NOTIF_KEY, v ? 'on' : 'off');
+      _refreshUpdateNotification();
     });
-    densBtnEls.push(db);
-    densBtns.appendChild(db);
-  });
-  densRow.appendChild(densIcon);
-  densRow.appendChild(densLabel);
-  densRow.appendChild(densBtns);
-  rowsCol.appendChild(densRow);
+  cardsB.push(updCard, notifCard);
+  // [/exchange-strip]
 
-  content.appendChild(rowsCol);
-  content.appendChild(colorSection);
+  // Two columns from 700px, else one: cards move between the columns only when
+  // the mode changes (UXP relayouts on every write)
+  var twoCols = null;
+  function _layoutCards(w) {
+    var two = w >= 700;
+    if (two === twoCols) return;
+    twoCols = two;
+    colB.style.display = two ? 'flex' : 'none';
+    colA.style.marginRight = two ? '8px' : '0px';
+    cardsA.forEach(function(c) { colA.appendChild(c); });
+    cardsB.forEach(function(c) { (two ? colB : colA).appendChild(c); });
+  }
+  _layoutCards(vw);
 
   // Footer
   var footer = document.createElement('div');
-  footer.style.cssText = 'border-top:4px solid #080808;flex-shrink:0;';
+  footer.style.cssText = 'flex-shrink:0;';
+  footer.appendChild(_el('height:1px;background-color:#202020;')); // a filled rule: UXP draws 1px borders soft
   var footerRow = document.createElement('div');
   footerRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 12px;';
 
@@ -9257,17 +9136,7 @@ function _showSettingsModal() {
     if (modal.style.width  !== mw) modal.style.width  = mw;
     if (modal.style.height !== mh) modal.style.height = mh;
     _layoutFooter(nvw);
-    var nowDual = nvw > 520;
-    if (nowDual !== dualCol) {
-      dualCol = nowDual;
-      content.style.flexDirection = nowDual ? 'row' : 'column';
-      colorSection.style.cssText = nowDual
-        ? 'padding:10px 12px 12px;width:50%;box-sizing:border-box;border-left:4px solid #080808;'
-        : 'padding:10px 12px 12px;border-top:4px solid #080808;flex-shrink:0;';
-      rowsCol.style.cssText = nowDual
-        ? 'flex:1;display:flex;flex-direction:column;'
-        : 'flex-shrink:0;display:flex;flex-direction:column;';
-    }
+    _layoutCards(nvw);
   });
   _settingsRO.observe(document.body);
 
