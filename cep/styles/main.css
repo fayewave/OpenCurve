@@ -551,6 +551,7 @@ input, textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--oc-name-color);
+  font-weight: 600;
 }
 /* Save / Revert in the chip: tinted with the theme colour like the chip
    itself, not the plain white tool button look; icon and label (its icon is
