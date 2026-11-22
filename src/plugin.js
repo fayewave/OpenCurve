@@ -8635,6 +8635,16 @@ function _openTextFile() {
   });
 }
 
+// Settings footer: the edition (ZXP, CCX or Exchange) as a small outlined badge
+// after the version. Inline styles only (UXP), margin instead of flex gap.
+function _editionBadge(label) {
+  var b = document.createElement('span');
+  b.textContent = label;
+  b.style.cssText = 'display:inline-block;margin-left:8px;padding:1px 6px;border:1px solid rgba(255,255,255,0.22);border-radius:4px;'
+    + 'background-color:rgba(255,255,255,0.04);color:#b0b0b0;font-size:10px;font-weight:600;letter-spacing:0.5px;line-height:14px;';
+  return b;
+}
+
 function _showSettingsModal() {
   // The flyout's Settings item is Premiere's own menu and stays reachable while
   // the modal is open, so without this a second modal stacked on the first: only
@@ -9032,14 +9042,21 @@ function _showSettingsModal() {
   footerRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 12px;';
 
   var footerLeft = document.createElement('div');
+  // Edition badge: the Exchange build strips the CCX line (scripts/build.js
+  // exchange), so only the Exchange .ccx says Exchange
+  var editionTag = 'Exchange';
+  editionTag = 'CCX'; // [exchange-strip-line]
   var madeBy = document.createElement('div');
-  madeBy.textContent = 'made by faye  ·  v' + CURRENT_VERSION + '  ·  CCX';
-  madeBy.style.cssText = 'color:#888;font-size:12px;margin-bottom:4px;';
+  madeBy.style.cssText = 'display:flex;align-items:center;color:#888;font-size:12px;margin-bottom:4px;';
+  var madeByText = document.createElement('span');
+  madeByText.textContent = 'made by faye  ·  v' + CURRENT_VERSION;
+  madeBy.appendChild(madeByText);
+  madeBy.appendChild(_editionBadge(editionTag));
   var ghLink = document.createElement('div');
   ghLink.textContent = 'github.com/fayewave/OpenCurve';
-  ghLink.style.cssText = 'color:#555;font-size:12px;cursor:pointer;';
-  ghLink.addEventListener('mouseenter', function() { ghLink.style.color = '#4a9eff'; });
-  ghLink.addEventListener('mouseleave', function() { ghLink.style.color = '#555'; });
+  ghLink.style.cssText = 'color:#4a9eff;font-size:12px;cursor:pointer;';
+  ghLink.addEventListener('mouseenter', function() { ghLink.style.color = '#8ccfff'; });
+  ghLink.addEventListener('mouseleave', function() { ghLink.style.color = '#4a9eff'; });
   ghLink.addEventListener('click', function() {
     _openUrl('https://github.com/fayewave/OpenCurve');
   });
