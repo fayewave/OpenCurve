@@ -9150,9 +9150,10 @@ function _showSettingsModal() {
   });
   footerLeft.appendChild(ghLink);
 
-  var resetRow = _crispBox(28, '5px 10px', '#4c4c4c', '#111111');
+  // 31px: the ZXP buttons are 30.84px tall (13px text, Chromium line height 18.85px)
+  var resetRow = _crispBox(31, '5px 10px', '#4c4c4c', '#111111');
   resetRow.style.cursor = 'pointer';
-  resetRow._ocInner.style.cssText += 'color:#e4e4e4;font-size:13px;line-height:16px;';
+  resetRow._ocInner.style.cssText += 'color:#e4e4e4;font-size:13px;line-height:19px;';
   var resetLabel = document.createElement('span');
   resetLabel.textContent = 'Reset All Settings';
   _attachTooltip(resetRow, 'Restore defaults and remove all presets');
@@ -9165,10 +9166,10 @@ function _showSettingsModal() {
   });
 
   // Report an Issue: opens the GitHub issues page in the browser
-  var issueRow = _crispBox(28, '5px 10px', '#4c4c4c', '#111111');
+  var issueRow = _crispBox(31, '5px 10px', '#4c4c4c', '#111111');
   issueRow.style.cursor = 'pointer';
   issueRow.style.marginRight = '8px';
-  issueRow._ocInner.style.cssText += 'color:#e4e4e4;font-size:13px;line-height:16px;';
+  issueRow._ocInner.style.cssText += 'color:#e4e4e4;font-size:13px;line-height:19px;';
   var issueLabel = document.createElement('span');
   issueLabel.textContent = 'Report an Issue';
   _attachTooltip(issueRow, 'Open the OpenCurve issues page on GitHub');
