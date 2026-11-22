@@ -8,6 +8,13 @@
 
 console.log('[FS] plugin.js executing');
 
+// Debug menu items (Dump Components, Poll Timing, Scroll Debug) are hidden from
+// users since 2.1.0. To get them back for debugging, run
+// localStorage.setItem('opencurve-dev-menu', 'on') in the plugin's DevTools and
+// reload the plugin. While hidden, a debug mode left on from before is ignored,
+// so nobody is stuck with logging they can't switch off.
+var _DEV_MENU = (function() { try { return localStorage.getItem('opencurve-dev-menu') === 'on'; } catch(_) { return false; } })();
+
 // ─── Post-scroll freeze elimination: listener types dropped at registration ─
 // Windows' double-click time here is 500ms and the measured dead window is
 // 507-548ms, so the engine's own input state machine is the suspect. Every
@@ -102,15 +109,18 @@ try {
         menuItems: [
           { id: 'options',       label: 'Settings' },
           { id: 'check-updates', label: 'Check for Updates' }, // [exchange-strip-line]
+        ].concat(_DEV_MENU ? [
           { id: 'dump-comps',    label: 'Dump Components (Debug)' },
           { id: 'poll-timing',   label: 'Poll Timing (Debug)' },
           { id: 'scroll-debug',  label: 'Scroll Debug' },
+        ] : []).concat([
           { id: 'sep',           label: '-' },
           { id: 'made-by',       label: 'made by faye', enabled: false },
-        ],
+        ]),
         invokeMenu: function(id) {
           if (id === 'options')       _showSettingsModal();
           if (id === 'check-updates') _checkForUpdates(); // [exchange-strip-line]
+          if (!_DEV_MENU) return;
           if (id === 'dump-comps')    _dumpComponents();
           if (id === 'poll-timing')   _toggleDebugTiming();
           if (id === 'scroll-debug')  _toggleDebugScroll();
@@ -3494,7 +3504,7 @@ async function _undoRecords(recs, label, key) {
 }
 
 // The Replace button's icon: two arrows going round
-var _icReplace = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none">'
+var _icReplace = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none">'
   + '<path d="M11.3 5.2A4.6 4.6 0 0 0 3 4.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'
   + '<path d="M2.7 8.8A4.6 4.6 0 0 0 11 9.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'
   + '<path d="M11.6 2.5v2.8H8.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
@@ -4927,7 +4937,7 @@ function renderUI(s) {
         _addPressState(propUndo);
         propUndo.style.display = 'none';
         _attachTooltip(propUndo, 'Undo the bake on this property');
-        propUndo.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2.4 5H8.3a3.3 3.3 0 010 6.6H5.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 2.4L2.4 5l2.6 2.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        propUndo.innerHTML = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2.4 5H8.3a3.3 3.3 0 010 6.6H5.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 2.4L2.4 5l2.6 2.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
         propUndo.addEventListener('click', function(ev) {
           ev.stopPropagation();
           _undoBakeForKey(p.key);
@@ -4939,7 +4949,7 @@ function renderUI(s) {
         _addPressState(propCurve);
         propCurve.style.display = 'none';
         _attachTooltip(propCurve, 'Load the curve that was baked on this property');
-        propCurve.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2.5 11.5C6 11.5 8 2.5 11.5 2.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="2.5" cy="11.5" r="1.6" fill="currentColor"/><circle cx="11.5" cy="2.5" r="1.6" fill="currentColor"/></svg>';
+        propCurve.innerHTML = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2.5 11.5C6 11.5 8 2.5 11.5 2.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="2.5" cy="11.5" r="1.6" fill="currentColor"/><circle cx="11.5" cy="2.5" r="1.6" fill="currentColor"/></svg>';
         propCurve.addEventListener('click', function(ev) {
           ev.stopPropagation();
           _loadBakedCurve(p.key);
@@ -4961,7 +4971,7 @@ function renderUI(s) {
         propPin.className = 'prop-pin';
         _addPressState(propPin);
         _attachTooltip(propPin, 'Jump playhead to keyframes');
-        propPin.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><line x1="1.5" y1="7" x2="9" y2="7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M6 3.8L9.2 7 6 10.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><line x1="12" y1="3.2" x2="12" y2="10.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+        propPin.innerHTML = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><line x1="1.5" y1="7" x2="9" y2="7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M6 3.8L9.2 7 6 10.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><line x1="12" y1="3.2" x2="12" y2="10.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
         propPin.addEventListener('click', function(ev) {
           ev.stopPropagation();
           // Rows persist across polls, so look up the latest jump time by key
@@ -5121,7 +5131,7 @@ function _statusMsg(s, showClip) {
 // pixel less put them a pixel up and left, so UXP paints the SVG content half
 // a pixel off its box (checked by eye, 2026-09). Run after every render
 // because the property rows are rebuilt there.
-var _ICON_OFF = { 'tool-btn': 5.5, 'prop-pin': 4.5, 'prop-undo': 4.5, 'prop-curve': 4.5, 'prop-replace': 4.5, 'btn-undo': 3.5, 'pager-btn': 3.5 };
+var _ICON_OFF = { 'tool-btn': 5.5, 'prop-pin': 3.5, 'prop-undo': 3.5, 'prop-curve': 3.5, 'prop-replace': 3.5, 'btn-undo': 3.5, 'pager-btn': 3.5 };
 function _centerIcons() {
   Object.keys(_ICON_OFF).forEach(function(cls) {
     var off = _ICON_OFF[cls] + 'px';
@@ -5172,7 +5182,7 @@ var _SCROLL_KICK    = 0;     // experiment tooling only; the shipped workaround 
 var _SCROLL_KICK_MS = 40;    // delay after the last scroll event of a burst
 var _SCROLL_TESTLIST = false; // a bare plain scroller (40 rows) floated over the graph, watched as 'bare list', never kicked: tells the list's structure from any scroll view in this panel
 var _DEBUG_SCROLL_KEY = 'opencurve-debug-scroll';
-var _debugScroll = localStorage.getItem(_DEBUG_SCROLL_KEY) === 'on';
+var _debugScroll = _DEV_MENU && localStorage.getItem(_DEBUG_SCROLL_KEY) === 'on';
 function _toggleDebugScroll() {
   _debugScroll = !_debugScroll;
   localStorage.setItem(_DEBUG_SCROLL_KEY, _debugScroll ? 'on' : 'off');
@@ -7112,7 +7122,7 @@ var _isDragging    = false; // pause polling while handle is being dragged
 // Logs every poll to the console with what it did and how long it took, and
 // prints a summary when turned off. Costs one boolean check per poll when off.
 var _DEBUG_TIMING_KEY = 'opencurve-debug-timing';
-var _debugTiming = localStorage.getItem(_DEBUG_TIMING_KEY) === 'on';
+var _debugTiming = _DEV_MENU && localStorage.getItem(_DEBUG_TIMING_KEY) === 'on';
 var _dbgKind   = '';   // what the last detect did: cache | full | playing | early | error
 var _dbgFullMs = 0;    // time spent inside the full scan itself (UXP only)
 var _dbgStats  = null;

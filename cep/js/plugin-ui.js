@@ -1346,7 +1346,7 @@ function _replaceBakeForKey(key) {
 }
 
 // The Replace button's icon: two arrows going round
-var _icReplace = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none">'
+var _icReplace = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none">'
   + '<path d="M11.3 5.2A4.6 4.6 0 0 0 3 4.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'
   + '<path d="M2.7 8.8A4.6 4.6 0 0 0 11 9.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'
   + '<path d="M11.6 2.5v2.8H8.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>'
@@ -2563,7 +2563,7 @@ function renderUI(s) {
         _addPressState(propUndo);
         propUndo.style.display = 'none';
         _attachTooltip(propUndo, 'Undo the bake on this property');
-        propUndo.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2.4 5H8.3a3.3 3.3 0 010 6.6H5.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 2.4L2.4 5l2.6 2.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        propUndo.innerHTML = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2.4 5H8.3a3.3 3.3 0 010 6.6H5.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 2.4L2.4 5l2.6 2.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
         propUndo.addEventListener('click', function(ev) {
           ev.stopPropagation();
           _undoBakeForKey(p.key);
@@ -2575,7 +2575,7 @@ function renderUI(s) {
         _addPressState(propCurve);
         propCurve.style.display = 'none';
         _attachTooltip(propCurve, 'Load the curve that was baked on this property');
-        propCurve.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2.5 11.5C6 11.5 8 2.5 11.5 2.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="2.5" cy="11.5" r="1.6" fill="currentColor"/><circle cx="11.5" cy="2.5" r="1.6" fill="currentColor"/></svg>';
+        propCurve.innerHTML = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2.5 11.5C6 11.5 8 2.5 11.5 2.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="2.5" cy="11.5" r="1.6" fill="currentColor"/><circle cx="11.5" cy="2.5" r="1.6" fill="currentColor"/></svg>';
         propCurve.addEventListener('click', function(ev) {
           ev.stopPropagation();
           _loadBakedCurve(p.key);
@@ -2597,7 +2597,7 @@ function renderUI(s) {
         propPin.className = 'prop-pin';
         _addPressState(propPin);
         _attachTooltip(propPin, 'Jump playhead to keyframes');
-        propPin.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><line x1="1.5" y1="7" x2="9" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M6 3.8L9.2 7 6 10.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><line x1="12" y1="3.2" x2="12" y2="10.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+        propPin.innerHTML = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><line x1="1.5" y1="7" x2="9" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M6 3.8L9.2 7 6 10.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><line x1="12" y1="3.2" x2="12" y2="10.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
         propPin.addEventListener('click', function(ev) {
           ev.stopPropagation();
           // Rows persist across polls, so look up the latest jump time by key

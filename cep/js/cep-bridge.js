@@ -300,7 +300,11 @@
   // Logs every poll to the console with what it did and how long it took, and
   // prints a summary when turned off. Costs one boolean check per poll when off.
   var _DEBUG_TIMING_KEY = 'opencurve-debug-timing';
-  var _debugTiming = localStorage.getItem(_DEBUG_TIMING_KEY) === 'on';
+  // Poll Timing is hidden from the flyout since 2.1.0; set localStorage
+  // 'opencurve-dev-menu' to 'on' and reopen the panel to get it back. While
+  // hidden, a timing mode left on from before is ignored.
+  var _DEV_MENU = (function() { try { return localStorage.getItem('opencurve-dev-menu') === 'on'; } catch(e) { return false; } })();
+  var _debugTiming = _DEV_MENU && localStorage.getItem(_DEBUG_TIMING_KEY) === 'on';
   var _dbgKind   = '';   // what the last detect did: cache | full | playing | early | error
   var _dbgFullMs = 0;    // time spent inside the full scan itself (UXP only)
   var _dbgStats  = null;
@@ -503,7 +507,7 @@
   var flyoutXML = '<Menu>'
     + '<MenuItem Id="settings" Label="Settings" Enabled="true" Checked="false"/>'
     + '<MenuItem Id="check-updates" Label="Check for Updates" Enabled="true" Checked="false"/>'
-    + '<MenuItem Id="poll-timing" Label="Poll Timing (Debug)" Enabled="true" Checked="false"/>'
+    + (_DEV_MENU ? '<MenuItem Id="poll-timing" Label="Poll Timing (Debug)" Enabled="true" Checked="false"/>' : '')
     + '<MenuItem Label="---"/>'
     + '<MenuItem Id="made-by" Label="made by faye" Enabled="false" Checked="false"/>'
     + '</Menu>';
@@ -517,7 +521,7 @@
       var menuId = parsed.menuId || '';
       if (menuId === 'settings')       OpenCurve.showSettingsModal();
       if (menuId === 'check-updates')  OpenCurve.checkForUpdates();
-      if (menuId === 'poll-timing')    _toggleDebugTiming();
+      if (menuId === 'poll-timing' && _DEV_MENU) _toggleDebugTiming();
     } catch(e) {
       console.error('[OC-CEP] flyout menu error:', e);
     }
