@@ -473,7 +473,11 @@ html, body {
   align-items: center;
   flex: 0 1 auto;
   min-width: 0;
-  height: 26px;
+  height: 26px; /* the bar's buttons' height, pinned every way so the text can't size it */
+  min-height: 26px;
+  max-height: 26px;
+  box-sizing: border-box;
+  align-self: center;
   margin-left: 5px; /* the bar's button spacing */
   padding-left: 9px;
   border-radius: 3px;
@@ -484,6 +488,7 @@ html, body {
   overflow: hidden;
 }
 .pe-name {
+  line-height: 26px;
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -506,6 +511,7 @@ html, body {
   color: var(--oc-active-color);
 }
 .pe-tag {
+  line-height: 26px;
   flex-shrink: 0;
   margin-left: 5px;
   margin-right: 3px;
