@@ -6742,15 +6742,30 @@ function initPanel() {
   }
   // Edited preset chip (#preset-edit-chip, between the two groups): it gets the
   // room the tools leave, capped by an inline max-width so it can never push the
-  // right group over it, and hides below _PE_CHIP_MIN (the dropdown then lists
-  // Save and Revert). Written only when the value changes.
-  var _PE_CHIP_MIN = 230; // name + Edited + the labelled Save and Revert buttons
-  var _peChipMaxW = null;
+  // right group over it. Below _PE_CHIP_FULL, Save and Revert drop their labels
+  // and become 26px icon buttons; below _PE_CHIP_MIN the chip hides (the dropdown
+  // then lists Save and Revert). Written only when the value changes.
+  var _PE_CHIP_FULL = 230; // name + Edited + the labelled Save and Revert buttons
+  var _PE_CHIP_MIN  = 150; // name + Edited + the two icon-only buttons
+  var _peChipMaxW = null, _peLabels = null;
+  function _peSetLabels(on) {
+    if (on === _peLabels) return;
+    _peLabels = on;
+    ['pe-save', 'pe-revert'].forEach(function(id) {
+      var b = document.getElementById(id);
+      if (!b) return;
+      var sp = b.querySelector('span'), sv = b.querySelector('svg');
+      if (sp) sp.style.display = on ? '' : 'none';
+      b.style.padding = on ? '' : '0 5px'; // (26 - 16) / 2: the icon centred in a square
+      if (sv) sv.style.marginRight = on ? '5px' : '0';
+    });
+  }
   function _tbChipLayout(w) {
     var chip = document.getElementById('preset-edit-chip');
     if (!chip) return;
     var room = w - _TB_NEED - 5; // the chip's own left margin
     var fits = room >= _PE_CHIP_MIN;
+    _peSetLabels(room >= _PE_CHIP_FULL);
     var mw = fits ? Math.floor(room) + 'px' : '';
     if (mw !== _peChipMaxW) { _peChipMaxW = mw; chip.style.maxWidth = mw; }
     if (fits !== _peChipRoom) { _peChipRoom = fits; _presetEditSync(); }
