@@ -9149,8 +9149,27 @@ function _showSettingsModal() {
   });
   _settingsRO.observe(document.body);
 
+  // The main panel is display:none while Settings covers it (Settings is opaque
+  // and fills the panel). UXP repaints the main panel's elements on every
+  // change in Settings too: a row's hover tint ran at 22-33fps with it there
+  // and 50-65fps without (measured live 2026-11-22; visibility:hidden only
+  // reached 35-57). Its resize observers see zero sizes meanwhile and write
+  // nothing that is saved; the layout is re-run once it is back.
+  var appEl = document.getElementById('app');
+  var appDisplay = appEl ? appEl.style.display : '';
+  if (appEl) appEl.style.display = 'none';
+
   var _origRemove = modal.remove.bind(modal);
-  modal.remove = function() { _settingsRO.disconnect(); _origRemove(); };
+  modal.remove = function() {
+    _settingsRO.disconnect();
+    _origRemove();
+    if (appEl && appEl.style.display === 'none') {
+      appEl.style.display = appDisplay;
+      _applyPresetLayout(true);
+      _tlSig = '';
+      _tlRender(getState(), true);
+    }
+  };
 }
 
 // The colour is applied by `create` right after initPanel(); a DOMContentLoaded
