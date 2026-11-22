@@ -9210,21 +9210,20 @@ function _modalBtn(label, onClick, kind) {
 var _WELCOME_KEY = 'opencurve-welcome-seen';
 var _WELCOME_FOR = '2.1';
 var _WELCOME_TITLE = 'What\u2019s New in 2.1.0';
-var _WELCOME_ITEMS = [ // titles only, split over two columns
+var _WELCOME_ITEMS = [ // titles only, split over two columns (the left one first)
   'Bounce mode',
+  'Smoother graph and timeline',
   'Save edits to presets',
   'Replace a baked curve',
   'Auto zoom',
   'Smarter Go button',
   'Right-click property actions',
-  'Graph tools down the side',
-  'Redesigned Settings',
-  'Smarter Load Baked Curve',
-  'Smoother graph and timeline'
+  'Redesigned Settings'
 ];
 
-function _showWelcome() {
-  try { if (localStorage.getItem(_WELCOME_KEY) === _WELCOME_FOR) return false; } catch(_) {}
+// force: show it even when already seen (the Settings version badge)
+function _showWelcome(force) {
+  if (!force) { try { if (localStorage.getItem(_WELCOME_KEY) === _WELCOME_FOR) return false; } catch(_) {} }
   if (document.getElementById('oc-welcome')) return false;
 
   var overlay = document.createElement('div');
@@ -10119,6 +10118,26 @@ function _showSettingsModal() {
   // Header: the version and edition badges sit beside the wordmark
   var verBadge = _footerBadge('v' + CURRENT_VERSION), edBadge = _footerBadge(editionTag);
   verBadge.style.marginLeft = '12px';
+  // The version badge reopens the What's new card. Hover and press looks are
+  // written inline from listeners (UXP's :hover is unreliable); the header's
+  // own click closes Settings, so this one stops there.
+  (function(b) {
+    var looks = { rest: ['#454545', b._ocInner ? '#1a1a1a' : 'rgba(255,255,255,0.04)', '#b0b0b0'], hover: ['#5c5c5c', '#262626', '#e6e6e6'], down: ['#707070', '#333333', '#ffffff'] };
+    var over = false, down = false;
+    function paint() { // UXP's badge is a filled box (_crispBox), CEP's a bordered span
+      var l = looks[down ? 'down' : over ? 'hover' : 'rest'];
+      if (b._ocInner) { _crispTint(b, l[0], l[1]); b._ocInner.style.color = l[2]; }
+      else { b.style.borderColor = l[0]; b.style.backgroundColor = l[1]; b.style.color = l[2]; }
+    }
+    b.style.cursor = 'pointer';
+    b.addEventListener('pointerenter', function() { over = true; paint(); });
+    b.addEventListener('pointerleave', function() { over = false; down = false; paint(); });
+    b.addEventListener('pointerdown', function(e) { e.stopPropagation(); down = true; paint(); });
+    b.addEventListener('pointerup', function() { down = false; paint(); });
+    b.addEventListener('mousedown', function(e) { e.stopPropagation(); }); // CEP on macOS sends no pointerdown
+    b.addEventListener('click', function(e) { e.stopPropagation(); down = false; paint(); _showWelcome(true); });
+    _attachTooltip(b, 'What\u2019s new in this version', 'right');
+  })(verBadge);
   logoWrap.appendChild(verBadge);
   logoWrap.appendChild(edBadge);
 
