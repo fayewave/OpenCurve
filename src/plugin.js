@@ -4364,6 +4364,12 @@ var _presetOverwriteRef = null; // set in initPanel: (preset, curve) -> overwrit
 var _peSig = null;
 var _peDot = null;              // the one dot, moved into the edited tile
 var _peChipRoom = true;         // set by the graph bar's layout (_tbLayout): room for the chip
+var _peRoom = Infinity;         // ... and the room it has (px), for the name test below
+// Room the name and "Edited" need beside the buttons: the name may be cut to
+// about 8 characters (12px text, ~6.6px each) before it goes altogether
+function _peNameFits(name, ed) {
+  return _peRoom >= 9 + Math.min(name.length, 8) * 6.6 + (ed ? 5 + 40 + 3 + 2 * 31 : 9);
+}
 function _presetEditInfo() {
   if (_srcPresetId === null || !_presetByIdRef) return null;
   var p = _presetByIdRef(_srcPresetId);
@@ -4379,7 +4385,8 @@ function _presetEditSync(force) {
   var inf = _presetEditInfo();
   var id = inf ? String(inf.preset.id) : null, ed = !!(inf && inf.edited);
   var name = inf ? inf.preset.name : '';
-  var sig = id + '|' + ed + '|' + name + '|' + _curveColor + '|' + _peChipRoom;
+  var _peNameRoom = _peNameFits(name, ed);
+  var sig = id + '|' + ed + '|' + name + '|' + _curveColor + '|' + _peChipRoom + '|' + _peNameRoom;
   if (!force && sig === _peSig) return;
   _peSig = sig;
   // Tiles: state classes on the tile itself (UXP restyles reliably that way)
@@ -4408,18 +4415,26 @@ function _presetEditSync(force) {
   // Graph bar chip
   var chip = document.getElementById('preset-edit-chip');
   // The chip names the preset whenever there is one; "edited", Save and Revert
-  // join it only while the curve differs (the name gets right padding alone)
+  // join it only while the curve differs (the name gets right padding alone).
+  // In a narrow bar the name and "Edited" go and Save and Revert stay, alone
+  // (an unedited preset then shows nothing: there is nothing left to show)
   if (chip) {
-    var show = id !== null && _peChipRoom;
+    var show = id !== null && _peChipRoom && (ed || _peNameRoom);
     if (show) {
       var nm = document.getElementById('pe-name');
       if (nm && nm.textContent !== name) nm.textContent = name;
+      var setD = function(el, d) { if (el && el.style.display !== d) el.style.display = d; };
+      setD(nm, _peNameRoom ? '' : 'none');
+      setD(chip.querySelector('.pe-tag'), (ed && _peNameRoom) ? '' : 'none');
       var sub = ed ? '' : 'none';
-      [chip.querySelector('.pe-tag'), document.getElementById('pe-save'), document.getElementById('pe-revert')].forEach(function(el) {
-        if (el && el.style.display !== sub) el.style.display = sub;
-      });
+      var sv = document.getElementById('pe-save');
+      setD(sv, sub);
+      setD(document.getElementById('pe-revert'), sub);
       var pr = ed ? '' : '9px';
       if (chip.style.paddingRight !== pr) chip.style.paddingRight = pr;
+      var pl = _peNameRoom ? '' : '0'; // the buttons alone sit flush in the chip
+      if (chip.style.paddingLeft !== pl) chip.style.paddingLeft = pl;
+      if (sv && sv.style.marginLeft !== pl) sv.style.marginLeft = pl;
     }
     var disp = show ? 'flex' : 'none';
     if (chip.style.display !== disp) chip.style.display = disp;
@@ -6743,10 +6758,12 @@ function initPanel() {
   // Edited preset chip (#preset-edit-chip, between the two groups): it gets the
   // room the tools leave, capped by an inline max-width so it can never push the
   // right group over it. Below _PE_CHIP_FULL, Save and Revert drop their labels
-  // and become 26px icon buttons; below _PE_CHIP_MIN the chip hides (the dropdown
-  // then lists Save and Revert). Written only when the value changes.
+  // and become 26px icon buttons; once the name would be cut short
+  // (_peNameFits) it and "Edited" go and the two buttons stay; below
+  // _PE_CHIP_BARE the chip hides (the dropdown then
+  // lists Save and Revert). Written only when the value changes.
   var _PE_CHIP_FULL = 230; // name + Edited + the labelled Save and Revert buttons
-  var _PE_CHIP_MIN  = 150; // name + Edited + the two icon-only buttons
+  var _PE_CHIP_BARE = 60;  // the two icon-only buttons alone
   var _peChipMaxW = null, _peLabels = null;
   function _peSetLabels(on) {
     if (on === _peLabels) return;
@@ -6764,11 +6781,13 @@ function initPanel() {
     var chip = document.getElementById('preset-edit-chip');
     if (!chip) return;
     var room = w - 2 * 36; // #pe-center's width: the bar between the menu button and Full Screen
-    var fits = room >= _PE_CHIP_MIN;
+    var fits = room >= _PE_CHIP_BARE;
     _peSetLabels(room >= _PE_CHIP_FULL);
     var mw = fits ? Math.floor(room) + 'px' : '';
     if (mw !== _peChipMaxW) { _peChipMaxW = mw; chip.style.maxWidth = mw; }
-    if (fits !== _peChipRoom) { _peChipRoom = fits; _presetEditSync(); }
+    _peRoom = room;
+    _peChipRoom = fits;
+    _presetEditSync(); // compares its signature first: the name test depends on the room
   }
   function _tbLayout() {
     if (!toolbar || !menuBtn) return;
