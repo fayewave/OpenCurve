@@ -9014,8 +9014,8 @@ function _showSettingsModal() {
     twoCols = two;
     colB.style.display = two ? 'flex' : 'none';
     colA.style.marginRight = two ? '8px' : '0px';
-    // Updates go first: at the top of the right column, or of the single one
-    cardsTop.forEach(function(c) { (two ? colB : colA).appendChild(c); });
+    // Updates go first, at the top of the left column
+    cardsTop.forEach(function(c) { colA.appendChild(c); });
     cardsA.forEach(function(c) { colA.appendChild(c); });
     cardsB.forEach(function(c) { (two ? colB : colA).appendChild(c); });
   }
