@@ -5950,7 +5950,7 @@ function _showSettingsModal() {
   footerLeft.style.cssText = 'display:flex;align-items:center;flex:0 1 auto;min-width:0;overflow:hidden;margin-right:12px;color:#888;font-size:12px;';
   var madeByText = document.createElement('span');
   madeByText.textContent = 'made by faye!';
-  madeByText.style.cssText = 'flex-shrink:0;white-space:nowrap;line-height:16px;';
+  madeByText.style.cssText = 'flex-shrink:0;white-space:nowrap;line-height:16px;color:#bdbdbd;';
   footerLeft.appendChild(madeByText);
   var ghIc = '<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M8.2 2.5h3.3v3.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M11.5 2.5L6.6 7.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 8.6v2.1a.8.8 0 01-.8.8H3.3a.8.8 0 01-.8-.8V4.6a.8.8 0 01.8-.8h2.1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>', ghTip = 'Open OpenCurve on GitHub in your browser';
   var ghLink = _cardBtn('GitHub', function() { _openReleasesPage(); });
@@ -5974,13 +5974,13 @@ function _showSettingsModal() {
   veilBtn.innerHTML = '<svg width="109" height="26" viewBox="-6 -6 1213 288" fill="none">' // a little under the buttons' 30px
     + '<path fill-rule="evenodd" d="M322.26,0.67L1200.74,0.67L1200.74,275.87L322.26,275.87ZM393.17 64.79H437.62L506.75 185.31H510.87L580.01 64.79H623.63L539.26 211.76H477.54ZM646.26 211.76V64.79H847.91V91.24H687.41V125.05H806.76V151.5H687.41V185.31H847.91V211.76ZM924.04 64.79V211.76H882.89V64.79ZM1006.35 64.79V185.31H1129.8V211.76H965.19V64.79ZM0.63,0.67L275.83,0.67L275.83,275.87L0.63,275.87ZM232.75,138.27L138.23,212.35L43.7,138.27L138.23,64.19Z" fill="#cccccc"/></svg>';
   // "for more plugins visit" ahead of the logo, part of the same button
-  var veilText = _el('font-size:12px;line-height:16px;color:#a6a6a6;white-space:nowrap;margin-right:8px;', 'for more plugins visit');
+  var veilText = _el('font-size:12px;line-height:16px;color:#bdbdbd;white-space:nowrap;margin-right:8px;', 'for more plugins visit');
   veilBtn.insertBefore(veilText, veilBtn.firstChild);
   var veilPath = veilBtn.querySelector('path');
   var veilHot = false, veilDown = false;
   function _veilPaint() {
     veilPath.setAttribute('fill', veilDown ? '#b8b8b8' : veilHot ? '#ffffff' : '#cccccc'); // the logo brighter than its text
-    veilText.style.color = veilDown ? '#d0d0d0' : veilHot ? '#ffffff' : '#a6a6a6';
+    veilText.style.color = veilDown ? '#d0d0d0' : veilHot ? '#ffffff' : '#bdbdbd';
     veilBtn.style.backgroundColor = veilDown ? 'rgba(255,255,255,0.12)' : veilHot ? 'rgba(255,255,255,0.06)' : '';
   }
   veilBtn.addEventListener('mouseenter', function() { veilHot = true; _veilPaint(); });
