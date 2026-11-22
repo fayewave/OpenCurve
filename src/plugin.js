@@ -6744,7 +6744,7 @@ function initPanel() {
   // room the tools leave, capped by an inline max-width so it can never push the
   // right group over it, and hides below _PE_CHIP_MIN (the dropdown then lists
   // Save and Revert). Written only when the value changes.
-  var _PE_CHIP_MIN = 130;
+  var _PE_CHIP_MIN = 230; // name + Edited + the labelled Save and Revert buttons
   var _peChipMaxW = null;
   function _tbChipLayout(w) {
     var chip = document.getElementById('preset-edit-chip');

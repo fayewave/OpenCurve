@@ -538,17 +538,33 @@ input, textarea {
   color: var(--oc-name-color);
 }
 /* Save / Revert in the chip: tinted with the theme colour like the chip
-   itself, not the plain white tool button look. A class on the buttons, not
-   a descendant rule: UXP applies descendant + :hover rules unreliably */
-.tool-btn.pe-btn {
+   itself, not the plain white tool button look; icon and label (its icon is
+   placed inline in the markup). A class on the buttons, not a descendant
+   rule: UXP applies descendant + :hover rules unreliably */
+.pe-btn {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  height: 26px;
+  padding: 0 9px 0 6px;
+  margin-left: 5px;
+  border-radius: 3px;
+  box-sizing: border-box;
   background-color: var(--oc-edited-bg);
+  background-image: linear-gradient(to right, rgba(255,255,255,0.06), rgba(255,255,255,0));
   color: var(--oc-active-color);
+  font-family: var(--font);
+  font-size: 12px;
+  line-height: 26px;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
 }
-.tool-btn.pe-btn:hover {
+.pe-btn:hover {
   background-color: var(--oc-edited-bg2);
   color: var(--oc-active-color);
 }
-.tool-btn.pe-btn:active {
+.pe-btn:active {
   background-color: var(--oc-active-bg2);
   color: var(--oc-active-color);
 }
