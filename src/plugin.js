@@ -1431,7 +1431,7 @@ var _closeMenus  = null; // set by initPanel: closes the tile / mini context men
 // handles, zoomed-out content). It used to stretch to the SVG's own aspect,
 // which squashed every curve in a wide or tall panel.
 // _RANGE_GUTTER: the box keeps clear of the tool column and zoom button down
-// the graph area's left side (8px + 26px buttons + 14px air = 48px = PAD + 32).
+// the graph area's left side (5px + 26px buttons + 17px air = 48px = PAD + 32).
 // Centred while the SVG is wide enough; otherwise it shrinks by the gutter and
 // sits against it, so the buttons never cover the curve's start or a handle there.
 var _RANGE_GUTTER = 32;
@@ -5650,7 +5650,11 @@ function _hideTooltip() {
   if (_tipEl && _tipEl.parentNode) _tipEl.parentNode.removeChild(_tipEl);
   _tipEl = null;
 }
-function _showTooltip(el, text) {
+// side 'right': beside the element, vertically centred on it (the tool column
+// down the graph's left side, where a tip below would cover the next button).
+// The height is the stylesheet's (13px x 1.3 + 10px padding + 2px border).
+var _TIP_H = 29;
+function _showTooltip(el, text, side) {
   _hideTooltip();
   if (!text) return;
   var tip = document.createElement('div');
@@ -5681,6 +5685,13 @@ function _showTooltip(el, text) {
   } else {
     tip.style.bottom = Math.round(wh - r.top + gap) + 'px'; // above, anchored to its top edge
     tip.style.top    = 'auto';
+  }
+  if (side === 'right') {
+    tip.style.left     = Math.round(r.right + gap) + 'px';
+    tip.style.right    = 'auto';
+    tip.style.maxWidth = Math.max(60, Math.round(ww - r.right - gap - pad)) + 'px';
+    tip.style.top      = Math.max(pad, Math.min(wh - pad - _TIP_H, Math.round(r.top + r.height / 2 - _TIP_H / 2))) + 'px';
+    tip.style.bottom   = 'auto';
   }
   document.body.appendChild(tip);
   _tipEl = tip;
@@ -5721,7 +5732,7 @@ function _setMarker(host, mode) {
   }
 }
 
-function _attachTooltip(el, text) {
+function _attachTooltip(el, text, side) {
   if (!el || !_TOOLTIPS_ON) return;
   var DELAY = 500;
   el.addEventListener('mouseenter', function() {
@@ -5729,7 +5740,7 @@ function _attachTooltip(el, text) {
     _tipTimer = setTimeout(function() {
       _tipTimer = null;
       var t = typeof text === 'function' ? text() : text;
-      _showTooltip(el, t);
+      _showTooltip(el, t, side);
     }, DELAY);
   });
   el.addEventListener('mouseleave',  _hideTooltip);
@@ -6402,7 +6413,7 @@ function initPanel() {
 
   var peakBtn = document.getElementById('peak-mode');
   if (peakBtn) {
-    _attachTooltip(peakBtn, 'A-curve mode');
+    _attachTooltip(peakBtn, 'A-curve mode', 'right');
     peakBtn.addEventListener('click', function() { _setPeakMode(!_peakMode); });
   }
   _stylePeakBtn();
@@ -6412,7 +6423,7 @@ function initPanel() {
   var bounceBtn = document.getElementById('bounce-mode');
   _bnInit();
   if (bounceBtn) {
-    _attachTooltip(bounceBtn, 'Bounce mode');
+    _attachTooltip(bounceBtn, 'Bounce mode', 'right');
     bounceBtn.addEventListener('click', function() { _setBounceMode(!_bounceMode); });
   }
   _styleBounceBtn();
@@ -6421,7 +6432,7 @@ function initPanel() {
   // Add Point: splits the curve's widest segment; unavailable in A-curve mode
   var addPtBtn = document.getElementById('add-point');
   if (addPtBtn) {
-    _attachTooltip(addPtBtn, 'Add a point to the curve');
+    _attachTooltip(addPtBtn, 'Add a point to the curve', 'right');
     // In A-curve mode the point would have no handles to grab, so adding one switches back
     addPtBtn.addEventListener('click', function() { if (_peakMode) _setPeakMode(false); _addPoint(); });
   }
@@ -6693,7 +6704,7 @@ function initPanel() {
     setTimeout(function() { if (_zsDismiss === d) document.addEventListener('pointerdown', d, true); }, 0);
   }
   if (zoomBtn) {
-    _attachTooltip(zoomBtn, function() { return document.getElementById('_zoom-pop') ? '' : _zoomLabel(); });
+    _attachTooltip(zoomBtn, function() { return document.getElementById('_zoom-pop') ? '' : _zoomLabel(); }, 'right');
     zoomBtn.addEventListener('click', function() {
       if (!_hideZoomSlider()) _showZoomSlider(zoomBtn);
     });
@@ -6717,8 +6728,8 @@ function initPanel() {
   var _tbTools = [peakBtn, bounceBtn, addPtBtn]; // zoom never hides
   // Bar: the menu button and New Preset on the left, Full Screen on the right
   var _TB_NEED = (2 * 26 + 1 * 5) + 26 + 10 + 8;
-  // Column: 8px + three buttons and their 5px gaps + 8px air + zoom + 8px
-  var _SIDE_NEED = 8 + (3 * 26 + 2 * 5) + 8 + 26 + 8;
+  // Column: three buttons and their 5px gaps from the top + 8px air + zoom + 5px
+  var _SIDE_NEED = (3 * 26 + 2 * 5) + 8 + 26 + 5;
   var _tbCollapsed = null;
   var _tbDismiss   = null;
   function _hideToolsMenu() {
