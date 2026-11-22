@@ -2546,7 +2546,7 @@ function renderUI(s) {
         _addPressState(propUndo);
         propUndo.style.display = 'none';
         _attachTooltip(propUndo, 'Undo the bake on this property');
-        propUndo.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3.8 5.5H8.6a2.9 2.9 0 010 5.8H6.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.8 3.3L3.5 5.5l2.3 2.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        propUndo.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2.4 5H8.3a3.3 3.3 0 010 6.6H5.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 2.4L2.4 5l2.6 2.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
         propUndo.addEventListener('click', function(ev) {
           ev.stopPropagation();
           _undoBakeForKey(p.key);
