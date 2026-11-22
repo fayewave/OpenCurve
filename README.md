@@ -44,9 +44,9 @@ A free bezier curve editor plugin to add custom easing to your keyframes in Adob
 - **Auto-detects keyframes** — Finds keyframes on clips automatically
 - **Multi-point curves** — Add points to build complex motion in a single ease, with smooth or broken handles
 - **A-curve mode** — Shape the ease as a speed graph: drag the peak to where the motion is fastest
-- **Presets** — Save, rename and reorder your curves, and export/import them to share
+- **Presets** — Save, rename and reorder your curves, and export/import them to share. Want more to start with? Download the [preset pack](presets/OpenCurve-Preset-Pack.json) (Linear, Snap, Slow Middle, Overshoot, Anticipate and Bounce) and load it with Import Presets in the preset menu
 - **Mini timeline** — See every keyframed property at a glance
-- **Per-property undo** — Undo a single property's ease, or load its baked curve back onto the graph, even after reopening the project
+- **Per-property undo** — Undo a single property's ease, swap it for the curve on the graph, or load its baked curve back onto the graph, even after reopening the project
 - **Undo and redo** — Supports Premiere's history system for full undo/redo support (`.ccx` version only)
 - **Customization** — Themes, grid size, list/grid presets, resizable layout, full-screen graph mode, numeric entry, and more
 - **Free forever** — No bloat, no logins.

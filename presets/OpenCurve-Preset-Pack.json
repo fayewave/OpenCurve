@@ -1,0 +1,19 @@
+{
+  "opencurve": 1,
+  "version": "2.0.2",
+  "presets": [
+    { "name": "Linear",      "curve": { "p1x": 0.25, "p1y": 0.25, "p2x": 0.75, "p2y": 0.75 } },
+    { "name": "Snap",        "curve": { "p1x": 0.87, "p1y": 0,    "p2x": 0.13, "p2y": 1 } },
+    { "name": "Slow Middle", "curve": { "p1x": 0.1,  "p1y": 0.7,  "p2x": 0.9,  "p2y": 0.3 } },
+    { "name": "Overshoot",   "curve": { "p1x": 0.34, "p1y": 1.56, "p2x": 0.64, "p2y": 1 } },
+    { "name": "Anticipate",  "curve": { "p1x": 0.36, "p1y": 0,    "p2x": 0.66, "p2y": -0.56 } },
+    { "name": "Bounce",      "curve": {
+        "p1x": 0.1212, "p1y": 0, "p2x": 0.9697, "p2y": 0.9792,
+        "pts": [
+          { "x": 0.3636, "y": 1, "ix": 0.2424, "iy": 0.3333, "ox": 0.4848, "oy": 0.6667, "smooth": false },
+          { "x": 0.7273, "y": 1, "ix": 0.6061, "iy": 0.6667, "ox": 0.7879, "oy": 0.9167, "smooth": false },
+          { "x": 0.9091, "y": 1, "ix": 0.8485, "iy": 0.9167, "ox": 0.9394, "oy": 0.9792, "smooth": false }
+        ]
+    } }
+  ]
+}
