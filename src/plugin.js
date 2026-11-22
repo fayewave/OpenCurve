@@ -4344,8 +4344,9 @@ var STATUS_CONFIG = {
 // curve from somewhere else replaces it. While the curve still matches it
 // (_sameCurve) its tile is lit as before ('active'); once the curve differs the
 // tile turns 'edited' (a softer fill and a dot in the theme colour) and the
-// graph bar shows a chip, "Name edited", with Save (overwrites the preset,
-// built-ins too) and Revert (eases back to it). Edits never touch the source:
+// graph bar's chip, which names the source preset whenever there is one,
+// adds "edited", Save (overwrites the preset, built-ins too) and Revert
+// (eases back to it). Edits never touch the source:
 // every curve change goes through setState, and the state listener below
 // compares the curve with the preset's, so dragging back to the same shape
 // lights the tile normally again. clearPresetActive() forgets the source (a
@@ -4401,11 +4402,19 @@ function _presetEditSync(force) {
   } else if (_peDot && _peDot.parentNode) _peDot.parentNode.removeChild(_peDot);
   // Graph bar chip
   var chip = document.getElementById('preset-edit-chip');
+  // The chip names the preset whenever there is one; "edited", Save and Revert
+  // join it only while the curve differs (the name gets right padding alone)
   if (chip) {
-    var show = ed && _peChipRoom;
+    var show = id !== null && _peChipRoom;
     if (show) {
       var nm = document.getElementById('pe-name');
       if (nm && nm.textContent !== name) nm.textContent = name;
+      var sub = ed ? '' : 'none';
+      [chip.querySelector('.pe-tag'), document.getElementById('pe-save'), document.getElementById('pe-revert')].forEach(function(el) {
+        if (el && el.style.display !== sub) el.style.display = sub;
+      });
+      var pr = ed ? '' : '9px';
+      if (chip.style.paddingRight !== pr) chip.style.paddingRight = pr;
     }
     var disp = show ? 'flex' : 'none';
     if (chip.style.display !== disp) chip.style.display = disp;
@@ -7515,22 +7524,28 @@ function initPanel() {
     return _curveFromText(text);
   }
 
-  // Create a preset from a parsed curve and add it to the list
+  // New Preset / Paste Preset: the name is asked for first and the preset is
+  // only added on Save; Cancel, Esc or a click outside leave the list alone
+  // (it used to be added at once, so Cancel kept it under its default name).
+  // makeActive: the graph holds this curve, so its tile becomes the lit one.
+  function _promptNewPreset(curve, defName, title, makeActive) {
+    curve = _cloneCurve(curve);
+    _renamePresetDialog(defName, function(name) {
+      var preset = { id: 'c' + Date.now(), name: name, curve: curve };
+      _presetList.push(preset);
+      _savePresetList(_presetList);
+      var btn = _buildPresetBtn(preset);
+      var list = document.getElementById('all-presets-list');
+      if (list) list.appendChild(btn);
+      _applyPresetLayout(true);
+      _presetGoToTile(btn); // the page it landed on
+      if (makeActive) setPresetActive(preset.id); // an edited preset it came from is left as it was
+    }, { title: title, ok: 'Save' });
+  }
+  function _customCount() { return _presetList.filter(function(p){ return !p.builtIn; }).length + 1; }
+  // Paste Preset: a parsed curve becomes a preset once it is named
   function _createPresetFromCurve(curve) {
-    var list = document.getElementById('all-presets-list');
-    if (!list) return;
-    var preset = {
-      id: 'c' + Date.now(),
-      name: 'Pasted ' + (_presetList.filter(function(p){ return !p.builtIn; }).length + 1),
-      curve: curve,
-    };
-    _presetList.push(preset);
-    _savePresetList(_presetList);
-    var btn = _buildPresetBtn(preset);
-    list.appendChild(btn);
-    _applyPresetLayout(true);
-    _presetGoToTile(btn);
-    if (btn._ocRename) btn._ocRename({ title: 'Name Pasted Preset', ok: 'Save' });
+    _promptNewPreset(curve, 'Pasted ' + _customCount(), 'Name Pasted Preset', false);
   }
 
   // Show paste-coordinates input panel
@@ -7884,20 +7899,7 @@ function initPanel() {
     if (newTool) {
       _attachTooltip(newTool, 'New Preset: save the current curve as a preset');
       newTool.addEventListener('click', function() {
-        var preset = {
-          id: 'c' + Date.now(),
-          name: 'Custom ' + (_presetList.filter(function(p){ return !p.builtIn; }).length + 1),
-          curve: _cloneCurve(getState().curve),
-        };
-        _presetList.push(preset);
-        _savePresetList(_presetList);
-        var btn = _buildPresetBtn(preset);
-        var list = document.getElementById('all-presets-list');
-        if (list) list.appendChild(btn);
-        _applyPresetLayout(true);
-        _presetGoToTile(btn);
-        setPresetActive(preset.id); // the graph's curve is this preset now (an edited one is left as it was)
-        if (btn._ocRename) btn._ocRename({ title: 'New Preset', ok: 'Save' });
+        _promptNewPreset(getState().curve, 'Custom ' + _customCount(), 'New Preset', true);
       });
     }
   }());
@@ -8103,6 +8105,13 @@ function initPanel() {
   // State → UI
   stateListeners.push(renderUI);
   renderUI(getState());
+  // The panel opens on Cubic In-Out. Saved over (the graph bar's Save), it opens
+  // on the saved curve, or the tile would read "edited" on every launch
+  var _startP = _presetByIdRef ? _presetByIdRef('cubic-in-out') : null;
+  if (_startP && !_sameCurve(_startP.curve, state.curve)) {
+    setState({ curve: _startP.curve });
+    if (_svgW > 0 && _svgH > 0) updateDynamicSVG(getState().curve, _svgW, _svgH);
+  }
   setPresetActive('cubic-in-out');
 }
 
