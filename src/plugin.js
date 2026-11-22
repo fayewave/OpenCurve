@@ -8146,11 +8146,14 @@ function _refreshUpdateNotification() {
   notif.style.backgroundColor = 'rgba(240,180,0,0.08)';
   notif.style.position = 'relative';
 
-  // Icon area (same 28x28 space as thumbnail)
-  var iconWrap = document.createElement('span');
-  iconWrap.className = 'preset-thumb';
-  iconWrap.style.cssText = 'width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:8px;font-size:16px;opacity:0.9;';
-  iconWrap.textContent = '⚠';
+  // Icon: a circled up arrow drawn as SVG in the thumbnail's own place. It
+  // carries .preset-thumb, so _applyPresetLayout sizes it like the curve
+  // thumbnails (28px in the list, 40-42px in the grid) and sets its stroke in
+  // the 28-unit viewBox; one path, so that stroke applies to all of it.
+  var iconHost = document.createElement('span');
+  iconHost.innerHTML = '<svg class="preset-thumb" width="28" height="28" viewBox="0 0 28 28" fill="none" style="flex-shrink:0;margin-right:8px;">'
+    + '<path d="M3 14A11 11 0 1 1 25 14A11 11 0 1 1 3 14Z M14 19.5V8.5 M9 13.5L14 8.5L19 13.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var iconWrap = iconHost.firstChild;
   notif.appendChild(iconWrap);
 
   var nameSpan = document.createElement('span');
@@ -8185,6 +8188,7 @@ function _refreshUpdateNotification() {
 // last check (Check now, or Download once a newer release is out)
 function _applyUpdateBtnState(btn, label) {
   var txt = btn._ocText || btn;
+  if (btn._ocAccent) btn._ocAccent(!!_updateAvailable);
   if (_updateAvailable) {
     txt.textContent = 'Download';
     label.textContent = 'Version ' + _latestVersion + ' is out (you have v' + CURRENT_VERSION + ')';
@@ -8849,13 +8853,20 @@ function _showSettingsModal() {
     var row = _el('display:flex;flex-direction:row;align-items:center;');
     var text = _el('display:flex;flex-direction:column;flex:1 1 auto;min-width:0;margin-right:12px;');
     text.appendChild(_el('color:#ececec;font-size:13px;font-weight:600;line-height:18px;', title));
-    var d = _el('color:#8c8c8c;font-size:12px;line-height:16px;margin-top:2px;', desc);
-    text.appendChild(d);
+    // desc null: no hint line at all (the title sits alone, centred)
+    var d = desc === null ? null : _el('color:#8c8c8c;font-size:12px;line-height:16px;margin-top:2px;', desc);
+    if (d) text.appendChild(d);
     row.appendChild(text);
     if (control) row.appendChild(control);
     card._ocIn.appendChild(row);
     if (below) card._ocIn.appendChild(below);
     card._ocDesc = d;
+    // Colours by state (outline, rest, hover, pressed); _ocSetPal swaps them,
+    // e.g. the Updates card's amber while an update is out
+    card._ocPal = { line: _CARD_LINE, fill: _CARD_FILL, hot: _CARD_HOT, down: _CARD_DOWN };
+    card._ocPaint = function() { card.style.backgroundColor = card._ocPal.line; card._ocIn.style.backgroundColor = card._ocPal.fill; };
+    card._ocSetPal = function(p) { card._ocPal = p; card._ocPaint(); };
+    if (control) control._ocCard = card;
     if (onClick) {
       // Hover lights the card, a press lights it more until the release. A
       // button control (the Updates card's) follows the card: the whole card
@@ -8863,7 +8874,8 @@ function _showSettingsModal() {
       var hot = false, down = false;
       if (control && control._ocHot) control._ocInCard = true;
       var paint = function() {
-        card._ocIn.style.backgroundColor = down ? _CARD_DOWN : hot ? _CARD_HOT : _CARD_FILL;
+        var p = card._ocPal;
+        card._ocIn.style.backgroundColor = down ? p.down : hot ? p.hot : p.fill;
         if (control && control._ocInCard) control._ocHot(down ? 2 : hot ? 1 : 0);
       };
       card.addEventListener('mouseenter', function() { hot = true; paint(); });
@@ -8872,6 +8884,9 @@ function _showSettingsModal() {
       card.addEventListener('pointerup', function() { if (down) { down = false; paint(); } });
       card.addEventListener('pointercancel', function() { if (down) { down = false; paint(); } });
       card.addEventListener('click', onClick);
+      card._ocPaint = paint;
+      card.style.backgroundColor = card._ocPal.line;
+      card._ocSetPal = function(p) { card._ocPal = p; card.style.backgroundColor = p.line; paint(); };
     }
     return card;
   }
@@ -8910,7 +8925,9 @@ function _showSettingsModal() {
     b._ocText = t;
     // Look by state: 0 rest, 1 hover, 2 pressed (outline, fill)
     var looks = [['#3c3c3c', '#222222'], ['#5a5a5a', '#2a2a2a'], ['#757575', '#343434']];
-    b._ocHot = function(st) { b.style.backgroundColor = looks[st][0]; b._ocIn.style.backgroundColor = looks[st][1]; };
+    b._ocLooks = looks;
+    b._ocState = 0;
+    b._ocHot = function(st) { b._ocState = st; b.style.backgroundColor = b._ocLooks[st][0]; b._ocIn.style.backgroundColor = b._ocLooks[st][1]; };
     // Inside a clickable card (_ocInCard) the card drives the look and the click
     var hot = false, down = false;
     var paint = function() { if (!b._ocInCard) b._ocHot(down ? 2 : hot ? 1 : 0); };
@@ -8959,21 +8976,97 @@ function _showSettingsModal() {
     _smoothWheel(c);           // UXP: proper wheel steps with easing
     _sdWatch(c, 'settings');
     _holdFixWatch(c);
+    if (typeof _sbWire === 'function' && sb) _sbWire(c); // the new scroller needs the bar's scroll listener
     c._ocRewire = _wireContent;
   }
   _wireContent(content);
-  var cols = _el('display:flex;flex-direction:row;align-items:flex-start;flex-shrink:0;box-sizing:border-box;width:100%;max-width:1000px;padding:4px 12px 6px;');
+  var cols = _el('display:flex;flex-direction:row;align-items:flex-start;flex-shrink:0;box-sizing:border-box;width:100%;max-width:1000px;padding:4px 16px 6px 12px;');
   var colA = _el('display:flex;flex-direction:column;flex:1 1 0;min-width:0;');
   var colB = _el('display:flex;flex-direction:column;flex:1 1 0;min-width:0;');
   cols.appendChild(colA);
   cols.appendChild(colB);
   content.appendChild(cols);
 
+  // Scrollbar: a wider one of our own (UXP's native scrollbar can't be styled
+  // and was thin and hard to hold). It sits over the right edge of the
+  // scroller, opaque so it covers UXP's own bar (CEP hides its native one with
+  // .oc-sb-hidden); the thumb is SVG so its round ends come out clean in UXP.
+  // Dragging it is ordinary pointer capture, so it holds on in the CCX.
+  var _SB_W = 14, _SB_THUMB = 10, _SB_MIN = 28;
+  var contentWrap = _el('position:relative;flex:1;display:flex;flex-direction:column;min-height:0;');
+  contentWrap.appendChild(content);
+  var sb = _el('position:absolute;top:0;right:0;bottom:0;width:' + _SB_W + 'px;background-color:#111111;display:none;');
+  sb.innerHTML = '<svg width="' + _SB_W + '" height="40" viewBox="0 0 ' + _SB_W + ' 40" fill="none" style="position:absolute;left:0;top:0;">'
+    + '<path d="" fill="rgba(255,255,255,0.18)"/></svg>';
+  contentWrap.appendChild(sb);
+  var sbSvg = sb.querySelector('svg'), sbPath = sb.querySelector('path');
+  var sbShown = false, sbTop = -1, sbH = -1, sbHot = false, sbDrag = null;
+  function _sbFill() { sbPath.setAttribute('fill', sbDrag ? 'rgba(255,255,255,0.42)' : sbHot ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.18)'); }
+  function _sbGeo() {
+    var ch = content.clientHeight, sh = content.scrollHeight;
+    var th = Math.max(_SB_MIN, Math.round(ch * ch / Math.max(1, sh)));
+    return { ch: ch, sh: sh, th: th, travel: Math.max(1, ch - th), range: Math.max(1, sh - ch) };
+  }
+  // Change-only, like every other write here (UXP relayouts on each one)
+  function _sbSync() {
+    var g = _sbGeo(), show = g.sh > g.ch + 1;
+    if (show !== sbShown) { sbShown = show; sb.style.display = show ? 'block' : 'none'; }
+    if (!show) return;
+    var top = Math.round(g.travel * content.scrollTop / g.range);
+    if (top === sbTop && g.th === sbH) return;
+    if (g.th !== sbH) {
+      sbSvg.setAttribute('height', String(g.th));
+      sbSvg.setAttribute('viewBox', '0 0 ' + _SB_W + ' ' + g.th);
+      var x = (_SB_W - _SB_THUMB) / 2, r = _SB_THUMB / 2, y0 = 2, y1 = g.th - 2;
+      // A rounded bar: two half circles joined by straight sides (1px clear of the SVG's edges)
+      sbPath.setAttribute('d', 'M' + x + ' ' + (y0 + r) + 'A' + r + ' ' + r + ' 0 0 1 ' + (x + _SB_THUMB) + ' ' + (y0 + r)
+        + 'V' + (y1 - r) + 'A' + r + ' ' + r + ' 0 0 1 ' + x + ' ' + (y1 - r) + 'Z');
+    }
+    if (top !== sbTop) sbSvg.style.top = top + 'px';
+    sbTop = top; sbH = g.th;
+  }
+  function _sbWire(c) { // the scroller's scroll listener (UXP re-runs it on _refreshScroller's swap)
+    if (c._ocSb) return;
+    c._ocSb = true;
+    c.classList.add('oc-sb-hidden');
+    c.addEventListener('scroll', _sbSync);
+  }
+  _sbWire(content);
+  sb.addEventListener('mouseenter', function() { sbHot = true; _sbFill(); });
+  sb.addEventListener('mouseleave', function() { sbHot = false; _sbFill(); });
+  sb.addEventListener('pointerdown', function(e) {
+    var g = _sbGeo(), y = e.clientY - sb.getBoundingClientRect().top;
+    if (y < sbTop || y > sbTop + g.th) {
+      // On the track: page towards the press, as a native scrollbar does
+      content.scrollTop += (y < sbTop ? -1 : 1) * Math.round(g.ch * 0.9);
+      return;
+    }
+    sbDrag = { y: e.clientY, top: content.scrollTop, id: e.pointerId };
+    try { sb.setPointerCapture(e.pointerId); } catch(_) {}
+    _sbFill();
+    e.preventDefault();
+  });
+  sb.addEventListener('pointermove', function(e) {
+    if (!sbDrag) return;
+    var g = _sbGeo();
+    content.scrollTop = Math.max(0, Math.min(g.range, sbDrag.top + (e.clientY - sbDrag.y) * g.range / g.travel));
+  });
+  function _sbEnd(e) {
+    if (!sbDrag) return;
+    try { sb.releasePointerCapture(sbDrag.id); } catch(_) {}
+    sbDrag = null;
+    _sbFill();
+  }
+  sb.addEventListener('pointerup', _sbEnd);
+  sb.addEventListener('pointercancel', _sbEnd);
+  // CEP gets wheel events over the bar too (UXP sends none at all)
+  sb.addEventListener('wheel', function(e) { content.scrollTop += e.deltaY; e.preventDefault(); });
+
   // Left column: what the panel shows and how the graph behaves
   var cardsA = [
-    _toggleCard('Graph', 'The curve editor. Off, the presets fill the panel',
+    _toggleCard('Show Graph', null,
       function() { return _graphVisible; }, function(v) { _setGraphVisible(v); }),
-    _toggleCard('Timeline', 'Keyframe lanes beside the property rows',
+    _toggleCard('Show Timeline', null,
       function() { return _tlVisible; }, function(v) { _setTimelineVisible(v); }),
     _toggleCard('Ghost', 'While you drag, the curve\'s starting shape stays faintly behind it',
       function() { return _dragGhost; }, function(v) { _setDragGhost(v); }),
@@ -9073,7 +9166,7 @@ function _showSettingsModal() {
   });
   hexRow.appendChild(hexTf.wrap);
   hexRow.appendChild(hexPreview);
-  var colorCard = _card('Theme Colour', 'The curve, its handles and the active preset', hexRow, null, swatchRow);
+  var colorCard = _card('Theme Colour', null, hexRow, null, swatchRow);
 
   // Right column: baking, the look, updates
   var cardsB = [densCard, colorCard];
@@ -9093,6 +9186,17 @@ function _showSettingsModal() {
   updBtn.id = '_updates-row';
   var updCard = _card('Updates', '', updBtn, updAct); // the whole card is the button
   updCard._ocDesc.id = '_updates-label';
+  // Amber while an update is out: the card and its Download button
+  // (_applyUpdateBtnState calls this after every check)
+  var _updGrey  = updCard._ocPal, _updGreyLooks = updBtn._ocLooks;
+  var _updAmber = { line: '#4f3f15', fill: '#1f1a0d', hot: '#272010', down: '#302713' };
+  var _updAmberLooks = [['#7d5f16', '#2d2410'], ['#a47c1c', '#382c13'], ['#c49322', '#433518']];
+  updBtn._ocAccent = function(on) {
+    updCard._ocSetPal(on ? _updAmber : _updGrey);
+    updBtn._ocLooks = on ? _updAmberLooks : _updGreyLooks;
+    updBtn._ocHot(updBtn._ocState || 0);
+    updBtn._ocIn.style.color = on ? '#f5c04a' : '#e4e4e4';
+  };
   _applyUpdateBtnState(updBtn, updCard._ocDesc);
   var notifCard = _toggleCard('Update Notifications', 'A tile in the preset list when a new version is out',
     function() { return _updateNotifsOn; }, function(v) {
@@ -9207,9 +9311,10 @@ function _showSettingsModal() {
   }
 
   modal.appendChild(header);
-  modal.appendChild(content);
+  modal.appendChild(contentWrap);
   modal.appendChild(footer);
   document.body.appendChild(modal);
+  _sbSync();
   _layoutFooter(vw);
 
   // Resize with the panel
@@ -9222,6 +9327,7 @@ function _showSettingsModal() {
     if (modal.style.height !== mh) modal.style.height = mh;
     _layoutFooter(nvw);
     _layoutCards(nvw);
+    _sbSync();
   });
   _settingsRO.observe(document.body);
 

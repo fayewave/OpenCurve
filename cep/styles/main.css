@@ -49,6 +49,8 @@ html, body {
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.28); background-clip: padding-box; }
 ::-webkit-scrollbar-corner { background: transparent; }
+/* Settings draws its own, wider scrollbar over the scroller (_sbSync) */
+.oc-sb-hidden::-webkit-scrollbar { width: 0; height: 0; }
 
 /* ─── App shell ─────────────────────────────────────────────── */
 input, textarea {
