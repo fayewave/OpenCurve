@@ -5100,7 +5100,7 @@ function _statusMsg(s, showClip) {
 // pixel less put them a pixel up and left, so UXP paints the SVG content half
 // a pixel off its box (checked by eye, 2026-09). Run after every render
 // because the property rows are rebuilt there.
-var _ICON_OFF = { 'tool-btn': 5.5, 'prop-pin': 3.5, 'prop-undo': 3.5, 'prop-curve': 3.5, 'prop-replace': 3.5, 'btn-undo': 3.5, 'pager-btn': 3.5 };
+var _ICON_OFF = { 'tool-btn': 5.5, 'prop-pin': 4.5, 'prop-undo': 4.5, 'prop-curve': 4.5, 'prop-replace': 4.5, 'btn-undo': 3.5, 'pager-btn': 3.5 };
 function _centerIcons() {
   Object.keys(_ICON_OFF).forEach(function(cls) {
     var off = _ICON_OFF[cls] + 'px';

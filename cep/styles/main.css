@@ -632,8 +632,8 @@ input, textarea {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   margin-left: 6px;
   border-radius: 3px;
   /* Amber at rest: the playhead isn't over this property's keyframes yet, so the pin is the thing to press */
@@ -747,8 +747,8 @@ input, textarea {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   margin-left: 6px;
   border-radius: 3px;
   background-color: rgba(61,220,132,0.18);
@@ -778,8 +778,8 @@ input, textarea {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   margin-left: 6px;
   border-radius: 3px;
   background-color: rgba(61,220,132,0.18);
