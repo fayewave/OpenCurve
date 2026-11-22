@@ -1418,6 +1418,15 @@ var Y_CLAMP_MAX         =  2.0; // max Y value for control point dragging
 // ─── SVG graph editor ─────────────────────────────────────────────────────
 var PAD = 16, HANDLE_R = 5;
 var _zoom = 1.0;
+// Height the content scales about, in curve units: 0.5 is the range box's
+// centre (= the SVG's), 0 its bottom edge, 1 its top. Auto zoom moves it so a
+// curve past the top grows the graph upward only (the box's bottom stays put),
+// and the reverse; resize-proof because it is relative to the box.
+var _zoomOY = 0.5;
+function _zoomOrigin() {
+  var b = _rangeBox(_svgW, _svgH);
+  return { x: _svgW / 2, y: b.y + (1 - _zoomOY) * b.s };
+}
 var _zoomPopHide = null; // set by initPanel: closes the zoom slider, true if it was open (Esc)
 var _closeMenus  = null; // set by initPanel: closes the tile / mini context menus, true if one was open
 
@@ -1447,16 +1456,17 @@ function svgToNorm(cx, cy, W, H) {
 
 // Map a raw SVG viewport coordinate through the inverse of the content group's scale transform
 function _unscale(cx, cy) {
+  var o = _zoomOrigin();
   return {
-    cx: _svgW / 2 + (cx - _svgW / 2) / _zoom,
-    cy: _svgH / 2 + (cy - _svgH / 2) / _zoom,
+    cx: o.x + (cx - o.x) / _zoom,
+    cy: o.y + (cy - o.y) / _zoom,
   };
 }
 
 function _updateContentTransform() {
   var g = document.getElementById('sg-content');
   if (!g || !_svgW || !_svgH) return;
-  var cx = _svgW / 2, cy = _svgH / 2;
+  var o = _zoomOrigin(), cx = o.x, cy = o.y;
   g.setAttribute('transform',
     'translate(' + cx + ',' + cy + ') scale(' + _zoom + ') translate(' + (-cx) + ',' + (-cy) + ')');
 }
@@ -1468,44 +1478,69 @@ function _updateContentTransform() {
 // handles), easing alongside the curve tween. A later curve that fits zooms
 // back to the level the user had. A manual zoom takes over: auto zoom never
 // goes past the user's own level and forgets what it was restoring.
+// It zooms about the edge the curve stays inside (_zoomOY): a curve past the
+// top keeps the range box's bottom edge where it was and opens up above, one
+// past the bottom the reverse; only a curve past both fits itself between the
+// margins. (It zoomed about the centre until 2.1.0's Bounce mode, which moved
+// the whole box for an Elastic overshoot.)
 // Settings > Auto Zoom (opencurve-auto-zoom, on by default) turns it off.
 var _AUTO_ZOOM_KEY    = 'opencurve-auto-zoom';
 var _autoZoomOn       = (function() { try { return localStorage.getItem(_AUTO_ZOOM_KEY) !== 'off'; } catch(_) { return true; } })();
 var _autoZoomFrom     = null;  // the user's own zoom while auto zoom has moved it, else null
+var _autoZoomFromOY   = 0.5;   // and the origin it had (_zoomOY)
 var _zoomAnimRaf      = null;
 var _AUTO_ZOOM_MIN    = 0.25;  // same floor as the zoom slider
 var _AUTO_ZOOM_MARGIN = 8;     // px kept clear between the curve and the graph's edge
 var _AUTO_ZOOM_MS     = 200;
-// The zoom that just fits the curve's lowest and highest point inside the SVG
-// (the content scales about the SVG's centre); 1 when it already fits
+// The zoom, and the origin to zoom about, that just fit the curve's lowest and
+// highest point inside the SVG: { z, oy }, z 1 when it already fits
 function _zoomToFit(c) {
-  if (!c || !_svgW || !_svgH || _peakMode) return 1; // the A-curve bell always fits
+  var none = { z: 1, oy: 0.5 };
+  if (!c || !_svgW || !_svgH || _peakMode) return none; // the A-curve bell always fits
   var lo = 0, hi = 1, N = 128, segs = _hasPts(c) ? _segsOf(c) : null;
   for (var i = 1; i < N; i++) {
     var y = sampleBezier(i / N, c, segs);
     if (y < lo) lo = y;
     if (y > hi) hi = y;
   }
-  var box = _rangeBox(_svgW, _svgH), cy = _svgH / 2, m = _AUTO_ZOOM_MARGIN, z = 1;
+  var box = _rangeBox(_svgW, _svgH), m = _AUTO_ZOOM_MARGIN, H = _svgH;
+  var yT = box.y, yB = box.y + box.s; // the range box's top and bottom edges
   var yTop = box.y + (1 - hi) * box.s, yBot = box.y + (1 - lo) * box.s;
-  if (yTop < cy) z = Math.min(z, (cy - m) / (cy - yTop));
-  if (yBot > cy) z = Math.min(z, (_svgH - m - cy) / (yBot - cy));
-  return Math.max(_AUTO_ZOOM_MIN, Math.min(1, z));
+  var over = yTop < m, under = yBot > H - m, z, oy;
+  if (!over && !under) return none;
+  if (over && !under)      { z = (yB - m) / (yB - yTop);     oy = 0; } // past the top: the bottom edge stays
+  else if (under && !over) { z = (H - m - yT) / (yBot - yT); oy = 1; } // past the bottom: the top edge stays
+  else {
+    // Past both: fit between the margins (origin o where z*yTop + o*(1-z) = m)
+    z = (H - 2 * m) / (yBot - yTop);
+    var o = z < 1 ? (m - z * yTop) / (1 - z) : H / 2;
+    oy = 1 - (o - box.y) / box.s;
+  }
+  z = Math.max(_AUTO_ZOOM_MIN, Math.min(1, z));
+  return { z: z, oy: oy };
 }
 function _cancelZoomAnim() {
   if (_zoomAnimRaf) { cancelAnimationFrame(_zoomAnimRaf); _zoomAnimRaf = null; }
 }
-// Ease the zoom to z (straight there while the graph is hidden)
-function _zoomAnimTo(z) {
+// Ease the zoom to z about origin oy (default: the current one; straight there
+// while the graph is hidden). At zoom 1 the origin changes nothing, so leaving 1
+// starts at the target's origin and returning to 1 keeps the current one for
+// the ease: the edge being held stays still the whole way.
+function _zoomAnimTo(z, oy) {
   _cancelZoomAnim();
-  var from = _zoom;
-  if (!_graphVisible || Math.abs(z - from) < 1e-4) { _zoom = z; _updateContentTransform(); return; }
+  if (oy == null) oy = _zoomOY;
+  var from = _zoom, fromO = Math.abs(1 - from) < 1e-4 ? oy : _zoomOY;
+  var toO = Math.abs(1 - z) < 1e-4 ? fromO : oy;
+  if (!_graphVisible || (Math.abs(z - from) < 1e-4 && Math.abs(toO - fromO) < 1e-4)) {
+    _zoom = z; _zoomOY = oy; _updateContentTransform(); return;
+  }
   var start = null;
   function ease(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
   function step(ts) {
     if (start === null) start = ts;
-    var p = Math.min((ts - start) / _AUTO_ZOOM_MS, 1);
-    _zoom = from + (z - from) * ease(p);
+    var p = Math.min((ts - start) / _AUTO_ZOOM_MS, 1), e = ease(p);
+    _zoom   = from + (z - from) * e;
+    _zoomOY = p < 1 ? fromO + (toO - fromO) * e : oy;
     _updateContentTransform();
     _zoomAnimRaf = p < 1 ? requestAnimationFrame(step) : null;
   }
@@ -1514,10 +1549,16 @@ function _zoomAnimTo(z) {
 function _autoZoomFor(c) {
   if (!_autoZoomOn) return;
   var base = _autoZoomFrom !== null ? _autoZoomFrom : _zoom; // the user's own level
-  var want = Math.min(base, _zoomToFit(c));
-  if (want < base - 1e-4) { if (_autoZoomFrom === null) _autoZoomFrom = _zoom; }
-  else _autoZoomFrom = null;
-  if (Math.abs(want - _zoom) > 1e-4) _zoomAnimTo(want);
+  var baseO = _autoZoomFrom !== null ? _autoZoomFromOY : _zoomOY;
+  var fit = _zoomToFit(c), want, wantO;
+  if (fit.z < base - 1e-4) {
+    if (_autoZoomFrom === null) { _autoZoomFrom = _zoom; _autoZoomFromOY = _zoomOY; }
+    want = fit.z; wantO = fit.oy;
+  } else {
+    _autoZoomFrom = null;
+    want = base; wantO = baseO;
+  }
+  if (Math.abs(want - _zoom) > 1e-4 || Math.abs(wantO - _zoomOY) > 1e-4) _zoomAnimTo(want, wantO);
 }
 
 // The graph's SVG children are built once and then only repositioned, but the
@@ -9688,7 +9729,7 @@ function _showSettingsModal() {
         _autoZoomOn = v;
         localStorage.setItem(_AUTO_ZOOM_KEY, v ? 'on' : 'off');
         // Off: go back to the user's own zoom; on: fit the curve on the graph now
-        if (!v && _autoZoomFrom !== null) { _zoomAnimTo(_autoZoomFrom); _autoZoomFrom = null; }
+        if (!v && _autoZoomFrom !== null) { _zoomAnimTo(_autoZoomFrom, _autoZoomFromOY); _autoZoomFrom = null; }
         else if (v) _autoZoomFor(getState().curve);
       }),
   ];
