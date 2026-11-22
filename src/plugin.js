@@ -973,11 +973,11 @@ function _setPeakMode(on) {
 // Bounce mode switches Out / In instead. The mode itself is session only (the
 // panel opens on the default curve); the settings persist (opencurve-bounce).
 // UXP: the sliders are SVG (attribute writes are cheap) and their number labels
-// and the hint are HTML text, written change-only and at most every
+// are HTML text, written change-only and at most every
 // _BN_TEXT_MS while a drag runs (a text write relayouts the whole panel).
 var _BN_KEY    = 'opencurve-bounce';
 var _BN_DEF    = { style: 'bounce', dir: 'out', n: 3, bounce: 0.45, over: 0.3, fric: 0.35, hit: 0.4 };
-var _BN_RANGE  = { n: [0, 8], bounce: [0, 0.9], over: [0, 0.7], fric: [0, 0.9], hit: [0.15, 0.85] };
+var _BN_RANGE  = { n: [0, 20], bounce: [0, 0.9], over: [0, 0.7], fric: [0, 0.9], hit: [0.15, 0.85] };
 var _BN_MIN_W  = 0.015;  // narrowest bounce or half swing kept (anchors must stay PT_MIN_GAP apart)
 var _BN_MIN_H  = 0.003;  // lower bounces than this are dropped
 var _BN_COS_F  = 0.3645; // flat-to-flat half cosine
@@ -986,7 +986,7 @@ var _BN_SIN_C  = 0.362;  //               flat handle at the peak
 var _BN_TEXT_MS = 100;
 var _bounceMode = false;
 var _bnOpts = (function() { try { return _bnClean(JSON.parse(localStorage.getItem(_BN_KEY))); } catch(_) { return null; } })() || _bnClean(_BN_DEF);
-var _bnCur  = null;   // the last _bnBuild result (what the dots and the hint show)
+var _bnCur  = null;   // the last _bnBuild result (what the dots show)
 var _bnDrag = false;  // a slider or graph dot is being dragged (text writes throttle)
 
 function _bnClean(o) {
@@ -1127,7 +1127,6 @@ function _setBounceMode(on) {
 
 // State listener: a curve that lost its tag was changed by something else, so
 // the mode ends; a tagged curve from elsewhere (a Bounce preset) is adopted.
-// Also keeps the hint current as the poll changes the selected pairs.
 function _bnOnState(s) {
   if (!_bounceMode) return;
   var tag = s.curve && s.curve.bounce;
@@ -1137,7 +1136,7 @@ function _bnOnState(s) {
     _bnCur = _bnBuild(_bnOpts);
     _bnRedraw();
   }
-  _bnSyncUI(false, s);
+  _bnSyncUI();
 }
 
 // ── Graph dots ──
@@ -1217,7 +1216,7 @@ function _bnNudge(dx, dy) {
 // ── The settings panel ──
 var _bnEls = null;
 var _BN_SLIDERS = [
-  { key: 'n',    label: 'Bounces',  tip: 'How many times it bounces (or swings)' },
+  { key: 'n',    label: 'Bounces',  tip: 'How many times it bounces (or swings), up to 20. Bounces too short to draw are left off' },
   { key: 'h',    label: 'Bounce',   tip: 'How high the first bounce goes, as a share of the move. Drag the amber dot on the graph too' },
   { key: 'fric', label: 'Friction', tip: 'How much each bounce loses: higher dies out faster' },
   { key: 'hit',  label: 'Hit time', tip: 'When it first reaches the end value. Drag the blue dot on the graph too' },
@@ -1281,10 +1280,6 @@ function _bnInit() {
     _bnWireSlider(el);
   });
   panel.appendChild(wrap);
-  var hint = document.createElement('div');
-  hint.style.cssText = 'font-size:11px;color:#808080;line-height:14px;min-height:14px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
-  panel.appendChild(hint);
-  _bnEls.hint = hint;
   if (typeof ResizeObserver !== 'undefined') new ResizeObserver(function() { _bnLayout(); }).observe(panel);
 }
 function _bnKeyOf(def) { return def.key === 'h' ? _bnHKey(_bnOpts) : def.key; }
@@ -1352,7 +1347,7 @@ function _bnPaintSeg(key) {
     if (b._ocCol !== col) { b._ocCol = col; b.style.color = col; }
   });
 }
-// Text writes: change-only, and at most every _BN_TEXT_MS while dragging
+// Text writes (the number labels): change-only, and at most every _BN_TEXT_MS while dragging
 var _bnTextQ = {}, _bnTextAt = 0, _bnTextTimer = null;
 function _bnText(id, el, txt, col) {
   _bnTextQ[id] = { el: el, txt: txt, col: col };
@@ -1370,27 +1365,7 @@ function _bnTextFlush() {
   }
   _bnTextQ = {};
 }
-// The hint under the sliders: how long the last bounce lasts on the selected
-// pair, and a warning when it is too short to show or Keyframe Spacing is wide
-function _bnHintFor(s) {
-  var b = _bnCur;
-  if (!b || !b.used) return { t: '', warn: false };
-  var word = _bnOpts.style === 'elastic' ? 'swing' : 'bounce';
-  var keys = (s.selectedParamKeys || []).filter(function(k) { return (s.validParamKeys || []).indexOf(k) >= 0; });
-  if (!keys.length) keys = s.validParamKeys || [];
-  var fr = 0;
-  keys.forEach(function(k) { var c = s.paramContexts && s.paramContexts[k]; if (c && c.frameCount > fr) fr = c.frameCount; });
-  var parts = [], warn = false;
-  if (b.used < _bnOpts.n) parts.push(b.used + ' of ' + _bnOpts.n + ' fit');
-  if (fr > 0) {
-    var f = b.minW * fr;
-    if (f < 2) { warn = true; parts.push('Last ' + word + ' under 2 frames on this ' + fr + '-frame pair, so it will barely show'); }
-    else parts.push('Last ' + word + ' about ' + Math.round(f) + ' frames on this ' + fr + '-frame pair');
-  }
-  if (_bakeDensity > 1) { warn = true; parts.push('Keyframe Spacing is every ' + _bakeDensity + ' frames: short ' + word + 's get cut'); }
-  return { t: parts.join(' · '), warn: warn };
-}
-function _bnSyncUI(force, s) {
+function _bnSyncUI(force) {
   if (!_bnEls || !_bounceMode) return;
   if (!_bnCur) _bnCur = _bnBuild(_bnOpts);
   ['style', 'dir'].forEach(_bnPaintSeg);
@@ -1403,8 +1378,6 @@ function _bnSyncUI(force, s) {
     _bnText('v' + def.key, el.val, k === 'n' ? String(v) : Math.round(v * 100) + '%');
     if (def.key === 'h') _bnText('lh', el.lb, _bnOpts.style === 'elastic' ? 'Overshoot' : 'Bounce');
   });
-  var h = _bnHintFor(s || getState());
-  _bnText('hint', _bnEls.hint, h.t, h.warn ? '#e0a030' : '#808080');
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────
