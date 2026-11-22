@@ -7277,6 +7277,22 @@ function initPanel() {
     });
   }
 
+  // Hover and press while the strip does something on a click, written inline:
+  // renderUI rewrites the strip's class on every state change, so a .pressed
+  // class wouldn't survive, and UXP applies the compound :hover rules unreliably
+  var _stripHov = false, _stripDown = false, _stripClickable = false;
+  function _paintStrip() {
+    if (!statusStrip) return;
+    var bg = !_stripClickable ? '' : _stripDown ? 'rgba(255,255,255,0.2)' : _stripHov ? 'rgba(255,255,255,0.12)' : '';
+    if (statusStrip._ocBg !== bg) { statusStrip._ocBg = bg; statusStrip.style.backgroundColor = bg; }
+  }
+  if (statusStrip) {
+    statusStrip.addEventListener('mouseenter', function() { _stripHov = true; _paintStrip(); });
+    statusStrip.addEventListener('mouseleave', function() { _stripHov = false; _stripDown = false; _paintStrip(); });
+    statusStrip.addEventListener('pointerdown', function() { _stripDown = true; _paintStrip(); });
+    statusStrip.addEventListener('pointerup', function() { if (_stripDown) { _stripDown = false; _paintStrip(); } });
+    statusStrip.addEventListener('pointercancel', function() { if (_stripDown) { _stripDown = false; _paintStrip(); } });
+  }
   function _updateStripCursor(s) {
     if (!statusStrip) return;
     var valid = s.validParamKeys || [];
@@ -7285,6 +7301,8 @@ function initPanel() {
     // Change-only: this runs on every setState, and UXP relayouts on every write
     var cur = clickable ? 'pointer' : 'default';
     if (statusStrip.style.cursor !== cur) statusStrip.style.cursor = cur;
+    _stripClickable = clickable;
+    _paintStrip();
   }
   stateListeners.push(_updateStripCursor);
 

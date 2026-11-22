@@ -1040,6 +1040,17 @@ input, textarea {
   background-color: rgba(255,255,255,0.15);
   background-image: linear-gradient(to right, rgba(255,255,255,0.09), rgba(255,255,255,0));
 }
+/* Pressed (.pressed from _addPressState, on the button itself so UXP repaints it) */
+#go-btn:not(.btn-disabled).pressed {
+  background-color: rgba(61,220,132,0.42);
+  background-image: linear-gradient(to right, rgba(255,255,255,0.09), rgba(255,255,255,0));
+  color: #ffffff;
+}
+#go-btn.btn-disabled.go-select.pressed {
+  color: #ffffff;
+  background-color: rgba(255,255,255,0.25);
+  background-image: linear-gradient(to right, rgba(255,255,255,0.09), rgba(255,255,255,0));
+}
 
 /* ─── Context menu ──────────────────────────────────────────── */
 .ctx-menu {
