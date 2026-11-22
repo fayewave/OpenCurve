@@ -3952,7 +3952,7 @@ function initPanel() {
   function _tbChipLayout(w) {
     var chip = document.getElementById('preset-edit-chip');
     if (!chip) return;
-    var room = w - _TB_NEED - 5; // the chip's own left margin
+    var room = w - 2 * 36; // #pe-center's width: the bar between the menu button and Full Screen
     var fits = room >= _PE_CHIP_MIN;
     _peSetLabels(room >= _PE_CHIP_FULL);
     var mw = fits ? Math.floor(room) + 'px' : '';
