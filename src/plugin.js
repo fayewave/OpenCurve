@@ -4033,6 +4033,7 @@ function _tlSec(x, g) { return g.a + (x - _TL_PAD_X) / (g.W - 2 * _TL_PAD_X) * (
 // the playhead takes at that time, so the lines stay on their frames and seconds
 // at any zoom. Returns those x columns.
 var _TL_SEC_GAP     = 10;
+var _TL_SEC_BANDS   = 6;     // fade steps per second line and lane (each one SVG path; see _tlBuild)
 var _TL_SEC_STEPS   = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
 var _TL_FRAME_STEPS = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30, 60];
 // Frame counts under one second for this rate: the ones that divide it, so every
@@ -4233,21 +4234,33 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
   var d    = Math.max(3, Math.min(9, laneH - 3)); // diamond size
   var barH = Math.max(2, Math.min(12, laneH - 4)); // bake, run and selected-pair bars
   var sel  = s.selectedParamKeys || [], valid = s.validParamKeys || [], baked = s.bakedParamKeys || [];
-  // Second lines (_tlSecondXs): 1px HTML divs under the SVG like the lane dividers,
-  // since HTML edges snap to device pixels where thin SVG lines came out soft.
-  // Added before the lanes, so the dividers paint over them and stay unbroken.
-  // Tinted per lane (_TL_COLORS sec) and faded top to bottom within each lane: a CSS
-  // gradient on the div (UXP draws no SVG gradients), full tint at the lane's top
-  // edge, transparent at its bottom, stopping above the divider row.
+  // Second lines (_tlSecondXs), tinted per lane (_TL_COLORS sec) and faded top to
+  // bottom within each lane: full tint at the lane's top edge, transparent at its
+  // bottom, stopping above the divider row. Until 2026-11-22 each was a 1px HTML
+  // div with a CSS gradient (HTML edges snap to device pixels, where thin SVG
+  // lines were thought to come out soft).
+  //
+  // They are SVG paths now, not divs: every HTML element in the panel
+  // is repainted on any change anywhere in it, and one div per line per lane (100
+  // for two lanes on a short clip) halved the frame rate of every hover change
+  // (measured live: a toolbar tint toggled per frame ran at 37fps with the divs,
+  // 53-61 without; a flat colour on the same divs cost the same). So each lane
+  // draws _TL_SEC_BANDS paths, one per fade step, each holding every line's
+  // segment for that step: a few elements per lane however many lines there are.
+  // The fade is stepped (no SVG gradients in UXP), each step at the alpha the
+  // CSS gradient had at its middle. Drawn first, so the lane rects tint over them
+  // as they did over the divs.
   _tlSecondRows(params, sel, valid, baked, laneH, g.y0, function(y, h, col, st, xs) {
-    if (!els.wrap) return;
-    var fade = 'linear-gradient(to bottom, ' + _tlSecAlpha(col, _TL_SEC_UXP_GAIN) + ', ' + _tlTransparent(col) + ')';
-    xs.forEach(function(x) {
-      var sl = document.createElement('div');
-      sl.className = 'tl-lane-div'; // cleared with the dividers on the next rebuild
-      sl.style.cssText = 'position:absolute;top:' + y + 'px;left:' + x + 'px;width:1px;height:' + h + 'px;background-image:' + fade + ';pointer-events:none;';
-      els.wrap.insertBefore(sl, els.svg);
-    });
+    if (!xs.length || h <= 0) return;
+    var N = Math.max(1, Math.min(_TL_SEC_BANDS, h));
+    for (var k = 0; k < N; k++) {
+      var ya = y + Math.round(k * h / N), yb = y + Math.round((k + 1) * h / N);
+      if (yb <= ya) continue;
+      var d = '';
+      for (var j = 0; j < xs.length; j++) d += 'M' + (xs[j] + 0.5) + ' ' + ya + 'V' + yb;
+      els.svg.appendChild(_tlMk('path', { d: d, fill: 'none', 'stroke-width': 1,
+        stroke: _tlSecAlpha(col, _TL_SEC_UXP_GAIN * (1 - (k + 0.5) / N)), 'pointer-events': 'none' }));
+    }
   }, _tlSecondXs(g, tl.clipStart, fps));
   params.forEach(function(p, i) {
     var top = g.y0 + i * laneH, cy = top + laneH / 2;
@@ -4262,17 +4275,16 @@ function _tlBuild(s, params, range, n, laneH, H, W) {
     // SVG, not an SVG rect: UXP resamples the SVG as a whole, so a 1px rect came
     // out soft and thicker than the rows' border, while HTML edges snap to device
     // pixels like the rows do (crispEdges on the rect made no difference).
+    // Sheen like the property rows': brighter at the left of the lane, fading right
+    // into its tint. A CSS gradient on a div under the translucent lane rect, since
+    // UXP draws no SVG gradients. The divider is the same div's bottom border (one
+    // div per lane instead of two: every HTML element is repainted on any change
+    // in the panel, see the second lines above). Under the SVG, so the playhead
+    // line paints over it.
     if (els.wrap) {
-      var dv = document.createElement('div');
-      dv.className = 'tl-lane-div';
-      dv.style.cssText = 'position:absolute;left:0;right:0;top:' + (top + laneH - 1) + 'px;height:1px;background:#080808;pointer-events:none;';
-      els.wrap.insertBefore(dv, els.svg); // under the SVG, so the playhead line paints over it
-      // Sheen like the property rows': brighter at the left of the lane, fading right
-      // into its tint. A CSS gradient on a div under the translucent lane rect, since
-      // UXP draws no SVG gradients; same class as the divider so a rebuild clears it
       var sh = document.createElement('div');
-      sh.className = 'tl-lane-div';
-      sh.style.cssText = 'position:absolute;left:0;right:0;top:' + top + 'px;height:' + (laneH - 1) + 'px;background-image:linear-gradient(to right, rgba(255,255,255,0.045), rgba(255,255,255,0));pointer-events:none;';
+      sh.className = 'tl-lane-div'; // a rebuild clears every .tl-lane-div
+      sh.style.cssText = 'position:absolute;left:0;right:0;top:' + top + 'px;height:' + laneH + 'px;box-sizing:border-box;border-bottom:1px solid #080808;background-image:linear-gradient(to right, rgba(255,255,255,0.045), rgba(255,255,255,0));pointer-events:none;';
       els.wrap.insertBefore(sh, els.svg);
     }
     var kf = (p.tlKf || []).slice().sort(function(x, y){ return x - y; });
@@ -4425,13 +4437,33 @@ var _tlHoverInfo = null; // { t, lane } under the pointer, for the value readout
 var _tlValText   = '';   // the property's value at the hovered time, once the host has answered
 var _tlValReq    = 0;    // request counter: an answer for an older position is dropped
 var _tlValBusy   = false, _tlValNext = null;
+// Nothing here touches the strip or Premiere while the pointer moves: every
+// HTML text change costs UXP a whole-panel relayout, and the value is a
+// Premiere call per frame position. Writing and asking on every move held the
+// lanes to ~44 pointer events a second (measured live 2026-11-22; see
+// CLAUDE.md). So the text is written, and the value asked for, once the
+// pointer has rested _TL_READOUT_MS; the value is added as soon as it lands,
+// and leaving the lanes clears the text at once.
+var _TL_READOUT_MS  = 90;
 function _tlShowReadout(t, lane) {
   var info = (t && lane) ? { t: t, lane: lane } : null;
   var moved = !_tlHoverInfo || !info || _tlHoverInfo.lane.key !== info.lane.key || _tlHoverInfo.t.sec !== info.t.sec;
   _tlHoverInfo = info;
-  if (!info) { _tlValText = ''; _tlValNext = null; _tlValReq++; }
-  else if (moved) _tlRequestValue(info);
-  _tlComposeReadout();
+  if (!info) {
+    if (_tlReadoutTimer) { clearTimeout(_tlReadoutTimer); _tlReadoutTimer = null; }
+    _tlValText = ''; _tlValNext = null; _tlValReq++;
+    _tlWriteReadout('');
+    return;
+  }
+  if (!moved) return;
+  _tlValText = ''; _tlValNext = null; _tlValReq++; // the value belonged to the old position
+  if (_tlReadoutTimer) clearTimeout(_tlReadoutTimer);
+  _tlReadoutTimer = setTimeout(function() {
+    _tlReadoutTimer = null;
+    if (!_tlHoverInfo) return;
+    _tlComposeReadout();
+    _tlRequestValue(_tlHoverInfo);
+  }, _TL_READOUT_MS);
 }
 function _tlComposeReadout() {
   var text = '', h = _tlHoverInfo;
@@ -4441,6 +4473,10 @@ function _tlComposeReadout() {
     text = (h.lane.label || h.lane.name) + (h.t.kf ? ' · keyframe' : '') + ' · ' + rel.toFixed(2) + 's · frame ' + Math.round(rel * fps)
          + (_tlValText ? ' · ' + _tlValText : '');
   }
+  _tlWriteReadout(text);
+}
+var _tlReadoutTimer = null;
+function _tlWriteReadout(text) {
   if (text === _tlHoverText) return;
   _tlHoverText = text;
   // Only the strip's text changes, so write that rather than run a full
@@ -4758,15 +4794,28 @@ function _tlInit() {
       handle.setPointerCapture(e.pointerId);
       e.preventDefault();
     });
-    handle.addEventListener('pointermove', function(e) {
-      if (!_resizing) return;
-      var w = Math.max(_TL_PROPS_MIN, Math.min(_tlMaxPropsW(), _rw + (_rx - e.clientX)));
+    // Moves are applied once per frame: each width write relayouts the panel
+    // in UXP, and writing per move held the drag to ~38 events a second with
+    // ~100ms stalls (measured live 2026-11-22)
+    var _pX = null, _pRaf = 0;
+    function _applyPropsW() {
+      _pRaf = 0;
+      if (_pX === null) return;
+      var w = Math.max(_TL_PROPS_MIN, Math.min(_tlMaxPropsW(), _rw + (_rx - _pX)));
+      _pX = null;
+      if (w === _tlPropsW && props.style.width === w + 'px') return;
       props.style.width = w + 'px';
       props.style.flex  = '0 0 ' + w + 'px';
       _tlPropsW = w;
       _tlSetGoWidth();
+    }
+    handle.addEventListener('pointermove', function(e) {
+      if (!_resizing) return;
+      _pX = e.clientX;
+      if (!_pRaf) _pRaf = requestAnimationFrame(_applyPropsW);
     });
     function _endResize() {
+      if (_pRaf) { cancelAnimationFrame(_pRaf); _applyPropsW(); } // the last move lands before the save
       if (_resizing) localStorage.setItem(_TL_PROPS_KEY, props.offsetWidth);
       _resizing = false;
     }
@@ -6977,12 +7026,23 @@ function initPanel() {
       resizeHandle.setPointerCapture(e.pointerId);
       e.preventDefault();
     });
+    // Applied once per frame, like the property column's handle: each width
+    // write relayouts the panel in UXP (measured live 2026-11-22)
+    var _sX = null, _sRaf = 0;
+    function _applySideW() {
+      _sRaf = 0;
+      if (_sX === null) return;
+      var newW = Math.max(120, Math.min(_sidebarMaxW(), _rw + (_rx - _sX)));
+      _sX = null;
+      if (rightCol.style.width !== newW + 'px') rightCol.style.width = newW + 'px';
+    }
     resizeHandle.addEventListener('pointermove', function(e) {
       if (!_resizing) return;
-      var newW = Math.max(120, Math.min(_sidebarMaxW(), _rw + (_rx - e.clientX)));
-      rightCol.style.width = newW + 'px';
+      _sX = e.clientX;
+      if (!_sRaf) _sRaf = requestAnimationFrame(_applySideW);
     });
     function _endResize() {
+      if (_sRaf) { cancelAnimationFrame(_sRaf); _applySideW(); } // the last move lands before the save
       if (_resizing) localStorage.setItem(_RESIZE_KEY, rightCol.offsetWidth);
       _resizing = false;
     }
