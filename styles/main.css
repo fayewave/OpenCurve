@@ -827,6 +827,16 @@ html, body {
   color: #ffffff;
 }
 
+/* Replace while the graph still holds the curve that bake used: grey and inert,
+   like the dimmed Undo next to Go. _styleReplaceBtn writes the same values
+   inline, which is what UXP actually shows. */
+.prop-replace.btn-dim {
+  background-color: #2b2b2b;
+  background-image: none;
+  color: #6f6f6f;
+  cursor: default;
+}
+
 
 /* ─── Status strip ──────────────────────────────────────────── */
 /* Bottom row of the panel: the status strip takes the width, Go (with its

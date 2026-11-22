@@ -3578,6 +3578,34 @@ var _icReplace = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none">'
   + '<path d="M2.4 11.5V8.7h2.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
   + '</svg>';
 
+// Replace starts dimmed: it only becomes available once the graph holds a
+// different curve from the one the bake under the playhead used (a record with
+// no curve, from before curves were recorded, leaves it available). Shape only:
+// a point's smooth flag doesn't change the curve, so it is ignored.
+function _sameCurve(a, b) {
+  if (!a || !b) return false;
+  var d = function(x, y) { return Math.abs((x || 0) - (y || 0)) <= 1e-4; };
+  if (!d(a.p1x, b.p1x) || !d(a.p1y, b.p1y) || !d(a.p2x, b.p2x) || !d(a.p2y, b.p2y)) return false;
+  var ap = _hasPts(a) ? a.pts : [], bp = _hasPts(b) ? b.pts : [];
+  if (ap.length !== bp.length) return false;
+  for (var i = 0; i < ap.length; i++) {
+    var p = ap[i], q = bp[i];
+    if (!d(p.x, q.x) || !d(p.y, q.y) || !d(p.ix, q.ix) || !d(p.iy, q.iy) || !d(p.ox, q.ox) || !d(p.oy, q.oy)) return false;
+  }
+  return true;
+}
+function _replaceOk(rec, curve) { return !!rec && !(rec.curve && _sameCurve(rec.curve, curve)); }
+function _replaceReady(s, key) { return _replaceOk(_bakeRecFor(s, key), s.curve); }
+// Dimmed look: the same grey as the dimmed Undo next to Go, written inline
+// (UXP doesn't restyle on a class change alone, and inline beats the :hover rule)
+function _styleReplaceBtn(el, ready) {
+  el.classList.toggle('btn-dim', !ready);
+  el.style.backgroundColor = ready ? '' : '#2b2b2b';
+  el.style.backgroundImage = ready ? '' : 'none';
+  el.style.color           = ready ? '' : '#6f6f6f';
+  el.style.cursor          = ready ? '' : 'default';
+}
+
 // Row Replace button: swap the bake on this property, where the playhead is,
 // for the curve on the graph now. The old bake's keyframes go and the new
 // curve is written on the same pair at the current Keyframe Spacing, as one
@@ -3586,6 +3614,7 @@ var _icReplace = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none">'
 async function _replaceBakeForKey(key) {
   var b = _rowBtn(key, 'replace');
   if (b && b._ocSpin) return;
+  if (!_replaceReady(getState(), key)) return; // same curve as the bake: nothing to replace
   _btnBusy(b, true);
   try { await _replaceBakeForKeyRun(key); } finally { _btnBusy(b, false); }
 }
@@ -5077,12 +5106,17 @@ function renderUI(s) {
           _loadBakedCurve(p.key);
         });
         // Replace: write the graph's current curve in place of this bake.
-        // Shown with the undo button, on every baked row.
+        // Shown with the undo button, on every baked row; dimmed while the graph
+        // still holds the curve that bake used (_styleReplaceBtn, sync pass).
         var propReplace = document.createElement('span');
         propReplace.className = 'prop-replace';
         _addPressState(propReplace);
         propReplace.style.display = 'none';
-        _attachTooltip(propReplace, 'Replace this bake with the current curve');
+        _attachTooltip(propReplace, function() {
+          return propReplace.classList.contains('btn-dim')
+            ? 'Choose a different curve to replace this bake'
+            : 'Replace this bake with the current curve';
+        });
         propReplace.innerHTML = _icReplace;
         propReplace.addEventListener('click', function(ev) {
           ev.stopPropagation();
@@ -5129,7 +5163,8 @@ function renderUI(s) {
       var isValid    = validKeys.indexOf(k) >= 0;
       var brec       = isBakedRow ? _bakeRecFor(s, k) : null;
       var hasCurve   = !!(brec && brec.curve);
-      var stateKey   = (isSel ? 's' : '') + (isBakedRow ? 'b' : '') + (isValid ? 'v' : '') + (hasCurve ? 'c' : '');
+      var replOk     = _replaceOk(brec, s.curve);
+      var stateKey   = (isSel ? 's' : '') + (isBakedRow ? 'b' : '') + (isValid ? 'v' : '') + (hasCurve ? 'c' : '') + (replOk ? 'r' : '');
       if (btn._ocState === stateKey) return;
       btn._ocState = stateKey;
       // Children are cached on the row when it is built (_oc); the lookups are
@@ -5158,7 +5193,7 @@ function renderUI(s) {
       var undoEl = els.undo || btn.querySelector('.prop-undo');
       if (undoEl) { var ud = isBakedRow ? 'flex' : 'none'; if (undoEl.style.display !== ud) undoEl.style.display = ud; }
       var replEl = els.replace || btn.querySelector('.prop-replace');
-      if (replEl) { var rd = isBakedRow ? 'flex' : 'none'; if (replEl.style.display !== rd) replEl.style.display = rd; }
+      if (replEl) { var rd = isBakedRow ? 'flex' : 'none'; if (replEl.style.display !== rd) replEl.style.display = rd; _styleReplaceBtn(replEl, replOk); }
       var curveEl = els.curve || btn.querySelector('.prop-curve');
       if (curveEl) { var cd = hasCurve ? 'flex' : 'none'; if (curveEl.style.display !== cd) curveEl.style.display = cd; }
     });
@@ -6917,7 +6952,7 @@ function initPanel() {
         });
         if (rBaked) {
           if ((_bakeRecFor(rs, rowKey) || {}).curve) _miniItem('Load Baked Curve', rIc(rels.curve), function() { _loadBakedCurve(rowKey); });
-          _miniItem('Replace with Current Curve', rIc(rels.replace), function() { _replaceBakeForKey(rowKey); });
+          if (_replaceReady(rs, rowKey)) _miniItem('Replace with Current Curve', rIc(rels.replace), function() { _replaceBakeForKey(rowKey); });
           _miniItem('Undo Bake', rIc(rels.undo), function() { _undoBakeForKey(rowKey); });
         }
         var rRule = document.createElement('div');
