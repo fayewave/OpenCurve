@@ -1721,6 +1721,8 @@ function initGraphEditor(svg) {
     setCursor('grabbing');
   });
 
+  // The hover / drag readout (#graph-coords) was taken out of cep/index.html in
+  // 2.1.0 to match the UXP edition, so this is null and every write below is skipped
   var _coordsEl = document.getElementById('graph-coords');
 
   svg.addEventListener('pointerleave', function() {
