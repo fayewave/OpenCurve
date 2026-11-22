@@ -64,6 +64,14 @@ Object.keys(found).forEach(function(k) {
   if (found[k] !== VERSION) fail('manifest.json is ' + VERSION + ' but ' + k + ' is ' + found[k]);
 });
 
+// ─── Temporary dev tests must be gone ─────────────────────────────────────
+// Code marked [dev-fake-update] (the flyout's Test: Fake Update) is for local
+// testing only. OPENCURVE_ALLOW_DEV=1 builds anyway, for checking a build.
+['src/plugin.js', 'cep/js/plugin-ui.js', 'cep/js/cep-bridge.js'].forEach(function(rel) {
+  if (read(rel).indexOf('[dev-fake-update]') >= 0 && process.env.OPENCURVE_ALLOW_DEV !== '1')
+    fail(rel + ' still has the temporary [dev-fake-update] test code; remove it before building a release');
+});
+
 // ─── UXP staging (shared by github and exchange) ──────────────────────────
 // Retries: Dropbox holds a folder it just saw emptied for a moment, and the
 // delete failed with EBUSY partway through a build (November 2026)

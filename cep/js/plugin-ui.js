@@ -4931,6 +4931,27 @@ function _checkForUpdates(silent) {
     .catch(function() { if (!silent) _showCopyToast('Could not reach GitHub'); });
 }
 
+// TEMPORARY dev test, remove before release (scripts/build.js refuses to build
+// while any [dev-fake-update] marker is left): the flyout's "Test: Fake Update"
+// pretends a newer release is out, or stops pretending, so the update tile,
+// Settings' Updates card and Download button can be looked at. A real check
+// (Check now, or the hourly silent one) puts the truth back.
+function _fakeUpdateToggle() { // [dev-fake-update]
+  var on = !_updateAvailable;
+  _updateAvailable = on;
+  _updateDismissed = false;
+  if (on) {
+    var p = String(CURRENT_VERSION).split('.');
+    _latestVersion = p[0] + '.' + p[1] + '.' + ((parseInt(p[2], 10) || 0) + 1);
+  } else {
+    _latestVersion = CURRENT_VERSION;
+  }
+  var btn = document.getElementById('_updates-row'), lbl = document.getElementById('_updates-label');
+  if (btn && lbl) _applyUpdateBtnState(btn, lbl);
+  _refreshUpdateNotification();
+  _showCopyToast(on ? 'Test: pretending v' + _latestVersion + ' is out' : 'Test: fake update off', on ? '#e6b800' : undefined);
+}
+
 // Modal confirmation: title, message, a red action button and Cancel.
 // onOk runs after the dialog has closed. Used by reset-all and preset delete.
 // ─── Welcome to v2 (first launch of a 2.x build) ─────────────────────────
@@ -5845,6 +5866,7 @@ return {
   applyPresetLayout: _applyPresetLayout,
   checkForUpdates: _checkForUpdates,
   showSettingsModal: _showSettingsModal,
+  fakeUpdateToggle: _fakeUpdateToggle, // [dev-fake-update] TEMPORARY
   btnBusy: _btnBusy, // the bridge's Undo button (next to Go) shows the spinner too
   showCopyToast: _showCopyToast,
   showWelcome: _showWelcome,

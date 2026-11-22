@@ -525,6 +525,7 @@
   var flyoutXML = '<Menu>'
     + '<MenuItem Id="settings" Label="Settings" Enabled="true" Checked="false"/>'
     + '<MenuItem Id="check-updates" Label="Check for Updates" Enabled="true" Checked="false"/>'
+    + '<MenuItem Id="fake-update" Label="Test: Fake Update (temporary)" Enabled="true" Checked="false"/>' // [dev-fake-update]
     + (_DEV_MENU ? '<MenuItem Id="poll-timing" Label="Poll Timing (Debug)" Enabled="true" Checked="false"/>' : '')
     + '<MenuItem Label="---"/>'
     + '<MenuItem Id="made-by" Label="made by faye" Enabled="false" Checked="false"/>'
@@ -539,6 +540,7 @@
       var menuId = parsed.menuId || '';
       if (menuId === 'settings')       OpenCurve.showSettingsModal();
       if (menuId === 'check-updates')  OpenCurve.checkForUpdates();
+      if (menuId === 'fake-update')    OpenCurve.fakeUpdateToggle(); // [dev-fake-update]
       if (menuId === 'poll-timing' && _DEV_MENU) _toggleDebugTiming();
     } catch(e) {
       console.error('[OC-CEP] flyout menu error:', e);
