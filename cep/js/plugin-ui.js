@@ -2513,6 +2513,23 @@ function _attachTooltip(el, text) {
   el.addEventListener('pointerdown', _hideTooltip);
 }
 
+// Properties are ready under the playhead but none of them is selected (the
+// status strip offers "Click to select all properties"): Go is live then, and
+// its first press selects them all, the same as the strip, so a second press
+// (or Enter twice) bakes them.
+function _goSelectsAll(s) {
+  return !!s && s.status === 'no-selection' && !s.isBaking && (s.validParamKeys || []).length > 0;
+}
+// Select every property that is ready to bake (the status strip's click, and
+// Go's first press while nothing is selected)
+function _selectAllValid(s) {
+  var valid = s.validParamKeys || [];
+  if (!valid.length) return;
+  var up = { selectedParamKeys: valid.slice() };
+  if (s.status === 'no-selection') up.status = 'valid';
+  setState(up);
+}
+
 function renderUI(s) {
   var propBtns = document.getElementById('prop-btns');
   if (propBtns) {
@@ -2703,7 +2720,7 @@ function renderUI(s) {
     var activeContexts = (s.selectedParamKeys || []).filter(function(k){
       return (s.validParamKeys || []).indexOf(k) >= 0 && s.paramContexts && s.paramContexts[k];
     });
-    var enabled = s.status === 'valid' && activeContexts.length > 0 && !s.isBaking;
+    var enabled = (s.status === 'valid' && activeContexts.length > 0 && !s.isBaking) || _goSelectsAll(s);
     goBtn.classList.toggle('btn-disabled', !enabled);
     var goLabel = document.getElementById('go-label');
     // Change-only: isBaking is false on all but a handful of renders
@@ -4137,10 +4154,7 @@ function initPanel() {
       if (valid.length === 0) return;
       var selNow = (s.selectedParamKeys || []).filter(function(k){ return valid.indexOf(k) >= 0; });
       if (selNow.length < valid.length) {
-        // Select every valid property
-        var up = { selectedParamKeys: valid.slice() };
-        if (s.status === 'no-selection') up.status = 'valid';
-        setState(up);
+        _selectAllValid(s); // select every valid property
       } else {
         // Everything already selected: second click clears the selection
         var down = { selectedParamKeys: [] };
@@ -4165,12 +4179,14 @@ function initPanel() {
   var goBtn = document.getElementById('go-btn');
   if (goBtn) {
     _attachTooltip(goBtn, function() {
+      if (_goSelectsAll(getState())) return 'Select all ready properties (press Go again to apply)';
       return goBtn.classList.contains('btn-disabled')
         ? 'Select a property that the playhead is over'
         : 'Apply the curve to the selected properties';
     });
     goBtn.addEventListener('click', function() {
       var s = getState();
+      if (_goSelectsAll(s)) { _selectAllValid(s); return; }
       var bakedKeys = (s.selectedParamKeys || [])
         .filter(function(k){ return (s.validParamKeys || []).indexOf(k) >= 0 && s.paramContexts && s.paramContexts[k]; });
       if (s.status !== 'valid' || s.isBaking || bakedKeys.length === 0) return;
