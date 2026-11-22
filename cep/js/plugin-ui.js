@@ -5422,7 +5422,9 @@ function _showSettingsModal() {
   // 1px CSS border soft (see _crispBox).
   var _uxpLift = 0;
   var _CARD_LINE = '#262626', _CARD_FILL = '#191919', _CARD_HOT = '#1f1f1f', _CARD_DOWN = '#282828';
-  var _SW_ON = '#4a9eff', _SW_OFF = '#3a3a3a';
+  // On blue: the panel accent's hue darkened until the white knob has 4.64:1
+  // contrast on it (WCAG AA; #4a9eff gave only 2.75:1)
+  var _SW_ON = '#1e74d6', _SW_OFF = '#3a3a3a';
   function _el(css, text) {
     var e = document.createElement('div');
     e.style.cssText = css;
