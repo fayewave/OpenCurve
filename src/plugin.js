@@ -8682,7 +8682,7 @@ function _openTextFile() {
 // Settings footer: the version and the edition (ZXP, CCX or Exchange) as small
 // outlined badges. Inline styles only (UXP), margin instead of flex gap.
 function _footerBadge(label) {
-  var b = _crispBox(24, '3px 7px', '#454545', '#1a1a1a', 'inline-flex');
+  var b = _crispBox(24, '2px 7px 4px', '#454545', '#1a1a1a', 'inline-flex');
   b.style.marginLeft = '8px';
   b._ocInner.style.cssText += 'color:#b0b0b0;font-size:12px;font-weight:600;letter-spacing:0.5px;line-height:16px;';
   b._ocInner.textContent = label;
@@ -8696,7 +8696,9 @@ function _footerBadge(label) {
 // (measured from screenshots, 2026-11-22). So the outline is the outer box's
 // fill, showing round a 1px inset inner box. Fills must be opaque: the inner
 // one hides the outline colour behind it. Content goes in `box._ocInner`;
-// `_crispTint(box, outline, fill)` recolours both (hover).
+// `_crispTint(box, outline, fill)` recolours both (hover). UXP sets text about
+// 1px lower in its line box than Chromium, so callers pad 1px less on top than
+// below to centre it like the ZXP.
 function _crispBox(h, pad, outline, fill, display) {
   var box = document.createElement('div');
   box.style.cssText = 'display:' + (display || 'flex') + ';box-sizing:border-box;height:' + h + 'px;padding:1px;'
@@ -9131,7 +9133,7 @@ function _showSettingsModal() {
   ghIc = '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M8.2 2.5h3.3v3.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M11.5 2.5L6.6 7.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 8.6v2.1a.8.8 0 01-.8.8H3.3a.8.8 0 01-.8-.8V4.6a.8.8 0 01.8-.8h2.1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'; // [exchange-strip-line]
   ghTip = 'Open OpenCurve on GitHub in your browser'; // [exchange-strip-line]
   // Fills are the old translucent blues (0.08, hover 0.15) flattened onto #111
-  var ghLink = _crispBox(24, '3px 7px', '#2b507c', '#161c24', 'inline-flex');
+  var ghLink = _crispBox(24, '2px 7px 4px', '#2b507c', '#161c24', 'inline-flex');
   ghLink.style.marginLeft = '8px';
   ghLink.style.cursor = 'pointer';
   ghLink._ocInner.style.cssText += 'color:#4a9eff;font-size:12px;font-weight:600;letter-spacing:0.5px;line-height:16px;';
@@ -9151,7 +9153,7 @@ function _showSettingsModal() {
   footerLeft.appendChild(ghLink);
 
   // 31px: the ZXP buttons are 30.84px tall (13px text, Chromium line height 18.85px)
-  var resetRow = _crispBox(31, '5px 10px', '#4c4c4c', '#111111');
+  var resetRow = _crispBox(31, '4px 10px 6px', '#4c4c4c', '#111111');
   resetRow.style.cursor = 'pointer';
   resetRow._ocInner.style.cssText += 'color:#e4e4e4;font-size:13px;line-height:19px;';
   var resetLabel = document.createElement('span');
@@ -9166,7 +9168,7 @@ function _showSettingsModal() {
   });
 
   // Report an Issue: opens the GitHub issues page in the browser
-  var issueRow = _crispBox(31, '5px 10px', '#4c4c4c', '#111111');
+  var issueRow = _crispBox(31, '4px 10px 6px', '#4c4c4c', '#111111');
   issueRow.style.cursor = 'pointer';
   issueRow.style.marginRight = '8px';
   issueRow._ocInner.style.cssText += 'color:#e4e4e4;font-size:13px;line-height:19px;';
