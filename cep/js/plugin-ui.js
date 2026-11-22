@@ -1090,12 +1090,12 @@ function _bnInit() {
   _bnInitSVG();
   if (!panel || _bnEls) return;
   _bnEls = { seg: {}, sl: {} };
-  panel.style.cssText = 'display:none;flex-direction:column;flex-shrink:0;padding:6px 10px 9px 10px;background:#111111;';
+  panel.style.cssText = 'display:none;flex-direction:column;flex-shrink:0;padding:6px 10px 9px 10px;background:#1a1a1a;'; // its own fill, apart from the graph's #111 surround
   var top = document.createElement('div');
   top.style.cssText = 'display:flex;align-items:center;justify-content:space-between;height:28px;margin-bottom:4px;';
   function seg(key, items) {
     var box = document.createElement('div');
-    box.style.cssText = 'display:flex;align-items:center;height:24px;padding:2px;border-radius:5px;background-color:#1e1e1e;';
+    box.style.cssText = 'display:flex;align-items:center;height:24px;padding:2px;border-radius:5px;background-color:#252525;';
     _bnEls.seg[key] = [];
     items.forEach(function(it) {
       var b = document.createElement('div');
@@ -1130,7 +1130,7 @@ function _bnInit() {
     var NS = 'http://www.w3.org/2000/svg';
     var track = document.createElementNS(NS, 'rect'), fill = document.createElementNS(NS, 'rect');
     [track, fill].forEach(function(r) { r.setAttribute('y', '9.5'); r.setAttribute('height', '3'); r.setAttribute('rx', '1.5'); sv.appendChild(r); });
-    track.setAttribute('fill', '#2c2c2c');
+    track.setAttribute('fill', '#313131');
     fill.setAttribute('fill', '#6f6f6f');
     var thumb = _mkCircle(6, '#d8d8d8');
     thumb.setAttribute('cy', '11');
@@ -1231,7 +1231,7 @@ function _bnLayout() {
 function _bnPaintSeg(key) {
   (_bnEls && _bnEls.seg[key] || []).forEach(function(b) {
     var on = _bnOpts[key] === b._ocVal;
-    var bg = on ? '#3a3a3a' : b._ocHov ? '#2a2a2a' : 'transparent', col = on ? '#ffffff' : b._ocHov ? '#d4d4d4' : '#9a9a9a';
+    var bg = on ? '#3d3d3d' : b._ocHov ? '#2f2f2f' : 'transparent', col = on ? '#ffffff' : b._ocHov ? '#d4d4d4' : '#9a9a9a';
     if (b._ocBg !== bg) { b._ocBg = bg; b.style.backgroundColor = bg; }
     if (b._ocCol !== col) { b._ocCol = col; b.style.color = col; }
   });
