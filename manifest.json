@@ -14,9 +14,9 @@
       "id": "opencurve-panel",
       "label": { "default": "OpenCurve 2" },
       "minimumSize":           { "width": 380, "height": 440 },
-      "maximumSize":           { "width": 840, "height": 900 },
-      "preferredDockedSize":   { "width": 600, "height": 500 },
-      "preferredFloatingSize": { "width": 600, "height": 540 }
+      "maximumSize":           { "width": 2400, "height": 1600 },
+      "preferredDockedSize":   { "width": 900, "height": 620 },
+      "preferredFloatingSize": { "width": 900, "height": 660 }
     }
   ],
   "requiredPermissions": {

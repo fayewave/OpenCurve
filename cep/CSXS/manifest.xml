@@ -38,16 +38,16 @@
           <Menu>OpenCurve 2</Menu>
           <Geometry>
             <Size>
-              <Width>600</Width>
-              <Height>500</Height>
+              <Width>900</Width>
+              <Height>620</Height>
             </Size>
             <MinSize>
               <Width>380</Width>
               <Height>440</Height>
             </MinSize>
             <MaxSize>
-              <Width>840</Width>
-              <Height>900</Height>
+              <Width>2400</Width>
+              <Height>1600</Height>
             </MaxSize>
           </Geometry>
           <Icons>

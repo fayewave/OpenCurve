@@ -4022,7 +4022,9 @@ function initPanel() {
       if (rrow) {
         var rbtn = document.querySelector('.prop-btn[data-key="' + rowKey + '"]');
         var rels = (rbtn && rbtn._oc) || {};
-        var rIc = function(el) { return el ? el.innerHTML : ''; };
+        // Copied without any inline style (in UXP the row icons carry an absolute
+        // position from _centerIcons; kept the same here)
+        var rIc = function(el) { return el ? el.innerHTML.replace(/\sstyle="[^"]*"/g, '') : ''; };
         var rSel   = (rs.selectedParamKeys || []).indexOf(rowKey) >= 0;
         var rValid = (rs.validParamKeys    || []).indexOf(rowKey) >= 0;
         var rBaked = (rs.bakedParamKeys    || []).indexOf(rowKey) >= 0;
@@ -4703,7 +4705,17 @@ function _showCopyToast(msg, color) {
     'color:'+(color||'#e4e4e4'), 'font-size:15px', 'line-height:1.3',
     'padding:7px 14px', 'border-radius:0', 'max-width:100%',
     'box-sizing:border-box', 'white-space:normal', 'text-align:center',
+    'pointer-events:auto', 'cursor:pointer',
   ].join(';');
+  // A press on the toast dismisses it at once (the wrapper stays click-through,
+  // so only the toast itself catches the press). Both press events: CEP on
+  // macOS delivers no pointerdown (see pointer-shim.js).
+  function dismiss(ev) {
+    if (ev) { ev.stopPropagation(); ev.preventDefault(); }
+    if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
+  }
+  toast.addEventListener('pointerdown', dismiss);
+  toast.addEventListener('mousedown', dismiss);
   wrap.appendChild(toast);
   document.body.appendChild(wrap);
   var delay = color ? 2800 : 1800;
