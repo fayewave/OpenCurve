@@ -3322,7 +3322,39 @@ function _showUndoBtn(show) {
 
 // Row undo button: step this property back one bake on the current clip (a
 // replaced bake comes back; otherwise the keyframes the bake added go).
+// Busy look for the row Undo / Replace buttons and the Undo next to Go: while
+// the action runs the icon is swapped for Go's spinner, pinned at the centre
+// like _centerIcons pins the icons (the buttons are position: relative here)
+function _rowBtn(key, which) {
+  var row = document.querySelector('.prop-btn[data-key="' + key + '"]');
+  return row && row._oc ? row._oc[which] : null;
+}
+function _btnBusy(el, on) {
+  if (!el) return;
+  var svg = el.querySelector('svg');
+  if (on) {
+    if (el._ocSpin) return;
+    var sp = document.createElement('span');
+    sp.className = 'spinner';
+    sp.style.cssText = 'position:absolute;left:50%;top:50%;width:12px;height:12px;margin:-6px 0 0 -6px;box-sizing:border-box;pointer-events:none;';
+    el._ocSpinDisp = svg ? svg.style.display : '';
+    if (svg) svg.style.display = 'none';
+    el.appendChild(sp);
+    el._ocSpin = sp;
+  } else {
+    if (!el._ocSpin) return;
+    if (el._ocSpin.parentNode) el._ocSpin.parentNode.removeChild(el._ocSpin);
+    el._ocSpin = null;
+    if (svg) svg.style.display = el._ocSpinDisp || '';
+  }
+}
 async function _undoBakeForKey(key) {
+  var b = _rowBtn(key, 'undo');
+  if (b && b._ocSpin) return; // already running
+  _btnBusy(b, true);
+  try { await _undoBakeForKeyRun(key); } finally { _btnBusy(b, false); }
+}
+async function _undoBakeForKeyRun(key) {
   var s = getState();
   if (s.isBaking) return;
   var row  = (s.availableParams || []).filter(function(p){ return p.key === key; })[0];
@@ -3334,6 +3366,12 @@ async function _undoBakeForKey(key) {
 // Panel-wide Undo button: revert everything the most recent Go press wrote,
 // whichever clip it was on. Each press again steps back one more bake.
 async function _undoLastBake() {
+  var b = document.getElementById('undo-btn');
+  if (b && b._ocSpin) return;
+  _btnBusy(b, true);
+  try { await _undoLastBakeRun(); } finally { _btnBusy(b, false); }
+}
+async function _undoLastBakeRun() {
   var s = getState();
   // Only bakes made this session: records loaded from a previous session are
   // undone from their row button, once the playhead is over the clip
@@ -3546,6 +3584,12 @@ var _icReplace = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none">'
 // step for both undo buttons (an undo brings the old curve back). If the new
 // curve can't be written, the old one is put back.
 async function _replaceBakeForKey(key) {
+  var b = _rowBtn(key, 'replace');
+  if (b && b._ocSpin) return;
+  _btnBusy(b, true);
+  try { await _replaceBakeForKeyRun(key); } finally { _btnBusy(b, false); }
+}
+async function _replaceBakeForKeyRun(key) {
   var s = getState();
   if (s.isBaking) return;
   var row  = (s.availableParams || []).filter(function(p){ return p.key === key; })[0];
@@ -8640,7 +8684,7 @@ function _openTextFile() {
 function _footerBadge(label) {
   var b = document.createElement('span');
   b.textContent = label;
-  b.style.cssText = 'display:inline-block;margin-left:8px;padding:3px 7px;border:1px solid rgba(255,255,255,0.22);border-radius:4px;'
+  b.style.cssText = 'display:inline-block;margin-left:8px;padding:3px 7px;border:1px solid #454545;border-radius:4px;'
     + 'background-color:rgba(255,255,255,0.04);color:#b0b0b0;font-size:12px;font-weight:600;letter-spacing:0.5px;line-height:16px;';
   return b;
 }
@@ -9041,8 +9085,7 @@ function _showSettingsModal() {
   var footerRow = document.createElement('div');
   footerRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 12px;';
 
-  // One row: made by faye, the version and edition badges, then the GitHub
-  // link, which truncates first when the panel is narrow
+  // One row: made by faye, then the version, edition and GitHub badges
   var footerLeft = document.createElement('div');
   footerLeft.style.cssText = 'display:flex;align-items:center;flex:0 1 auto;min-width:0;overflow:hidden;margin-right:12px;color:#888;font-size:12px;';
   // Edition badge: the Exchange build strips the CCX line (scripts/build.js
@@ -9055,28 +9098,39 @@ function _showSettingsModal() {
   footerLeft.appendChild(madeByText);
   footerLeft.appendChild(_footerBadge('v' + CURRENT_VERSION));
   footerLeft.appendChild(_footerBadge(editionTag));
-  var ghSep = document.createElement('span');
-  ghSep.textContent = '\u00B7';
-  ghSep.style.cssText = 'flex-shrink:0;margin:0 8px;color:#555;';
-  footerLeft.appendChild(ghSep);
+  // GitHub: a blue badge with an open-in-browser icon (the same shape as the
+  // badges before it), brighter blue on hover
+  // The Exchange build can't open a browser (no launchProcess), so _openUrl
+  // copies the link there: it shows a copy icon instead of open-in-browser
+  var ghIc = '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="4.6" y="4.6" width="7" height="7" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.4 2.5H3.7a1.2 1.2 0 00-1.2 1.2v5.7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>', ghTip = 'Copy the GitHub link';
+  ghIc = '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M8.2 2.5h3.3v3.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M11.5 2.5L6.6 7.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 8.6v2.1a.8.8 0 01-.8.8H3.3a.8.8 0 01-.8-.8V4.6a.8.8 0 01.8-.8h2.1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'; // [exchange-strip-line]
+  ghTip = 'Open OpenCurve on GitHub in your browser'; // [exchange-strip-line]
   var ghLink = document.createElement('span');
-  ghLink.textContent = 'github.com/fayewave/OpenCurve';
-  ghLink.style.cssText = 'color:#4a9eff;font-size:12px;cursor:pointer;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;';
-  ghLink.addEventListener('mouseenter', function() { ghLink.style.color = '#8ccfff'; });
-  ghLink.addEventListener('mouseleave', function() { ghLink.style.color = '#4a9eff'; });
+  ghLink.style.cssText = 'display:inline-flex;align-items:center;flex-shrink:0;margin-left:8px;padding:3px 7px;border:1px solid #2b507c;border-radius:4px;'
+    + 'background-color:rgba(74,158,255,0.08);color:#4a9eff;font-size:12px;font-weight:600;letter-spacing:0.5px;line-height:16px;cursor:pointer;white-space:nowrap;';
+  var ghIcon = document.createElement('span');
+  ghIcon.style.cssText = 'display:inline-flex;width:12px;height:12px;margin-right:5px;';
+  ghIcon.innerHTML = ghIc;
+  var ghText = document.createElement('span');
+  ghText.textContent = 'GitHub';
+  ghLink.appendChild(ghIcon);
+  ghLink.appendChild(ghText);
+  _attachTooltip(ghLink, ghTip);
+  ghLink.addEventListener('mouseenter', function() { ghLink.style.color = '#8ccfff'; ghLink.style.borderColor = '#6796b8'; ghLink.style.backgroundColor = 'rgba(74,158,255,0.15)'; });
+  ghLink.addEventListener('mouseleave', function() { ghLink.style.color = '#4a9eff'; ghLink.style.borderColor = '#2b507c'; ghLink.style.backgroundColor = 'rgba(74,158,255,0.08)'; });
   ghLink.addEventListener('click', function() {
     _openUrl('https://github.com/fayewave/OpenCurve');
   });
   footerLeft.appendChild(ghLink);
 
   var resetRow = document.createElement('div');
-  resetRow.style.cssText = 'display:flex;align-items:center;padding:5px 10px;cursor:pointer;color:#ff9090;font-size:13px;background-color:rgba(255,144,144,0.08);background-image:linear-gradient(to right, rgba(255,255,255,0.06), rgba(255,255,255,0));flex-shrink:0;';
+  resetRow.style.cssText = 'display:flex;align-items:center;padding:5px 10px;cursor:pointer;color:#e4e4e4;font-size:13px;background-color:transparent;border:1px solid #4c4c4c;border-radius:4px;flex-shrink:0;';
   var resetLabel = document.createElement('span');
   resetLabel.textContent = 'Reset All Settings';
   _attachTooltip(resetRow, 'Restore defaults and remove all presets');
   resetRow.appendChild(resetLabel);
-  resetRow.addEventListener('mouseenter', function() { _tint(resetRow, 'rgba(255,144,144,0.15)', 0.09); });
-  resetRow.addEventListener('mouseleave', function() { _tint(resetRow, 'rgba(255,144,144,0.08)', 0.06); });
+  resetRow.addEventListener('mouseenter', function() { resetRow.style.borderColor = '#888888'; resetRow.style.backgroundColor = 'rgba(255,255,255,0.06)'; });
+  resetRow.addEventListener('mouseleave', function() { resetRow.style.borderColor = '#4c4c4c'; resetRow.style.backgroundColor = 'transparent'; });
   resetRow.addEventListener('click', function() {
     modal.remove();
     _confirmReset();
@@ -9084,13 +9138,13 @@ function _showSettingsModal() {
 
   // Report an Issue: opens the GitHub issues page in the browser
   var issueRow = document.createElement('div');
-  issueRow.style.cssText = 'display:flex;align-items:center;padding:5px 10px;margin-right:8px;cursor:pointer;color:#4a9eff;font-size:13px;background-color:rgba(74,158,255,0.08);background-image:linear-gradient(to right, rgba(255,255,255,0.06), rgba(255,255,255,0));flex-shrink:0;';
+  issueRow.style.cssText = 'display:flex;align-items:center;padding:5px 10px;margin-right:8px;cursor:pointer;color:#e4e4e4;font-size:13px;background-color:transparent;border:1px solid #4c4c4c;border-radius:4px;flex-shrink:0;';
   var issueLabel = document.createElement('span');
   issueLabel.textContent = 'Report an Issue';
   _attachTooltip(issueRow, 'Open the OpenCurve issues page on GitHub');
   issueRow.appendChild(issueLabel);
-  issueRow.addEventListener('mouseenter', function() { _tint(issueRow, 'rgba(74,158,255,0.15)', 0.09); });
-  issueRow.addEventListener('mouseleave', function() { _tint(issueRow, 'rgba(74,158,255,0.08)', 0.06); });
+  issueRow.addEventListener('mouseenter', function() { issueRow.style.borderColor = '#888888'; issueRow.style.backgroundColor = 'rgba(255,255,255,0.06)'; });
+  issueRow.addEventListener('mouseleave', function() { issueRow.style.borderColor = '#4c4c4c'; issueRow.style.backgroundColor = 'transparent'; });
   issueRow.addEventListener('click', function() {
     _openUrl('https://github.com/fayewave/OpenCurve/issues');
   });

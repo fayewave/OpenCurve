@@ -116,8 +116,10 @@
 
     // Row undo button: remove the keyframes our bake(s) added to one property.
     // `ids` are host bake record ids from detectContext.
-    onUndoParam: function(ids, name) {
+    // done (optional) runs when Premiere has answered: the row button's spinner goes
+    onUndoParam: function(ids, name, done) {
       cs.evalScript("undoBakeParam('" + ids.join(',') + "')", function(result) {
+        if (done) done();
         try {
           var res = JSON.parse(result);
           _lastStatus = '';
@@ -138,11 +140,12 @@
 
     // Row Replace button: the host removes those bakes and writes `curve` on
     // the same keyframe pairs, at the current Keyframe Spacing.
-    onReplaceParam: function(ids, curve, name) {
+    onReplaceParam: function(ids, curve, name, done) {
       OpenCurve.setState({ isBaking: true, status: 'baking' });
       var args = JSON.stringify({ ids: ids, curve: curve, step: OpenCurve.bakeDensity || 1 });
       var escaped = args.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
       cs.evalScript("replaceBake('" + escaped + "')", function(result) {
+        if (done) done();
         var res = null;
         try { res = JSON.parse(result); } catch(e) {}
         _lastStatus = '';
@@ -280,9 +283,11 @@
 
   document.addEventListener('click', function(e) {
     var btn = e.target.closest('#undo-btn');
-    if (!btn || btn.classList.contains('btn-dim')) return;
+    if (!btn || btn.classList.contains('btn-dim') || btn._ocSpin) return;
+    if (OpenCurve.btnBusy) OpenCurve.btnBusy(btn, true);
 
     cs.evalScript('undoBake()', function(result) {
+      if (OpenCurve.btnBusy) OpenCurve.btnBusy(btn, false);
       try {
         var res = JSON.parse(result);
         if (res.success) {
