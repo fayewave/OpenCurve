@@ -5971,13 +5971,17 @@ function _showSettingsModal() {
   // veil-lockup-white.svg), grey at rest, white on hover, a tint while
   // pressed; opens veil.page. The viewBox has room round the edge (UXP clips
   // an SVG's anti-aliased border).
-  var veilBtn = _el('display:flex;align-items:center;justify-content:center;flex-shrink:0;box-sizing:border-box;height:30px;padding:0;margin-left:12px;border-radius:6px;cursor:pointer;');
+  var veilBtn = _el('display:flex;align-items:center;justify-content:center;flex-shrink:0;box-sizing:border-box;height:30px;padding:0 2px 0 8px;margin-left:8px;border-radius:6px;cursor:pointer;');
   veilBtn.innerHTML = '<svg width="109" height="26" viewBox="-6 -6 1213 288" fill="none">' // a little under the buttons' 30px
     + '<path fill-rule="evenodd" d="M322.26,0.67L1200.74,0.67L1200.74,275.87L322.26,275.87ZM393.17 64.79H437.62L506.75 185.31H510.87L580.01 64.79H623.63L539.26 211.76H477.54ZM646.26 211.76V64.79H847.91V91.24H687.41V125.05H806.76V151.5H687.41V185.31H847.91V211.76ZM924.04 64.79V211.76H882.89V64.79ZM1006.35 64.79V185.31H1129.8V211.76H965.19V64.79ZM0.63,0.67L275.83,0.67L275.83,275.87L0.63,275.87ZM232.75,138.27L138.23,212.35L43.7,138.27L138.23,64.19Z" fill="#a6a6a6"/></svg>';
+  // "for more plugins visit" ahead of the logo, part of the same button
+  var veilText = _el('font-size:12px;line-height:16px;color:#a6a6a6;white-space:nowrap;margin-right:8px;', 'for more plugins visit');
+  veilBtn.insertBefore(veilText, veilBtn.firstChild);
   var veilPath = veilBtn.querySelector('path');
   var veilHot = false, veilDown = false;
   function _veilPaint() {
     veilPath.setAttribute('fill', veilDown ? '#d0d0d0' : veilHot ? '#ffffff' : '#a6a6a6');
+    veilText.style.color = veilDown ? '#d0d0d0' : veilHot ? '#ffffff' : '#a6a6a6';
     veilBtn.style.backgroundColor = veilDown ? 'rgba(255,255,255,0.12)' : veilHot ? 'rgba(255,255,255,0.06)' : '';
   }
   veilBtn.addEventListener('mouseenter', function() { veilHot = true; _veilPaint(); });
