@@ -9534,7 +9534,7 @@ function _showNumericPanel() {
 
   var box = document.createElement('div');
   box.id = 'oc-numeric';
-  box.style.cssText = 'width:272px;max-width:96%;flex-shrink:0;background:#1c1c1c;border:1px solid rgba(255,255,255,0.18);padding:20px;font-family:system-ui,sans-serif;box-sizing:border-box;';
+  box.style.cssText = 'width:380px;max-width:96%;flex-shrink:0;background:#1c1c1c;border:1px solid rgba(255,255,255,0.18);padding:20px;font-family:system-ui,sans-serif;box-sizing:border-box;';
   overlay.appendChild(box);
 
   var start = _cloneCurve(getState().curve);
@@ -9561,16 +9561,16 @@ function _showNumericPanel() {
   box.appendChild(title);
 
   var grid = document.createElement('div');
-  grid.style.cssText = 'display:flex;flex-wrap:wrap;margin:0 -4px;';
+  grid.style.cssText = 'display:flex;flex-wrap:wrap;margin:0 -5px;';
   box.appendChild(grid);
   var fields = {};
   function field(name, label, val) {
     var wrap = document.createElement('div');
-    wrap.style.cssText = 'display:flex;flex-direction:column;width:50%;box-sizing:border-box;padding:0 4px 8px;';
+    wrap.style.cssText = 'display:flex;flex-direction:column;width:50%;box-sizing:border-box;padding:0 5px 10px;';
     var lb = document.createElement('div');
     lb.textContent = label;
-    lb.style.cssText = 'color:#888;font-size:11px;margin-bottom:3px;';
-    var tf = _mkTextField(13), inp = tf.input;
+    lb.style.cssText = 'color:#888;font-size:12px;margin-bottom:4px;';
+    var tf = _mkTextField(14), inp = tf.input;
     inp.value = _numStr(val);
     wrap.appendChild(lb); wrap.appendChild(tf.wrap);
     grid.appendChild(wrap);
@@ -9586,9 +9586,9 @@ function _showNumericPanel() {
 
   var textLabel = document.createElement('div');
   textLabel.textContent = 'As text';
-  textLabel.style.cssText = 'color:#888;font-size:11px;margin:2px 0 3px;';
+  textLabel.style.cssText = 'color:#888;font-size:12px;margin:2px 0 4px;';
   box.appendChild(textLabel);
-  var textTf = _mkTextField(12), textInp = textTf.input;
+  var textTf = _mkTextField(13), textInp = textTf.input;
   box.appendChild(textTf.wrap);
   textInp.addEventListener('keydown', onKey);
   _attachTooltip(textInp, 'The curve as cubic-bezier() or opencurve() text. Edit it and press Enter or Apply; this is also where a curve with added points is typed');
