@@ -189,6 +189,7 @@ function _animateToCurve(target, onUpdate) {
   // for rather than an intermediate (which would also carry the padding anchors).
   // It saves the ~9 renderUI passes a per-frame setState used to fan out.
   setState({ curve: _cloneCurve(target) });
+  _autoZoomFor(target); // zoom out for a curve past the range box, back for one that fits
   if (!_graphVisible) { _graphDirty = true; return; } // nothing to see: skip the frames, the state is already the target
   function easeInOut(t) { return t < 0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
   function step(ts) {
@@ -955,6 +956,65 @@ function _updateContentTransform() {
   var cx = _svgW / 2, cy = _svgH / 2;
   g.setAttribute('transform',
     'translate(' + cx + ',' + cy + ') scale(' + _zoom + ') translate(' + (-cx) + ',' + (-cy) + ')');
+}
+
+// ─── Auto zoom (2.1.0) ────────────────────────────────────────────────────
+// A curve put on the graph through _animateToCurve (a preset click, Flip,
+// Invert, a row's Load Baked Curve) that goes past the range box makes the
+// graph zoom out just enough to show the whole curve (the curve, not its
+// handles), easing alongside the curve tween. A later curve that fits zooms
+// back to the level the user had. A manual zoom takes over: auto zoom never
+// goes past the user's own level and forgets what it was restoring.
+// Settings > Auto Zoom (opencurve-auto-zoom, on by default) turns it off.
+var _AUTO_ZOOM_KEY    = 'opencurve-auto-zoom';
+var _autoZoomOn       = (function() { try { return localStorage.getItem(_AUTO_ZOOM_KEY) !== 'off'; } catch(_) { return true; } })();
+var _autoZoomFrom     = null;  // the user's own zoom while auto zoom has moved it, else null
+var _zoomAnimRaf      = null;
+var _AUTO_ZOOM_MIN    = 0.25;  // same floor as the zoom slider
+var _AUTO_ZOOM_MARGIN = 8;     // px kept clear between the curve and the graph's edge
+var _AUTO_ZOOM_MS     = 200;
+// The zoom that just fits the curve's lowest and highest point inside the SVG
+// (the content scales about the SVG's centre); 1 when it already fits
+function _zoomToFit(c) {
+  if (!c || !_svgW || !_svgH || _peakMode) return 1; // the A-curve bell always fits
+  var lo = 0, hi = 1, N = 128, segs = _hasPts(c) ? _segsOf(c) : null;
+  for (var i = 1; i < N; i++) {
+    var y = sampleBezier(i / N, c, segs);
+    if (y < lo) lo = y;
+    if (y > hi) hi = y;
+  }
+  var box = _rangeBox(_svgW, _svgH), cy = _svgH / 2, m = _AUTO_ZOOM_MARGIN, z = 1;
+  var yTop = box.y + (1 - hi) * box.s, yBot = box.y + (1 - lo) * box.s;
+  if (yTop < cy) z = Math.min(z, (cy - m) / (cy - yTop));
+  if (yBot > cy) z = Math.min(z, (_svgH - m - cy) / (yBot - cy));
+  return Math.max(_AUTO_ZOOM_MIN, Math.min(1, z));
+}
+function _cancelZoomAnim() {
+  if (_zoomAnimRaf) { cancelAnimationFrame(_zoomAnimRaf); _zoomAnimRaf = null; }
+}
+// Ease the zoom to z (straight there while the graph is hidden)
+function _zoomAnimTo(z) {
+  _cancelZoomAnim();
+  var from = _zoom;
+  if (!_graphVisible || Math.abs(z - from) < 1e-4) { _zoom = z; _updateContentTransform(); return; }
+  var start = null;
+  function ease(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+  function step(ts) {
+    if (start === null) start = ts;
+    var p = Math.min((ts - start) / _AUTO_ZOOM_MS, 1);
+    _zoom = from + (z - from) * ease(p);
+    _updateContentTransform();
+    _zoomAnimRaf = p < 1 ? requestAnimationFrame(step) : null;
+  }
+  _zoomAnimRaf = requestAnimationFrame(step);
+}
+function _autoZoomFor(c) {
+  if (!_autoZoomOn) return;
+  var base = _autoZoomFrom !== null ? _autoZoomFrom : _zoom; // the user's own level
+  var want = Math.min(base, _zoomToFit(c));
+  if (want < base - 1e-4) { if (_autoZoomFrom === null) _autoZoomFrom = _zoom; }
+  else _autoZoomFrom = null;
+  if (Math.abs(want - _zoom) > 1e-4) _zoomAnimTo(want);
 }
 
 // The graph's SVG children are built once and then only repositioned, but the
@@ -5131,7 +5191,7 @@ function _statusMsg(s, showClip) {
 // pixel less put them a pixel up and left, so UXP paints the SVG content half
 // a pixel off its box (checked by eye, 2026-09). Run after every render
 // because the property rows are rebuilt there.
-var _ICON_OFF = { 'tool-btn': 5.5, 'prop-pin': 3.5, 'prop-undo': 3.5, 'prop-curve': 3.5, 'prop-replace': 3.5, 'btn-undo': 3.5, 'pager-btn': 3.5 };
+var _ICON_OFF = { 'tool-btn': 4.5, 'prop-pin': 3.5, 'prop-undo': 3.5, 'prop-curve': 3.5, 'prop-replace': 3.5, 'btn-undo': 2.5, 'pager-btn': 2.5 };
 function _centerIcons() {
   Object.keys(_ICON_OFF).forEach(function(cls) {
     var off = _ICON_OFF[cls] + 'px';
@@ -5685,6 +5745,9 @@ function initPanel() {
     return _zoom < 0.995 ? 'Zoom (' + Math.round(_zoom * 100) + '%)' : 'Zoom';
   }
   function setZoom(z) {
+    // A manual zoom: auto zoom stops easing and forgets the level it would restore
+    _cancelZoomAnim();
+    _autoZoomFrom = null;
     z = Math.max(_ZOOM_MIN, Math.min(_ZOOM_MAX, z));
     if (Math.abs(z - _zoom) < 1e-6) return;
     _zoom = z;
@@ -6714,7 +6777,7 @@ function initPanel() {
 
   // Mini context menu: Open Settings (preset list empty space), grid sizes (graph),
   // a point's handle/delete items (graph point) or the zoom toggle (timeline)
-  function _showMiniCtxMenu(e, showSettings, showGrid, pointIdx, showTlZoom) {
+  function _showMiniCtxMenu(e, showSettings, showGrid, pointIdx, showTlZoom, rowKey) {
     console.log('[OC] _showMiniCtxMenu called');
     e.preventDefault();
     e.stopPropagation();
@@ -6765,6 +6828,36 @@ function initPanel() {
     } else {
     // Timeline menu: what the lanes span. Open Settings only appears in the preset
     // list's empty-space menu, where it is the only item.
+    // Timeline menu for one property (the row or lane under the pointer): the
+    // row's own buttons as menu items, then the zoom toggle below a rule
+    if (showTlZoom && rowKey) {
+      var rs = getState();
+      var rrow = (rs.availableParams || []).filter(function(p) { return p.key === rowKey; })[0];
+      if (rrow) {
+        var rbtn = document.querySelector('.prop-btn[data-key="' + rowKey + '"]');
+        var rels = (rbtn && rbtn._oc) || {};
+        var rIc = function(el) { return el ? el.innerHTML : ''; };
+        var rSel   = (rs.selectedParamKeys || []).indexOf(rowKey) >= 0;
+        var rValid = (rs.validParamKeys    || []).indexOf(rowKey) >= 0;
+        var rBaked = (rs.bakedParamKeys    || []).indexOf(rowKey) >= 0;
+        var _icSel   = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2.6 7.4L5.6 10.4L11.4 3.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        var _icUnsel = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M3.5 3.5L10.5 10.5M10.5 3.5L3.5 10.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
+        if (rSel) _miniItem('Deselect', _icUnsel, function() { _togglePropKey(rowKey); });
+        else if (rValid) _miniItem('Select for Go', _icSel, function() { _togglePropKey(rowKey); });
+        _miniItem('Jump to Keyframes', rIc(rels.pin), function() {
+          var live = (getState().availableParams || []).filter(function(x) { return x.key === rowKey; })[0];
+          _jumpToParam(live || rrow);
+        });
+        if (rBaked) {
+          if ((_bakeRecFor(rs, rowKey) || {}).curve) _miniItem('Load Baked Curve', rIc(rels.curve), function() { _loadBakedCurve(rowKey); });
+          _miniItem('Replace with Current Curve', rIc(rels.replace), function() { _replaceBakeForKey(rowKey); });
+          _miniItem('Undo Bake', rIc(rels.undo), function() { _undoBakeForKey(rowKey); });
+        }
+        var rRule = document.createElement('div');
+        rRule.style.cssText = 'height:1px;margin:4px 0;background-color:rgba(255,255,255,0.08);';
+        mini.appendChild(rRule);
+      }
+    }
     if (showTlZoom) {
       _miniItem(_tlZoomKeys ? 'Show Whole Clip' : 'Zoom to Keyframes',
                 _tlZoomKeys ? _icTlClip : _icTlKeys,
@@ -6838,10 +6931,19 @@ function initPanel() {
   // so the wrapper only ever handles the strip of area outside the SVG.
   (function() {
     // The property rows (#prop-btns, in the same row) open it too
+    // The property under the pointer: its row, or the lane at that height
+    function _tlKeyAtEvent(e) {
+      var row = e.target && e.target.closest ? e.target.closest('.prop-btn') : null;
+      if (row) return row.dataset.key || null;
+      var svg = document.getElementById('tl-svg'), g = _tlGeo;
+      if (!svg || !g || !g.n) return null;
+      var i = Math.floor((e.clientY - svg.getBoundingClientRect().top - g.y0) / g.laneH);
+      return (i >= 0 && i < g.n && _tlLanes[i]) ? _tlLanes[i].key : null;
+    }
     var targets = [document.getElementById('tl-svg'), document.querySelector('.tl-canvas-wrap'), document.getElementById('prop-btns')];
     targets.forEach(function(el) {
       if (!el) return;
-      el.addEventListener('contextmenu', function(e) { _showMiniCtxMenu(e, false, false, null, true); });
+      el.addEventListener('contextmenu', function(e) { _showMiniCtxMenu(e, false, false, null, true, _tlKeyAtEvent(e)); });
     });
   })();
 
@@ -8223,7 +8325,7 @@ function _confirmReset() {
     // Bake records are deliberately kept: they are a record of work done on the
     // project, not a setting, and the dialog does not offer to clear them.
     ['opencurve-presets-v10', 'opencurve-sidebar-width', _WELCOME_KEY, _CURVE_COLOR_KEY, _GRID_KEY,
-     _LAYOUT_KEY, _ANIM_KEY, _UPDATE_NOTIF_KEY, _GRAPH_KEY, _PEAK_KEY, _DRAG_GHOST_KEY,
+     _LAYOUT_KEY, _ANIM_KEY, _AUTO_ZOOM_KEY, _UPDATE_NOTIF_KEY, _GRAPH_KEY, _PEAK_KEY, _DRAG_GHOST_KEY,
      _DENSITY_KEY, _TL_KEY, _TL_ZOOM_KEY, _TL_PROPS_KEY, _TL_H_KEY
     ].forEach(function(k) { try { localStorage.removeItem(k); } catch(_) {} });
 
@@ -8236,6 +8338,8 @@ function _confirmReset() {
     _gridSize       = 8;
     _presetLayout   = 'list';
     _animationsOn   = true;
+    _autoZoomOn     = true;
+    _autoZoomFrom   = null;
     _updateNotifsOn = true; // [exchange-strip-line]
     _tlZoomKeys     = false;
     _tlUserH        = null;
@@ -8494,7 +8598,7 @@ function _showSettingsModal() {
   logo.style.cssText = 'width:145px;height:22px;opacity:0.9;margin-top:6px;'; // margin centres 3px lower, the artwork sat high
   logoWrap.appendChild(logo);
   var closeBtn = document.createElement('div');
-  closeBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 12 12" fill="none"><line x1="2.5" y1="2.5" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="9.5" y1="2.5" x2="2.5" y2="9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+  closeBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 12 12" fill="none"><line x1="2.5" y1="2.5" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="9.5" y1="2.5" x2="2.5" y2="9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
   _attachTooltip(closeBtn, 'Close settings');
   // A 22px square like the row pin/undo buttons, in the panel's red
   closeBtn.style.cssText = 'display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:3px;flex-shrink:0;cursor:pointer;background-color:rgba(255,144,144,0.18);background-image:linear-gradient(to right, rgba(255,255,255,0.06), rgba(255,255,255,0));color:#ff9090;transition:background 0.12s,color 0.12s;';
@@ -8773,6 +8877,38 @@ function _showSettingsModal() {
     _updateAnimCheck();
   });
   rowsCol.appendChild(animRow);
+
+  // Auto Zoom toggle row (the graph zooms out for a curve past the range box)
+  var azRow = document.createElement('div');
+  azRow.style.cssText = 'display:flex;align-items:center;padding:0 12px;height:36px;border-bottom:1px solid #080808;cursor:pointer;';
+  _attachTooltip(azRow, 'Zoom the graph out to show the whole curve when a preset goes past the box, and back when it fits');
+  var azLabel = document.createElement('span');
+  azLabel.style.cssText = 'font-size:14px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d4d4d4;';
+  var azCheck = document.createElement('span');
+  azCheck.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:8px;';
+  function _updateAzCheck() {
+    azCheck.innerHTML = _autoZoomOn ? _svgCheck : _svgCross;
+    azLabel.textContent = 'Auto Zoom ' + (_autoZoomOn ? 'On' : 'Off');
+    _tint(azRow, _autoZoomOn ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)', 0.045);
+  }
+  var azIcon = document.createElement('span');
+  azIcon.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-right:8px;';
+  azIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="6.8" cy="6.8" r="4.6" fill="none" stroke="#b0b0b0" stroke-width="1.6"/><path d="M10.2 10.2L14 14" fill="none" stroke="#b0b0b0" stroke-width="1.7" stroke-linecap="round"/><path d="M4.6 6.8H9" fill="none" stroke="#b0b0b0" stroke-width="1.6" stroke-linecap="round"/></svg>';
+  _updateAzCheck();
+  azRow.appendChild(azIcon);
+  azRow.appendChild(azLabel);
+  azRow.appendChild(azCheck);
+  azRow.addEventListener('mouseenter', function() { _tint(azRow, _autoZoomOn ? 'rgba(61,220,132,0.15)' : 'rgba(255,144,144,0.15)', 0.07); });
+  azRow.addEventListener('mouseleave', function() { _tint(azRow, _autoZoomOn ? 'rgba(61,220,132,0.08)' : 'rgba(255,144,144,0.08)', 0.045); });
+  azRow.addEventListener('click', function() {
+    _autoZoomOn = !_autoZoomOn;
+    localStorage.setItem(_AUTO_ZOOM_KEY, _autoZoomOn ? 'on' : 'off');
+    _updateAzCheck();
+    // Off: go back to the user's own zoom; on: fit the curve on the graph now
+    if (!_autoZoomOn && _autoZoomFrom !== null) { _zoomAnimTo(_autoZoomFrom); _autoZoomFrom = null; }
+    else if (_autoZoomOn) _autoZoomFor(getState().curve);
+  });
+  rowsCol.appendChild(azRow);
 
   // Keyframe spacing row (how far apart the baked keyframes are)
   var densRow = document.createElement('div');
