@@ -8980,6 +8980,7 @@ function _showSettingsModal() {
 
   // Right column: baking, the look, updates
   var cardsB = [densCard, colorCard];
+  var cardsTop = []; // Updates and Update Notifications: first in the list
   // [exchange-strip]
   // Updates: the line under the title says where you stand, the button checks
   // GitHub (or opens the release once a newer one is out); _applyUpdateBtnState
@@ -9001,7 +9002,7 @@ function _showSettingsModal() {
       localStorage.setItem(_UPDATE_NOTIF_KEY, v ? 'on' : 'off');
       _refreshUpdateNotification();
     });
-  cardsB.push(updCard, notifCard);
+  cardsTop.push(updCard, notifCard);
   // [/exchange-strip]
 
   // Two columns from 700px, else one: cards move between the columns only when
@@ -9013,6 +9014,8 @@ function _showSettingsModal() {
     twoCols = two;
     colB.style.display = two ? 'flex' : 'none';
     colA.style.marginRight = two ? '8px' : '0px';
+    // Updates go first: at the top of the right column, or of the single one
+    cardsTop.forEach(function(c) { (two ? colB : colA).appendChild(c); });
     cardsA.forEach(function(c) { colA.appendChild(c); });
     cardsB.forEach(function(c) { (two ? colB : colA).appendChild(c); });
   }
@@ -9066,35 +9069,19 @@ function _showSettingsModal() {
   });
   footerLeft.appendChild(ghLink);
 
-  // 31px: the ZXP buttons are 30.84px tall (13px text, Chromium line height 18.85px)
-  var resetRow = _crispBox(31, '4px 10px 6px', '#4c4c4c', '#111111');
-  resetRow.style.cursor = 'pointer';
-  resetRow._ocInner.style.cssText += 'color:#e4e4e4;font-size:13px;line-height:19px;';
-  var resetLabel = document.createElement('span');
-  resetLabel.textContent = 'Reset All Settings';
-  _attachTooltip(resetRow, 'Restore defaults and remove all presets');
-  resetRow._ocInner.appendChild(resetLabel);
-  resetRow.addEventListener('mouseenter', function() { _crispTint(resetRow, '#888888', '#1f1f1f'); });
-  resetRow.addEventListener('mouseleave', function() { _crispTint(resetRow, '#4c4c4c', '#111111'); });
-  resetRow.addEventListener('click', function() {
+  // Footer buttons: the same outlined style as the Updates card's Check now
+  var resetRow = _cardBtn('Reset All Settings', function() {
     modal.remove();
     _confirmReset();
   });
+  _attachTooltip(resetRow, 'Restore defaults and remove all presets');
 
   // Report an Issue: opens the GitHub issues page in the browser
-  var issueRow = _crispBox(31, '4px 10px 6px', '#4c4c4c', '#111111');
-  issueRow.style.cursor = 'pointer';
-  issueRow.style.marginRight = '8px';
-  issueRow._ocInner.style.cssText += 'color:#e4e4e4;font-size:13px;line-height:19px;';
-  var issueLabel = document.createElement('span');
-  issueLabel.textContent = 'Report an Issue';
-  _attachTooltip(issueRow, 'Open the OpenCurve issues page on GitHub');
-  issueRow._ocInner.appendChild(issueLabel);
-  issueRow.addEventListener('mouseenter', function() { _crispTint(issueRow, '#888888', '#1f1f1f'); });
-  issueRow.addEventListener('mouseleave', function() { _crispTint(issueRow, '#4c4c4c', '#111111'); });
-  issueRow.addEventListener('click', function() {
+  var issueRow = _cardBtn('Report an Issue', function() {
     _openUrl('https://github.com/fayewave/OpenCurve/issues');
   });
+  issueRow.style.marginRight = '8px';
+  _attachTooltip(issueRow, 'Open the OpenCurve issues page on GitHub');
 
   var footerRight = document.createElement('div');
   footerRight.style.cssText = 'display:flex;align-items:center;flex-shrink:0;';

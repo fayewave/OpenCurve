@@ -5636,6 +5636,7 @@ function _showSettingsModal() {
 
   // Right column: baking, the look, updates
   var cardsB = [densCard, colorCard];
+  var cardsTop = []; // Updates and Update Notifications: first in the list
   // Updates: the line under the title says where you stand, the button checks
   // GitHub (or opens the release once a newer one is out); _applyUpdateBtnState
   var updBtn = _cardBtn('Check now', function() {
@@ -5656,7 +5657,7 @@ function _showSettingsModal() {
       localStorage.setItem(_UPDATE_NOTIF_KEY, v ? 'on' : 'off');
       _refreshUpdateNotification();
     });
-  cardsB.push(updCard, notifCard);
+  cardsTop.push(updCard, notifCard);
 
   // Two columns from 700px, else one: cards move between the columns only when
   // the mode changes (UXP relayouts on every write)
@@ -5667,6 +5668,8 @@ function _showSettingsModal() {
     twoCols = two;
     colB.style.display = two ? 'flex' : 'none';
     colA.style.marginRight = two ? '8px' : '0px';
+    // Updates go first: at the top of the right column, or of the single one
+    cardsTop.forEach(function(c) { (two ? colB : colA).appendChild(c); });
     cardsA.forEach(function(c) { colA.appendChild(c); });
     cardsB.forEach(function(c) { (two ? colB : colA).appendChild(c); });
   }
@@ -5710,32 +5713,20 @@ function _showSettingsModal() {
   });
   footerLeft.appendChild(ghLink);
 
-  var resetRow = document.createElement('div');
-  resetRow.style.cssText = 'display:flex;align-items:center;padding:5px 10px;cursor:pointer;color:#e4e4e4;font-size:13px;background-color:transparent;border:1px solid #4c4c4c;border-radius:4px;flex-shrink:0;';
-  var resetLabel = document.createElement('span');
-  resetLabel.textContent = 'Reset All Settings';
-  _attachTooltip(resetRow, 'Restore defaults and remove all presets');
-  resetRow.appendChild(resetLabel);
-  resetRow.addEventListener('mouseenter', function() { resetRow.style.borderColor = '#888888'; resetRow.style.backgroundColor = 'rgba(255,255,255,0.06)'; });
-  resetRow.addEventListener('mouseleave', function() { resetRow.style.borderColor = '#4c4c4c'; resetRow.style.backgroundColor = 'transparent'; });
-  resetRow.addEventListener('click', function() {
+  // Footer buttons: the same outlined style as the Updates card's Check now
+  var resetRow = _cardBtn('Reset All Settings', function() {
     modal.remove();
     _confirmReset();
   });
+  _attachTooltip(resetRow, 'Restore defaults and remove all presets');
 
   // Report an Issue: opens the GitHub issues page in the browser
-  var issueRow = document.createElement('div');
-  issueRow.style.cssText = 'display:flex;align-items:center;padding:5px 10px;margin-right:8px;cursor:pointer;color:#e4e4e4;font-size:13px;background-color:transparent;border:1px solid #4c4c4c;border-radius:4px;flex-shrink:0;';
-  var issueLabel = document.createElement('span');
-  issueLabel.textContent = 'Report an Issue';
-  _attachTooltip(issueRow, 'Open the OpenCurve issues page on GitHub');
-  issueRow.appendChild(issueLabel);
-  issueRow.addEventListener('mouseenter', function() { issueRow.style.borderColor = '#888888'; issueRow.style.backgroundColor = 'rgba(255,255,255,0.06)'; });
-  issueRow.addEventListener('mouseleave', function() { issueRow.style.borderColor = '#4c4c4c'; issueRow.style.backgroundColor = 'transparent'; });
-  issueRow.addEventListener('click', function() {
+  var issueRow = _cardBtn('Report an Issue', function() {
     var url = 'https://github.com/fayewave/OpenCurve/issues';
     if (_bridge && _bridge.openExternal) _bridge.openExternal(url); else window.open(url);
   });
+  issueRow.style.marginRight = '8px';
+  _attachTooltip(issueRow, 'Open the OpenCurve issues page on GitHub');
 
   var footerRight = document.createElement('div');
   footerRight.style.cssText = 'display:flex;align-items:center;flex-shrink:0;';
