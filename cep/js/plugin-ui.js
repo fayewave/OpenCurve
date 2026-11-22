@@ -1241,12 +1241,34 @@ var PRESETS = {
   'cubic-in':     { p1x: 0.32, p1y: 0, p2x: 0.67, p2y: 0 },
   'cubic-out':    { p1x: 0.33, p1y: 1, p2x: 0.68, p2y: 1 },
   'cubic-in-out': { p1x: 0.65, p1y: 0, p2x: 0.35, p2y: 1 },
+  // The rest of the defaults (November 2026, 2.1.0): six clearly different
+  // shapes, not variations on the cubics. Same curves as
+  // presets/OpenCurve-Preset-Pack.json, which existing users can import.
+  'linear':       { p1x: 0.25, p1y: 0.25, p2x: 0.75, p2y: 0.75 },
+  'snap':         { p1x: 0.87, p1y: 0,    p2x: 0.13, p2y: 1 },
+  'slow-middle':  { p1x: 0.1,  p1y: 0.7,  p2x: 0.9,  p2y: 0.3 },
+  'overshoot':    { p1x: 0.34, p1y: 1.56, p2x: 0.64, p2y: 1 },
+  'anticipate':   { p1x: 0.36, p1y: 0,    p2x: 0.66, p2y: -0.56 },
+  'bounce': {
+    p1x: 0.1212, p1y: 0, p2x: 0.9697, p2y: 0.9792,
+    pts: [
+      { x: 0.3636, y: 1, ix: 0.2424, iy: 0.3333, ox: 0.4848, oy: 0.6667, smooth: false },
+      { x: 0.7273, y: 1, ix: 0.6061, iy: 0.6667, ox: 0.7879, oy: 0.9167, smooth: false },
+      { x: 0.9091, y: 1, ix: 0.8485, iy: 0.9167, ox: 0.9394, oy: 0.9792, smooth: false },
+    ],
+  },
 };
 
 var BUILT_IN_PRESETS = [
   { id: 'cubic-in-out', name: 'Cubic In-Out', curve: PRESETS['cubic-in-out'], builtIn: true },
   { id: 'cubic-in',     name: 'Cubic In',     curve: PRESETS['cubic-in'],     builtIn: true },
   { id: 'cubic-out',    name: 'Cubic Out',    curve: PRESETS['cubic-out'],    builtIn: true },
+  { id: 'linear',       name: 'Linear',       curve: PRESETS['linear'],       builtIn: true },
+  { id: 'snap',         name: 'Snap',         curve: PRESETS['snap'],         builtIn: true },
+  { id: 'slow-middle',  name: 'Slow Middle',  curve: PRESETS['slow-middle'],  builtIn: true },
+  { id: 'overshoot',    name: 'Overshoot',    curve: PRESETS['overshoot'],    builtIn: true },
+  { id: 'anticipate',   name: 'Anticipate',   curve: PRESETS['anticipate'],   builtIn: true },
+  { id: 'bounce',       name: 'Bounce',       curve: PRESETS['bounce'],       builtIn: true },
 ];
 
 // Frame count of the selected keyframe pairs for the status strip: "24 frames",
