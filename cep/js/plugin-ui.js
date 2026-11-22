@@ -1029,13 +1029,23 @@ function _bnInitSVG() {
   dot('sg-bn-top', '240,170,60');
   content.appendChild(g);
 }
+var _BN_FLOOR_X0 = 36; // the tool column's right edge (5px + 26px) + 5px
 function _bnPlaceDots(W, H) {
   var b = _bnCur;
   if (!b) return;
   var f = document.getElementById('sg-bn-floor');
   if (f) {
     var fy = normToSVG(0, _bnOpts.dir === 'in' ? 0 : 1, W, H).cy, b0 = _rangeBox(W, H);
-    f.setAttribute('x1', b0.x - b0.s); f.setAttribute('x2', b0.x + 2 * b0.s);
+    // It starts right of the tool column down the graph's left side, so it reads
+    // as running underneath the buttons rather than showing through their
+    // translucent fills: _BN_FLOOR_X0 on screen, mapped back through the zoom
+    // (the line lives in the zoomed #sg-content; _updateContentTransform re-places it)
+    var x1 = b0.x - b0.s, sideBtn = document.getElementById('bounce-mode');
+    if (sideBtn && sideBtn.style.display !== 'none') {
+      var o = _zoomOrigin();
+      x1 = Math.max(x1, o.x + (_BN_FLOOR_X0 - o.x) / _zoom);
+    }
+    f.setAttribute('x1', x1); f.setAttribute('x2', b0.x + 2 * b0.s);
     f.setAttribute('y1', fy); f.setAttribute('y2', fy);
   }
   [['sg-bn-hit', b.hitPt], ['sg-bn-top', b.topPt]].forEach(function(pr) {
@@ -1334,6 +1344,7 @@ function _updateContentTransform() {
   var o = _zoomOrigin(), cx = o.x, cy = o.y;
   g.setAttribute('transform',
     'translate(' + cx + ',' + cy + ') scale(' + _zoom + ') translate(' + (-cx) + ',' + (-cy) + ')');
+  if (_bounceMode) _bnPlaceDots(_svgW, _svgH); // the floor line's left end follows the zoom
 }
 
 // ─── Auto zoom (2.1.0) ────────────────────────────────────────────────────
@@ -3999,6 +4010,7 @@ function initPanel() {
     _hideToolsMenu();
     _hideZoomSlider(); // its anchor may just have been hidden
     _stylePeakBtn(); // the menu button only carries the A-curve tint while collapsed
+    if (_bounceMode && _svgW > 0) _bnPlaceDots(_svgW, _svgH); // the floor line starts after the column only while it shows
   }
   function _showToolsMenu() {
     _hideToolsMenu();
