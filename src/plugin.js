@@ -7697,7 +7697,7 @@ function initPanel() {
 
     var box = document.createElement('div');
     box.id = '_paste-box';
-    box.style.cssText = 'position:fixed;top:-9999px;left:'+boxL+'px;width:'+boxW+'px;visibility:hidden;background:#1c1c1c;border:1px solid rgba(255,255,255,0.18);z-index:9998;padding:16px;font-family:system-ui,sans-serif;';
+    box.style.cssText = 'position:fixed;top:-9999px;left:'+boxL+'px;width:'+boxW+'px;visibility:hidden;background:#1c1c1c;border:1px solid rgba(255,255,255,0.18);z-index:9998;padding:20px;font-family:system-ui,sans-serif;';
     document.body.appendChild(box);
 
     function close() {
@@ -7722,18 +7722,18 @@ function initPanel() {
 
     var pasteTf = _mkTextField(13, false, 'paste'), input = pasteTf.input;
     input.placeholder = 'cubic-bezier(0.42, 0, 0.58, 1)';
-    pasteTf.wrap.style.marginBottom = '6px';
+    pasteTf.wrap.style.marginBottom = '0'; // the error line under it makes up the popups' 16px above the buttons
     box.appendChild(pasteTf.wrap);
 
     var err = document.createElement('div');
-    err.style.cssText = 'color:#ff9090;font-size:12px;min-height:16px;margin-bottom:10px;';
+    err.style.cssText = 'color:#ff9090;font-size:12px;line-height:14px;min-height:12px;margin-bottom:4px;'; // empty: the popups' 16px above the buttons
     box.appendChild(err);
 
     var btnRow = document.createElement('div');
-    btnRow.style.cssText = 'display:flex;justify-content:flex-start;';
+    btnRow.style.cssText = 'display:flex;justify-content:flex-end;'; // every popup: Cancel, then the main button, at the right
 
     var addBtn = _modalBtn('Add Preset', null, 'primary');
-    addBtn.style.marginRight = '8px';
+    addBtn.style.marginLeft = '8px';
     addBtn.addEventListener('click', function() {
       var curve = _parseCubicBezier(input.value.trim());
       if (!curve) { err.textContent = 'Invalid format — expected cubic-bezier(x1, y1, x2, y2) or an opencurve(...) value'; return; }
@@ -7744,8 +7744,8 @@ function initPanel() {
     var cancelBtn = _modalBtn('Cancel', null, 'plain');
     cancelBtn.addEventListener('click', close);
 
-    btnRow.appendChild(addBtn);
     btnRow.appendChild(cancelBtn);
+    btnRow.appendChild(addBtn);
     box.appendChild(btnRow);
 
     // Position vertically once box has height
@@ -9534,7 +9534,7 @@ function _showNumericPanel() {
 
   var box = document.createElement('div');
   box.id = 'oc-numeric';
-  box.style.cssText = 'width:272px;max-width:96%;flex-shrink:0;background:#1c1c1c;border:1px solid rgba(255,255,255,0.18);padding:16px;font-family:system-ui,sans-serif;box-sizing:border-box;';
+  box.style.cssText = 'width:272px;max-width:96%;flex-shrink:0;background:#1c1c1c;border:1px solid rgba(255,255,255,0.18);padding:20px;font-family:system-ui,sans-serif;box-sizing:border-box;';
   overlay.appendChild(box);
 
   var start = _cloneCurve(getState().curve);
@@ -9594,7 +9594,7 @@ function _showNumericPanel() {
   _attachTooltip(textInp, 'The curve as cubic-bezier() or opencurve() text. Edit it and press Enter or Apply; this is also where a curve with added points is typed');
 
   var err = document.createElement('div');
-  err.style.cssText = 'color:#ff9090;font-size:12px;min-height:16px;margin:4px 0 8px;';
+  err.style.cssText = 'color:#ff9090;font-size:12px;line-height:14px;min-height:12px;margin:4px 0 0;'; // empty: the popups' 16px above the buttons
   box.appendChild(err);
 
   function syncFrom(c) {
@@ -9648,15 +9648,11 @@ function _showNumericPanel() {
   }
 
   var btnRow = document.createElement('div');
-  btnRow.style.cssText = 'display:flex;justify-content:flex-start;';
-  function mkBtn(label, onClick, kind) { // the shared popup button (_modalBtn)
-    var b = _modalBtn(label, onClick, kind);
-    b.style.marginRight = '8px';
-    btnRow.appendChild(b);
-    return b;
-  }
-  mkBtn('Apply', apply, 'primary');
-  mkBtn('Cancel', cancel);
+  btnRow.style.cssText = 'display:flex;justify-content:flex-end;'; // every popup: Cancel, then the main button, at the right
+  btnRow.appendChild(_modalBtn('Cancel', cancel));
+  var applyBtn = _modalBtn('Apply', apply, 'primary');
+  applyBtn.style.marginLeft = '8px';
+  btnRow.appendChild(applyBtn);
   box.appendChild(btnRow);
 
   setTimeout(function() { fields.p1x.focus(); fields.p1x.select(); }, 0);
