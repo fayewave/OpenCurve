@@ -529,6 +529,7 @@ html, body {
   color: var(--oc-name-color); /* the preset name's colour */
   font-family: var(--font);
   font-size: 12px;
+  font-weight: 600; /* like the preset name */
   line-height: 26px;
   white-space: nowrap;
   cursor: pointer;

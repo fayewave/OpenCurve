@@ -1986,7 +1986,7 @@ var _peRoom = Infinity;         // ... and the room it has (px), for the name te
 // (_PE_CHIP_FULL), and also once the name has gone, when the two labelled
 // buttons alone fit (_PE_BTNS_LABELLED); otherwise they are 26px icon squares
 var _PE_CHIP_FULL = 230;     // name + Edited + the labelled Save and Revert buttons
-var _PE_BTNS_LABELLED = 136; // the labelled Save and Revert buttons alone
+var _PE_BTNS_LABELLED = 142; // the labelled Save and Revert buttons alone (semibold)
 var _peLabels = null;
 function _peSetLabels(on) {
   if (on === _peLabels) return;
