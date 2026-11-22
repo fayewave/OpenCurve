@@ -6726,10 +6726,13 @@ function initPanel() {
   // Ghost is a Settings row now; its hidden button is kept for _setDragGhost and
   // the drag ghost's icon. The column's tools join the dropdown once it hides.
   var _tbTools = [peakBtn, bounceBtn, addPtBtn]; // zoom never hides
-  // Bar: the menu button and New Preset on the left, Full Screen on the right
-  var _TB_NEED = (2 * 26 + 1 * 5) + 26 + 10 + 8;
-  // Column: three buttons and their 5px gaps from the top + 8px air + zoom + 5px
-  var _SIDE_NEED = (3 * 26 + 2 * 5) + 8 + 26 + 5;
+  // New Preset heads the column while the graph is shown (_newPresetPlace)
+  function _newInSide() { var b = document.getElementById('preset-new'); return !!(b && b.parentNode && b.parentNode.id === 'graph-side-tools'); }
+  // Bar: the menu button on the left, Full Screen on the right
+  var _TB_NEED = 26 + 26 + 10 + 8;
+  // Column: four buttons (New Preset and the three modes) and their 5px gaps
+  // from the top + 8px air + zoom + 5px
+  var _SIDE_NEED = (4 * 26 + 3 * 5) + 8 + 26 + 5;
   var _tbCollapsed = null;
   var _tbDismiss   = null;
   function _hideToolsMenu() {
@@ -6763,6 +6766,7 @@ function initPanel() {
     _tbCollapsed = collapse;
     // inline display: UXP ignores class-driven display changes
     _tbTools.forEach(function(b) { if (b) b.style.display = collapse ? 'none' : ''; });
+    if (_newInSide()) document.getElementById('preset-new').style.display = collapse ? 'none' : '';
     _hideToolsMenu();
     _hideZoomSlider(); // its anchor may just have been hidden
     _stylePeakBtn(); // the menu button only carries the A-curve tint while collapsed
@@ -6808,6 +6812,8 @@ function initPanel() {
       item('Revert to "' + edP.name + '"', document.getElementById('pe-revert'), _presetEditRevert);
     }
     if (_tbCollapsed) {
+      var newBtnS = document.getElementById('preset-new');
+      if (_newInSide()) item('New Preset', newBtnS, function() { newBtnS.click(); });
       item(_peakMode ? 'A-curve Mode: On' : 'A-curve Mode', peakBtn, function() { _setPeakMode(!_peakMode); }, { active: _peakMode });
       item(_bounceMode ? 'Bounce Mode: On' : 'Bounce Mode', bounceBtn, function() { _setBounceMode(!_bounceMode); }, { active: _bounceMode });
       item('Add Point', addPtBtn, function() { if (_peakMode) _setPeakMode(false); _addPoint(); });
@@ -6877,7 +6883,8 @@ function initPanel() {
   // New Preset lives in the graph bar while the graph is shown (_newPresetPlace),
   // so it only counts, and only collapses here, while it is in this bar
   function _newInPtb() { var b = document.getElementById('preset-new'); return !!(b && ptb && b.parentNode === ptb); }
-  function _ptbNeed() { var left = _newInPtb() ? 3 : 2; return (left * 26 + (left - 1) * 5) + (3 * 26 + 2 * 5) + 10 + 8; }
+  // Left: the menu button (and New Preset while it is here); right: List/Grid, Graph, Timeline, Settings
+  function _ptbNeed() { var left = _newInPtb() ? 2 : 1; return (left * 26 + (left - 1) * 5) + (4 * 26 + 3 * 5) + 10 + 8; }
   var _ptbCollapsed = null;
   var _ptbDismiss   = null;
   function _hidePresetMenu() {
@@ -6985,17 +6992,18 @@ function initPanel() {
     });
   }
   if (ptb && typeof ResizeObserver !== 'undefined') new ResizeObserver(_ptbLayout).observe(ptb);
-  // New Preset sits next to the graph bar's menu button while the graph is shown
-  // and goes back next to the preset bar's menu button while it is off (the graph
-  // bar hides with the graph). _applyGraphVisibility calls this on every change.
+  // New Preset heads the tool column down the graph's left side while the graph
+  // is shown and goes back next to the preset bar's menu button while it is off
+  // (the column hides with the graph). _applyGraphVisibility calls this on every change.
   _newPresetPlace = function() {
-    var b = document.getElementById('preset-new'), gtb = document.getElementById('graph-toolbar');
-    var gMenu = document.getElementById('graph-tools-menu');
-    if (!b || !gtb || !gMenu || !ptb || !pMenuBtn) return;
-    var host = _graphVisible ? gtb : ptb, after = _graphVisible ? gMenu : pMenuBtn;
+    var b = document.getElementById('preset-new'), side = document.getElementById('graph-side-tools');
+    if (!b || !side || !ptb || !pMenuBtn) return;
+    var host = _graphVisible ? side : ptb;
     if (b.parentNode !== host) {
-      host.insertBefore(b, after.nextSibling);
-      if (b.style.display) b.style.display = ''; // the preset bar may have collapsed it
+      if (_graphVisible) side.insertBefore(b, side.firstChild);
+      else ptb.insertBefore(b, pMenuBtn.nextSibling);
+      var d = (_graphVisible && _tbCollapsed) ? 'none' : ''; // a short graph area folds the column into the menu
+      if (b.style.display !== d) b.style.display = d;
       _ptbCollapsed = null; _ptbLayout();        // the preset bar's room changed
     }
   };

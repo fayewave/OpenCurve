@@ -392,14 +392,14 @@ input, textarea {
 #preset-toolbar {
   justify-content: flex-end;
 }
-/* The menu button, New Preset and List/Grid sit at the left of the preset bar;
-   the Graph/Timeline toggles and Settings at the right. Collapsed, only the
-   menu button is left of the gap */
+/* The menu button (and New Preset while the graph is off) sit at the left of
+   the preset bar; List/Grid, the Graph/Timeline toggles and Settings at the
+   right. Collapsed, only the menu button is left of the gap */
 #preset-tools-menu {
   margin-left: 0;
 }
 #preset-layout {
-  margin-right: auto;
+  margin-left: auto; /* the right group starts here: List/Grid, Graph, Timeline, Settings */
 }
 
 .tool-btn:hover {
@@ -529,6 +529,21 @@ input, textarea {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--oc-active-color);
+}
+/* Save / Revert in the chip: tinted with the theme colour like the chip
+   itself, not the plain white tool button look. A class on the buttons, not
+   a descendant rule: UXP applies descendant + :hover rules unreliably */
+.tool-btn.pe-btn {
+  background-color: var(--oc-edited-bg);
+  color: var(--oc-active-color);
+}
+.tool-btn.pe-btn:hover {
+  background-color: var(--oc-edited-bg2);
+  color: var(--oc-active-color);
+}
+.tool-btn.pe-btn:active {
+  background-color: var(--oc-active-bg2);
   color: var(--oc-active-color);
 }
 .pe-tag {
