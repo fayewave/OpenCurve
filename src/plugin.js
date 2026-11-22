@@ -8635,13 +8635,13 @@ function _openTextFile() {
   });
 }
 
-// Settings footer: the edition (ZXP, CCX or Exchange) as a small outlined badge
-// after the version. Inline styles only (UXP), margin instead of flex gap.
-function _editionBadge(label) {
+// Settings footer: the version and the edition (ZXP, CCX or Exchange) as small
+// outlined badges. Inline styles only (UXP), margin instead of flex gap.
+function _footerBadge(label) {
   var b = document.createElement('span');
   b.textContent = label;
-  b.style.cssText = 'display:inline-block;margin-left:8px;padding:1px 6px;border:1px solid rgba(255,255,255,0.22);border-radius:4px;'
-    + 'background-color:rgba(255,255,255,0.04);color:#b0b0b0;font-size:10px;font-weight:600;letter-spacing:0.5px;line-height:14px;';
+  b.style.cssText = 'display:inline-block;margin-left:8px;padding:3px 7px;border:1px solid rgba(255,255,255,0.22);border-radius:4px;'
+    + 'background-color:rgba(255,255,255,0.04);color:#b0b0b0;font-size:12px;font-weight:600;letter-spacing:0.5px;line-height:16px;';
   return b;
 }
 
@@ -9041,26 +9041,32 @@ function _showSettingsModal() {
   var footerRow = document.createElement('div');
   footerRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 12px;';
 
+  // One row: made by faye, the version and edition badges, then the GitHub
+  // link, which truncates first when the panel is narrow
   var footerLeft = document.createElement('div');
+  footerLeft.style.cssText = 'display:flex;align-items:center;flex:0 1 auto;min-width:0;overflow:hidden;margin-right:12px;color:#888;font-size:12px;';
   // Edition badge: the Exchange build strips the CCX line (scripts/build.js
   // exchange), so only the Exchange .ccx says Exchange
   var editionTag = 'Exchange';
   editionTag = 'CCX'; // [exchange-strip-line]
-  var madeBy = document.createElement('div');
-  madeBy.style.cssText = 'display:flex;align-items:center;color:#888;font-size:12px;margin-bottom:4px;';
   var madeByText = document.createElement('span');
-  madeByText.textContent = 'made by faye  ·  v' + CURRENT_VERSION;
-  madeBy.appendChild(madeByText);
-  madeBy.appendChild(_editionBadge(editionTag));
-  var ghLink = document.createElement('div');
+  madeByText.textContent = 'made by faye';
+  madeByText.style.cssText = 'flex-shrink:0;white-space:nowrap;';
+  footerLeft.appendChild(madeByText);
+  footerLeft.appendChild(_footerBadge('v' + CURRENT_VERSION));
+  footerLeft.appendChild(_footerBadge(editionTag));
+  var ghSep = document.createElement('span');
+  ghSep.textContent = '\u00B7';
+  ghSep.style.cssText = 'flex-shrink:0;margin:0 8px;color:#555;';
+  footerLeft.appendChild(ghSep);
+  var ghLink = document.createElement('span');
   ghLink.textContent = 'github.com/fayewave/OpenCurve';
-  ghLink.style.cssText = 'color:#4a9eff;font-size:12px;cursor:pointer;';
+  ghLink.style.cssText = 'color:#4a9eff;font-size:12px;cursor:pointer;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;';
   ghLink.addEventListener('mouseenter', function() { ghLink.style.color = '#8ccfff'; });
   ghLink.addEventListener('mouseleave', function() { ghLink.style.color = '#4a9eff'; });
   ghLink.addEventListener('click', function() {
     _openUrl('https://github.com/fayewave/OpenCurve');
   });
-  footerLeft.appendChild(madeBy);
   footerLeft.appendChild(ghLink);
 
   var resetRow = document.createElement('div');
@@ -9097,7 +9103,7 @@ function _showSettingsModal() {
   footerRow.appendChild(footerRight);
   footer.appendChild(footerRow);
 
-  // Footer layout: the buttons sit to the right of the credit lines while
+  // Footer layout: the buttons sit to the right of the credit row while
   // both fit side by side, otherwise they drop underneath. Measured once
   // from the row layout (the elements keep their natural widths).
   var footNeed = 0, footStacked = false;
