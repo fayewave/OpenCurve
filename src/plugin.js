@@ -3344,12 +3344,15 @@ function _showUndoBtn(show) {
   if (!btn) return;
   btn.classList.toggle('btn-dim', !show);
   btn.style.display = 'flex';
-  // Inline, since UXP doesn't restyle on a class change alone. Until 2.1.0 the
-  // dim state swapped in a faint white background and a #666 icon, which on a
-  // green Go read as a dark icon on a still-bright square; opacity fades both.
-  btn.style.backgroundColor = '';
-  btn.style.color      = '';
-  btn.style.opacity    = show ? '' : '0.35';
+  // Inline, since UXP doesn't restyle on a class change alone, and an inline
+  // colour also beats the green :hover rule, which the CCX applied to the dim
+  // button anyway. The grey is opaque so a green Go doesn't show through: a
+  // faint white fill read as a green square with a dark icon, and opacity
+  // 0.35 didn't take in the CCX (both 2026-11-22).
+  btn.style.backgroundColor = show ? '' : '#2b2b2b';
+  btn.style.backgroundImage = show ? '' : 'none';
+  btn.style.color      = show ? '' : '#6f6f6f';
+  btn.style.opacity    = '';
   btn.style.cursor     = show ? '' : 'default';
   _fitGoForUndo();
 }
@@ -7153,6 +7156,9 @@ function initPanel() {
   if (undoBtn) {
     _attachTooltip(undoBtn, function() { return undoBtn.classList.contains('btn-dim') ? 'Nothing to undo' : 'Undo last bake'; });
     undoBtn.addEventListener('click', function() { if (!undoBtn.classList.contains('btn-dim')) _undoLastBake(); });
+    // Start in the right state with its inline colours: the stylesheet alone
+    // left a fresh panel's dim button green in the CCX (its :hover rule won)
+    _showUndoBtn(_hasSessionBakes());
   }
 
   // State → UI

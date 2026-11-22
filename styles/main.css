@@ -1015,7 +1015,11 @@ html, body {
 /* Nothing to undo: stays in place, grey and inert (colours are also set inline
    by _showUndoBtn so UXP repaints the icon) */
 .btn-undo.btn-dim {
-  opacity: 0.35;   /* the normal look, faded: background and icon dim together */
+  /* Greyed out: an opaque grey (a green Go must not show through) and a grey
+     icon. _showUndoBtn writes the same values inline for UXP. */
+  background-color: #2b2b2b;
+  background-image: none;
+  color: #6f6f6f;
   cursor: default;
 }
 

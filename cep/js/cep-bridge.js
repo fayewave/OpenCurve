@@ -261,9 +261,11 @@
     var btn = document.getElementById('undo-btn');
     if (btn) {
       btn.classList.toggle('btn-dim', !show);
-      btn.style.backgroundColor = '';
-      btn.style.color      = '';
-      btn.style.opacity    = show ? '' : '0.35';
+      // Opaque grey, so a green Go doesn't show through (same as the UXP edition)
+      btn.style.backgroundColor = show ? '' : '#2b2b2b';
+      btn.style.backgroundImage = show ? '' : 'none';
+      btn.style.color      = show ? '' : '#6f6f6f';
+      btn.style.opacity    = '';
       btn.style.cursor     = show ? '' : 'default';
     }
     if (OpenCurve.fitGoForUndo) OpenCurve.fitGoForUndo();
@@ -534,6 +536,7 @@
     console.log('[OC-CEP] Initializing panel');
     OpenCurve.initPanel();
     _loadBakeRecords();
+    _showUndoBtn(false); // nothing from this session yet: start greyed out, inline like later
     var undoBtn = document.getElementById('undo-btn');
     if (undoBtn && OpenCurve.attachTooltip) {
       undoBtn.removeAttribute('title');
