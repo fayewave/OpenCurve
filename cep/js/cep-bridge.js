@@ -4,7 +4,7 @@
  * Handles:
  *   - CSInterface initialization
  *   - Panel lifecycle (replaces UXP entrypoints.setup)
- *   - Poll loop via evalScript('detectContext()')
+ *   - Poll loop via evalScript('detectContext(needFull)')
  *   - Go button handler via evalScript('bakeKeyframes(...)')
  *   - Flyout menu
  */
@@ -21,6 +21,13 @@
   var _pollStartedAt = 0;     // when the running scan began, for the stuck-scan guard
   var _pollToken     = 0;     // identifies the scan that owns _pollRunning
   var _POLL_STUCK_MS = 5000;  // a scan still running after this is abandoned
+  // True until a full result has been applied, and again after a scan is
+  // abandoned: the host then answers with its cached full result instead of
+  // 'unchanged'. Without it, a first scan slower than _POLL_STUCK_MS (a big
+  // timeline, 2026-11-22) left the panel on "Open a project and select a clip"
+  // for good, since every later poll said nothing had changed since a result
+  // the panel never received.
+  var _needFull = true;
   var _lastStatus    = '';
   var _skipPollUntil = 0;
   var _lastPh        = null; // last playhead position (seconds)
@@ -384,6 +391,7 @@
       if (_pollStartedAt && Date.now() - _pollStartedAt > _POLL_STUCK_MS) {
         console.log('[OC-CEP] poll: abandoning a scan stuck for ' + (Date.now() - _pollStartedAt) + 'ms');
         _pollRunning = false;
+        _needFull = true;
       } else {
         if (_debugTiming && _dbgStats) _dbgStats.dropped++;
         return;
@@ -399,7 +407,7 @@
     var _myPoll = ++_pollToken; // an abandoned scan must not clear the flag or apply its result
 
     var _t0 = _debugTiming ? Date.now() : 0;
-    cs.evalScript('detectContext()', function(resultStr) {
+    cs.evalScript('detectContext(' + (_needFull ? 'true' : 'false') + ')', function(resultStr) {
       if (_pollToken !== _myPoll) return; // abandoned; a newer scan owns the state
       _pollRunning = false;
       // Go was pressed while this scan was out: its result predates the bake
@@ -418,6 +426,7 @@
       var _dbgK = result.status === 'unchanged' ? 'cache' : (result.scanKind === 'fast' ? 'fast' : 'full');
       if (_debugTiming) _dbgFullMs = result.scanMs || 0;
 
+      if (result.status !== 'unchanged') _needFull = false;
       // Nothing changed since the last poll — the host skipped the full scan.
       // Keep the current UI state untouched (no setState, no re-render).
       if (result.status === 'unchanged') {

@@ -225,6 +225,17 @@ var _ocAudioAt_ms  = 0;     // when it was walked; refreshed after _OC_AUDIO_WAL
 var _OC_AUDIO_WALK_MS = 5000;
 var _ocTracksSeq   = null;
 var _ocTracksCount = -1;
+// The walk's cost scales with the timeline and with how busy Premiere is: on a
+// 245-clip timeline (Premiere 26.0.2, 2026-11-22) every Time read (start, end)
+// cost 5-8ms and a walk took 3-5s, on Premiere's main thread. Re-walking that
+// on every heartbeat (~1.8s) kept Premiere busy almost all the time, and a scan
+// over the panel's 5s guard was thrown away. So a full re-walk is spaced to
+// _OC_WALK_SPACING x its own last cost; in between, the heartbeat only compares
+// each track's clip count (one cheap read per track) and re-walks if one changed.
+var _ocWalkAt      = 0;     // when the video walk ran
+var _ocWalkMs      = 0;     // how long it took
+var _ocWalkCounts  = '';    // each video track's clip count at walk time
+var _OC_WALK_SPACING = 20;
 
 // ── Property cache ──
 // Keyframe lists and sampled values for the winning clip from the last full
@@ -324,33 +335,87 @@ function _ocTrackCount(sequence) {
 // every clip costs about 0.25ms to read here and timelines often hold several
 // times more audio clips than video ones (600 audio clips: a 90ms stall).
 function _ocWalkTracks(sequence, numTracks, seqId) {
+  var t0 = new Date().getTime();
   _ocTracks = _ocWalkKind(sequence, false); _ocTracksSeq = seqId; _ocTracksCount = numTracks;
+  _ocWalkAt = new Date().getTime(); _ocWalkMs = _ocWalkAt - t0;
+  var counts = [];
+  for (var i = 0; i < _ocTracks.length; i++) counts.push(_ocTracks[i].items.length);
+  _ocWalkCounts = counts.join(',');
+}
+// Each video track's clip count, top track first like _ocTracks (a cheap check
+// for added or removed clips between spaced-out walks)
+function _ocClipCounts(sequence) {
+  var out = [], nt = 0;
+  try { nt = sequence.videoTracks.numTracks; } catch(e) { return ''; }
+  for (var n = 0; n < nt; n++) {
+    try { out.push(sequence.videoTracks[nt - 1 - n].clips.numItems); } catch(e) { return ''; }
+  }
+  return out.join(',');
 }
 function _ocWalkAudio(sequence, key) {
   _ocAudio = _ocWalkKind(sequence, true); _ocAudioKey = key; _ocAudioAt_ms = new Date().getTime();
+}
+// Clip ranges come from QE when it agrees with the DOM: QE read all 245 clips of
+// a timeline in 190ms where the DOM's Time objects took 2.9s (Premiere 26.0.2,
+// 2026-11-22). QE lists a track's clips in the DOM's order with 'Empty' items
+// for the gaps (checked on every track there), so the n-th non-Empty item is
+// DOM clip n, the same mapping _ocLiveNames relies on. The DOM clip object and
+// its nodeId are fetched only for clips under the playhead (_ocClipsAt), which
+// also checks the DOM start against the QE one. A track whose counts differ,
+// or any QE failure, is walked through the DOM as before.
+var _OC_TICKS = 254016000000;
+function _ocQeRanges(isAudio) {
+  try {
+    if (typeof app.enableQE === 'function') app.enableQE();
+    var qs = (typeof qe !== 'undefined' && qe && qe.project) ? qe.project.getActiveSequence() : null;
+    if (!qs) return null;
+    var nt = isAudio ? qs.numAudioTracks : qs.numVideoTracks, out = [];
+    for (var t = 0; t < nt; t++) {
+      var tr = isAudio ? qs.getAudioTrackAt(t) : qs.getVideoTrackAt(t), arr = [];
+      for (var i = 0; i < tr.numItems; i++) {
+        var it = tr.getItemAt(i);
+        if (it.type === 'Empty') continue;
+        arr.push({ start: parseFloat(it.start.ticks) / _OC_TICKS, end: parseFloat(it.end.ticks) / _OC_TICKS, name: String(it.name) });
+      }
+      out.push(arr);
+    }
+    return out;
+  } catch(e) { return null; }
 }
 function _ocWalkKind(sequence, isAudio) {
   var out = [];
   var nt = 0;
   try { nt = isAudio ? sequence.audioTracks.numTracks : sequence.videoTracks.numTracks; } catch(e) {}
+  var qr = _ocQeRanges(isAudio);
+  if (qr && qr.length !== nt) qr = null;
   for (var n = 0; n < nt; n++) {
     var t = isAudio ? n : nt - 1 - n;
     var track = _ocTrack(sequence, isAudio, t);
     var clips = track.clips;
+    var cnt = clips.numItems;
     var items = [];
-    for (var c = 0; c < clips.numItems; c++) {
-      var clip = clips[c];
-      var nm = ''; try { nm = clip.name; } catch(e) {}
-      var nid = ''; try { nid = String(clip.nodeId || ''); } catch(e) {}
-      items.push({
-        clip: clip, clipIdx: c,
-        start: clip.start.seconds, end: clip.end.seconds,
-        inPoint: clip.inPoint ? clip.inPoint.seconds : 0,
-        name: nm,
-        nodeId: nid,
-      });
+    var q = qr ? qr[t] : null;
+    if (q && q.length === cnt) {
+      for (var qc = 0; qc < cnt; qc++) {
+        // clip and nodeId stay unset until the clip is under the playhead
+        items.push({ clip: null, clipIdx: qc, start: q[qc].start, end: q[qc].end, name: q[qc].name });
+      }
+    } else {
+      for (var c = 0; c < cnt; c++) {
+        var clip = clips[c];
+        var nm = ''; try { nm = clip.name; } catch(e) {}
+        var nid = ''; try { nid = String(clip.nodeId || ''); } catch(e) {}
+        items.push({
+          clip: clip, clipIdx: c,
+          start: clip.start.seconds, end: clip.end.seconds,
+          // inPoint is read in _ocClipsAt, only for clips under the playhead: as a
+          // Time read it was the dearest of the five values here (2s of a 5s walk)
+          name: nm,
+          nodeId: nid,
+        });
+      }
     }
-    out.push({ trackIdx: t, isAudio: isAudio, items: items });
+    out.push({ trackIdx: t, isAudio: isAudio, items: items, coll: clips });
   }
   return out;
 }
@@ -425,13 +490,25 @@ function _ocClipsAt(ph, tracks) {
       // report that clip's properties (and "Move playhead between keyframes",
       // since the playhead is at its out-point) on the first frame of the next.
       if (ph < it.start || ph >= it.end) continue;
+      if (!it.clip) {
+        // From the QE walk: fetch the DOM clip now, and make sure it is the same
+        // clip (name here, start just below); otherwise re-walk
+        try { it.clip = tracks[ti].coll[it.clipIdx]; } catch(e) { return null; }
+        if (!it.clip) return null;
+        try { if (String(it.clip.name) !== it.name) return null; } catch(e) { return null; }
+        try { it.nodeId = String(it.clip.nodeId || ''); } catch(e) { it.nodeId = ''; }
+      }
       var liveStart;
       try { liveStart = it.clip.start.seconds; } catch(e) { return null; }
       if (Math.abs(liveStart - it.start) > 0.0005) return null;
       var isSel = false;
       try { isSel = it.clip.isSelected(); } catch(e) { return null; }
       // Speed and media in-point, read once per walk for the clips that come under the playhead
-      if (it.speed === undefined) { var tm = _ocClipTiming(it.clip, it.start, it.end, it.inPoint); it.speed = tm.speed; it.srcIn = tm.srcIn; }
+      if (it.speed === undefined) {
+        var inRaw = 0;
+        try { inRaw = it.clip.inPoint ? it.clip.inPoint.seconds : 0; } catch(e) { return null; }
+        var tm = _ocClipTiming(it.clip, it.start, it.end, inRaw); it.speed = tm.speed; it.srcIn = tm.srcIn;
+      }
       found.push({
         trackIdx: tracks[ti].trackIdx, isAudio: !!tracks[ti].isAudio, clipIdx: it.clipIdx, clip: it.clip,
         // clipInPoint is the MEDIA in-point the keyframe times are measured against
@@ -470,7 +547,10 @@ function _fpsCached(sequence, seqId) {
 
 // ─── detectContext ────────────────────────────────────────────────────────
 
-function detectContext() {
+// needFull: the panel has not applied a result for the current cache (its first
+// poll, or it gave up on a slow scan). It then gets the cached full result
+// instead of 'unchanged', which would leave it on its starting message forever.
+function detectContext(needFull) {
   _ocScanT0 = new Date().getTime();
   _ocScanKind = 'walk';
   try {
@@ -494,7 +574,14 @@ function detectContext() {
     // see _ocWalkTracks). Selected clip goes first so user can override which
     // clip is targeted.
     var numTracks = _ocTrackCount(sequence);
-    if (!_ocTracks || _ocTracksSeq !== seqId || _ocTracksCount !== numTracks || _ocPollCount >= _OC_HEARTBEAT) {
+    var _walk = !_ocTracks || _ocTracksSeq !== seqId || _ocTracksCount !== numTracks;
+    if (!_walk && _ocPollCount >= _OC_HEARTBEAT) {
+      // Heartbeat: re-walk when it's cheap; when the last walk was expensive, only
+      // once enough time has passed, unless a track gained or lost clips
+      if (new Date().getTime() - _ocWalkAt >= _ocWalkMs * _OC_WALK_SPACING) _walk = true;
+      else if (_ocClipCounts(sequence) !== _ocWalkCounts) _walk = true;
+    }
+    if (_walk) {
       _ocWalkTracks(sequence, numTracks, seqId);
       _ocParamCache = null;
     }
@@ -547,6 +634,7 @@ function detectContext() {
     }
     if (_sig === _ocCacheKey && _ocPollCount < _OC_HEARTBEAT && _ocCacheResult !== null) {
       _ocPollCount++;
+      if (needFull) return _ocCacheResult;
       return _jsonStringify({ status: 'unchanged', ph: ph });
     }
     _ocPollCount = 0;
