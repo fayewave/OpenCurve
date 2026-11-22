@@ -1279,65 +1279,30 @@ function initGraphEditor(svg) {
     setCursor('grabbing');
   });
 
-  var _coordsEl = document.getElementById('graph-coords');
-
-  svg.addEventListener('pointerleave', function() {
-    if (_coordsEl && !dragging) _coordsEl.textContent = '';
-  });
-
-  function _showCoords(nx, ny) {
-    if (_coordsEl) _coordsEl.textContent = nx.toFixed(3) + ',  ' + ny.toFixed(3);
-  }
-
+  // No coordinate readout (removed 2026-11-22): writing its HTML text on every
+  // move cost UXP a whole-panel relayout, which held the graph to ~38 pointer
+  // events a second while dragging or hovering (267 / 419 without it, measured
+  // live). Nothing in this path may write HTML text or inline layout styles;
+  // SVG attribute writes are cheap.
   svg.addEventListener('pointermove', function(e) {
     if (dragging === 'peak') { _applyPeakPointer(e); return; }
-    if (dragging) {
-      // coords updated in hot path below
-    } else {
-      // One rect read and one state clone for the whole move: this ran
-      // getBoundingClientRect twice and cloned the curve twice per pointermove.
-      var rectH = svg.getBoundingClientRect();
-      if (_peakMode) {
-        setCursor('crosshair');
-        var rp = _unscale(e.clientX - rectH.left, e.clientY - rectH.top);
-        var np = svgToNorm(rp.cx, rp.cy, _svgW, _svgH);
-        var hx = Math.max(0, Math.min(1, np.nx)), hy = Math.max(0, Math.min(1, np.ny));
-        var hp = _peakOf(_solvePeak(hx, hy), 48);
-        _showPeakCoords(hp.v <= 1.02 ? hx : hp.x, hp.v);
-        return;
-      }
+    if (!dragging) {
+      if (_peakMode) { setCursor('crosshair'); return; }
       var curveH = liveCurve || getState().curve;
-      var hit = hitTest(e, rectH, curveH);
-      setCursor(hit ? 'grab' : 'crosshair');
-      if (hit) {
-        // Snap to handle position
-        var hp0 = _handlePos(curveH, hit);
-        _showCoords(hp0.x, hp0.y);
-      } else {
-        var rc = _unscale(e.clientX - rectH.left, e.clientY - rectH.top);
-        var nc = svgToNorm(rc.cx, rc.cy, _svgW, _svgH);
-        _showCoords(nc.nx, nc.ny);
-      }
+      setCursor(hitTest(e, svg.getBoundingClientRect(), curveH) ? 'grab' : 'crosshair');
       return;
     }
     dragMoved = true;
-    // Hot path: pure arithmetic + 5 setAttribute calls — no layout, no redraw
+    // Hot path: pure arithmetic + SVG attribute writes, no HTML and no layout
     var raw = _unscale(e.clientX - dragRect.left, e.clientY - dragRect.top);
     var n   = svgToNorm(raw.cx, raw.cy, _svgW, _svgH);
     var x   = Math.max(0,    Math.min(1,   n.nx));
     var y   = Math.max(Y_CLAMP_MIN, Math.min(Y_CLAMP_MAX, n.ny));
     if (e.shiftKey) { x = Math.round(x * _gridSize) / _gridSize; y = Math.round(y * _gridSize) / _gridSize; }
     _setHandle(liveCurve, dragging, x, y, e.altKey, e.ctrlKey || e.metaKey);
-    var lp = _handlePos(liveCurve, dragging);
     _setSnapBg(e.shiftKey);
-    _showCoords(lp.x, lp.y);
     updateDynamicSVG(liveCurve, _svgW, _svgH);
   });
-
-  // Peak mode readout: peak position and how many times faster than linear it is
-  function _showPeakCoords(nx, v) {
-    if (_coordsEl) _coordsEl.textContent = nx.toFixed(3) + ',  ' + v.toFixed(2) + '\u00d7';
-  }
 
   // Peak mode drag: pointer x = where the peak sits, pointer height = how narrow the bell is.
   // Shift snaps the peak to the grid, same as the handles.
@@ -1353,8 +1318,6 @@ function initGraphEditor(svg) {
     }
     liveCurve = _solvePeak(x, ny);
     _setSnapBg(e.shiftKey);
-    var pk = _peakOf(liveCurve, 96);
-    _showPeakCoords(pk.v <= 1.02 ? x : pk.x, pk.v);
     updateDynamicSVG(liveCurve, _svgW, _svgH);
   }
 
