@@ -1044,6 +1044,10 @@ html, body {
   background-image: linear-gradient(to right, rgba(255,255,255,0.045), rgba(255,255,255,0));
   opacity: 1;
 }
+/* Grey, but pressing it selects every ready property (_goSelectsAll) */
+#go-btn.btn-disabled.go-select {
+  cursor: pointer;
+}
 
 /* ─── Context menu ──────────────────────────────────────────── */
 .ctx-menu {

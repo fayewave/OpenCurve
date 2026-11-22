@@ -4877,8 +4877,8 @@ function _attachTooltip(el, text) {
 }
 
 // Properties are ready under the playhead but none of them is selected (the
-// status strip offers "Click to select all properties"): Go is live then, and
-// its first press selects them all, the same as the strip, so a second press
+// status strip offers "Click to select all properties"): Go keeps its grey
+// look then, but its first press selects them all, the same as the strip, so a second press
 // (or Enter twice) bakes them.
 function _goSelectsAll(s) {
   return !!s && s.status === 'no-selection' && !s.isBaking && (s.validParamKeys || []).length > 0;
@@ -5086,8 +5086,12 @@ function renderUI(s) {
     var activeContexts = (s.selectedParamKeys || []).filter(function(k){
       return (s.validParamKeys || []).indexOf(k) >= 0 && s.paramContexts && s.paramContexts[k];
     });
-    var enabled = (s.status === 'valid' && activeContexts.length > 0 && !s.isBaking) || _goSelectsAll(s);
+    var enabled = s.status === 'valid' && activeContexts.length > 0 && !s.isBaking;
     goBtn.classList.toggle('btn-disabled', !enabled);
+    // Nothing selected yet: Go stays grey but its press selects everything
+    // ready (see _goSelectsAll); go-select only swaps the not-allowed cursor
+    // for a pointer
+    goBtn.classList.toggle('go-select', _goSelectsAll(s));
     var goLabel = document.getElementById('go-label');
     // Change-only: isBaking is false on all but a handful of renders
     var onD = s.isBaking ? 'none' : 'inline', spD = s.isBaking ? 'inline-block' : 'none';
@@ -5631,7 +5635,7 @@ function initPanel() {
     if (isEnter) {
       if (e.repeat || modal) return;
       var go = document.getElementById('go-btn');
-      if (!go || go.classList.contains('btn-disabled')) { console.log('[OC] Enter: Go is disabled'); return; }
+      if (!go || (go.classList.contains('btn-disabled') && !_goSelectsAll(getState()))) { console.log('[OC] Enter: Go is disabled'); return; }
       e.preventDefault();
       console.log('[OC] Enter: pressing Go');
       go.click();
