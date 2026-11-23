@@ -54,10 +54,11 @@
       });
     },
 
-    // Called when user clicks Go
-    onGo: function(state, bakedKeys) {
+    // Called when user clicks Go, or a row's bolt with that one key; done
+    // (optional) runs when Premiere has answered: the bolt's spinner goes
+    onGo: function(state, bakedKeys, done) {
       var contexts = bakedKeys.map(function(k) { return state.paramContexts[k]; });
-      if (contexts.length === 0) return;
+      if (contexts.length === 0) { if (done) done(); return; }
 
       OpenCurve.setState({ isBaking: true, status: 'baking' });
 
@@ -71,6 +72,7 @@
       var escaped = args.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
       cs.evalScript("bakeKeyframes('" + escaped + "')", function(result) {
+        if (done) done();
         try {
           var res = JSON.parse(result);
           if (res.success) {

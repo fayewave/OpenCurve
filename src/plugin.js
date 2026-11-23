@@ -4330,6 +4330,9 @@ async function _undoRecords(recs, label, key) {
   }
 }
 
+// The row bake button's icon: Go's bolt
+var _icBolt = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none">'
+  + '<path d="M13 2L4.5 13.5H12L11 22L19.5 10.5H12L13 2Z" fill="currentColor" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 // The Replace button's icon: two arrows going round
 var _icReplace = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none">'
   + '<path d="M11.3 5.2A4.6 4.6 0 0 0 3 4.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'
@@ -6082,13 +6085,31 @@ function renderUI(s) {
           var live = (getState().availableParams || []).filter(function(x){ return x.key === p.key; })[0];
           _jumpToParam(live || p);
         });
+        // Bake: Go for this property alone, without selecting it. On every row
+        // without a bake. Outside the property's pairs it jumps to the nearest
+        // one first, like Go; dimmed when there is none (sync pass, _bakeMode)
+        var propBake = document.createElement('span');
+        propBake.className = 'prop-bake';
+        _addPressState(propBake);
+        _attachTooltip(propBake, function() {
+          var m = propBake._ocMode;
+          return m === 'jump' ? 'Jump to this property\'s nearest keyframe pair (press again to apply the curve)'
+               : m === 'off'  ? 'No keyframe pair to apply the curve to'
+               : 'Apply the curve to this property now';
+        });
+        propBake.innerHTML = _icBolt;
+        propBake.addEventListener('click', function(ev) {
+          ev.stopPropagation();
+          _bakeRowKey(p.key);
+        });
         btn.appendChild(propCurve);
         btn.appendChild(propReplace);
         btn.appendChild(propUndo);
+        btn.appendChild(propBake);
         btn.appendChild(propPin);
         btn.dataset.key = p.key;
         // The sync pass below reads these instead of querying for them each tick
-        btn._oc = { mark: propDiamond, pin: propPin, undo: propUndo, curve: propCurve, replace: propReplace };
+        btn._oc = { mark: propDiamond, pin: propPin, undo: propUndo, curve: propCurve, replace: propReplace, bake: propBake };
         // Hovering a row lights its lane in the mini timeline (a hovered lane lights the row)
         btn.addEventListener('mouseenter', function() { _tlHighlightLane(p.key); });
         btn.addEventListener('mouseleave', function() { _tlHighlightLane(null); });
@@ -6111,7 +6132,7 @@ function renderUI(s) {
       var brec       = isBakedRow ? _bakeRecFor(s, k) : null;
       var hasCurve   = !!(brec && brec.curve);
       var replOk     = _replaceOk(brec, s.curve);
-      var stateKey   = (isSel ? 's' : '') + (isBakedRow ? 'b' : '') + (isValid ? 'v' : '') + (hasCurve ? 'c' : '') + (replOk ? 'r' : '');
+      var stateKey   = (isSel ? 's' : '') + (isBakedRow ? 'b' : '') + (isValid ? 'v' : '') + (hasCurve ? 'c' : '') + (replOk ? 'r' : '') + (!isValid && !isBakedRow && _rowNearSec(s, k) !== null ? 'j' : '');
       // The Load Curve icon draws the baked curve: compared as its path, so a
       // Replace (a new curve with the same state key) redraws it
       var curveD     = hasCurve ? _rowCurveD(brec.curve) : '';
@@ -6152,6 +6173,11 @@ function renderUI(s) {
       if (replEl) { var rd = isBakedRow ? 'flex' : 'none'; if (replEl.style.display !== rd) replEl.style.display = rd; _styleReplaceBtn(replEl, replOk); }
       var curveEl = els.curve || btn.querySelector('.prop-curve');
       if (curveEl) { var cd = hasCurve ? 'flex' : 'none'; if (curveEl.style.display !== cd) curveEl.style.display = cd; }
+      var bakeEl = els.bake || btn.querySelector('.prop-bake');
+      if (bakeEl) {
+        var bd = isBakedRow ? 'none' : 'flex'; if (bakeEl.style.display !== bd) bakeEl.style.display = bd;
+        _styleBakeBtn(bakeEl, _bakeMode(s, k, isValid));
+      }
     });
   }
 
@@ -6217,7 +6243,9 @@ function renderUI(s) {
     goBtn.classList.toggle('go-select', _goSelectsAll(s) || _goJumps(s));
     var goLabel = document.getElementById('go-label');
     // Change-only: isBaking is false on all but a handful of renders
-    var onD = s.isBaking ? 'none' : 'inline', spD = s.isBaking ? 'inline-block' : 'none';
+    // A row's bolt shows its own spinner, not Go's
+    var goBusy = s.isBaking && !_rowBakeKey;
+    var onD = goBusy ? 'none' : 'inline', spD = goBusy ? 'inline-block' : 'none';
     if (goArrow   && goArrow.style.display   !== onD) goArrow.style.display   = onD;
     if (goLabel   && goLabel.style.display   !== onD) goLabel.style.display   = onD;
     if (goSpinner && goSpinner.style.display !== spD) goSpinner.style.display = spD;
@@ -6245,7 +6273,7 @@ function _statusMsg(s, showClip) {
 // a pixel off its box (checked by eye, 2026-09). Run after every render
 // because the property rows are rebuilt there.
 // One offset for a square button, [left, top] for a wide one (the pager's 48x22 arrows)
-var _ICON_OFF = { 'tool-btn': 4.5, 'prop-pin': 3.5, 'prop-undo': 3.5, 'prop-curve': 3.5, 'prop-replace': 3.5, 'btn-undo': 3.5, 'pager-btn': [15.5, 2.5] };
+var _ICON_OFF = { 'tool-btn': 4.5, 'prop-pin': 3.5, 'prop-undo': 3.5, 'prop-curve': 3.5, 'prop-replace': 3.5, 'prop-bake': 3.5, 'btn-undo': 3.5, 'pager-btn': [15.5, 2.5] };
 function _centerIcons() {
   Object.keys(_ICON_OFF).forEach(function(cls) {
     var o = _ICON_OFF[cls], offX = (o.length ? o[0] : o) + 'px', offY = (o.length ? o[1] : o) + 'px';
@@ -8090,6 +8118,7 @@ function initPanel() {
         var rBaked = (rs.bakedParamKeys    || []).indexOf(rowKey) >= 0;
         var _icSel   = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2.6 7.4L5.6 10.4L11.4 3.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
         var _icUnsel = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M3.5 3.5L10.5 10.5M10.5 3.5L3.5 10.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
+        if (rValid && !rBaked) _miniItem('Apply Curve Now', _icBolt, function() { _bakeRowKey(rowKey); });
         if (rSel) _miniItem('Deselect', _icUnsel, function() { _togglePropKey(rowKey); });
         else if (rValid) _miniItem('Select for Go', _icSel, function() { _togglePropKey(rowKey); });
         _miniItem('Jump to Keyframes', rIc(rels.pin), function() {
@@ -8372,50 +8401,8 @@ function initPanel() {
       var s = getState();
       if (_goSelectsAll(s)) { _selectAllValid(s); return; }
       if (_goJumps(s)) { _jumpToParam({ jumpSec: _nearestJumpParam(s).nearSec }); return; }
-      var bakedKeys = (s.selectedParamKeys || [])
-        .filter(function(k){ return (s.validParamKeys || []).indexOf(k) >= 0 && s.paramContexts && s.paramContexts[k]; });
-      var contexts = bakedKeys.map(function(k){ return s.paramContexts[k]; });
-      if (s.status !== 'valid' || s.isBaking || contexts.length === 0) return;
-      _pvStop();
-      setState({ isBaking: true, status: 'baking' });
-      try {
-        // The rows come from the last poll, which can be up to a second old (it
-        // is cached while the playhead stands still), and its values and
-        // property handles go stale as soon as a keyframe is edited in Effect
-        // Controls. Re-read the clip now and bake what is really there.
-        var fresh = await _freshBakeContexts(s, bakedKeys);
-        bakedKeys = fresh.keys;
-        contexts  = fresh.contexts;
-        s = Object.assign({}, s, { clipId: fresh.result.clipId, availableParams: fresh.result.availableParams || [],
-                                   paramContexts: fresh.result.paramContexts || {}, validParamKeys: fresh.result.validParamKeys || [] });
-        var written = (await bakeKeyframes(contexts, s.curve)) || [];
-        _recordBakes(s, bakedKeys, contexts, written); // remembered for the undo buttons
-        _showUndoBtn(_hasSessionBakes());
-        _invalidateCache(); // keyframes changed — force full re-scan on next poll
-        _skipPollUntil = Date.now() + DONE_DISPLAY_MS;
-        var newBaked = (s.bakedParamKeys || []).concat(bakedKeys.filter(function(k){ return (s.bakedParamKeys || []).indexOf(k) < 0; }));
-        // The baked pairs are one frame apart now, so those properties are no
-        // longer bakeable; drop them from the valid set straight away rather
-        // than waiting for the next poll (polling pauses while "Done" shows).
-        var ctxLeft = {};
-        Object.keys(s.paramContexts || {}).forEach(function(k){ if (bakedKeys.indexOf(k) < 0) ctxLeft[k] = s.paramContexts[k]; });
-        setState({
-          isBaking: false, status: 'done',
-          bakedParamKeys:    newBaked,
-          availableParams:   _tlSpansAfterBake(s, bakedKeys), // green bar on the timeline right away
-          validParamKeys:    (s.validParamKeys || []).filter(function(k){ return bakedKeys.indexOf(k) < 0; }),
-          paramContexts:     ctxLeft,
-          selectedParamKeys: (s.selectedParamKeys || []).filter(function(k){ return bakedKeys.indexOf(k) < 0; }),
-        });
-        setTimeout(function() {
-          _lastStatus = '';
-          setState({ status: 'idle' });
-        }, DONE_DISPLAY_MS);
-      } catch(err) {
-        console.error('[FS] bake error:', err);
-        _skipPollUntil = Date.now() + ERROR_DISPLAY_MS;
-        setState({ isBaking: false, status: 'error', hint: err && err.message ? err.message : String(err) });
-      }
+      if (s.status !== 'valid') return;
+      await _bakeKeysNow(s.selectedParamKeys || [], null);
     });
   }
 
@@ -8440,6 +8427,93 @@ function initPanel() {
     if (_svgW > 0 && _svgH > 0) updateDynamicSVG(getState().curve, _svgW, _svgH);
   }
   setPresetActive('cubic-in-out');
+}
+
+// The bolt's three looks: 'ready' (blue: a press bakes), 'jump' (grey but live:
+// the playhead isn't inside any of the property's pairs, so a press jumps to the
+// nearest one, like Go), 'off' (dimmed and inert: no pair to apply the curve to)
+function _rowNearSec(s, key) {
+  var r = (s.availableParams || []).filter(function(p) { return p.key === key; })[0];
+  return r && typeof r.nearSec === 'number' ? r.nearSec : null;
+}
+function _bakeMode(s, key, isValid) {
+  return isValid ? 'ready' : (_rowNearSec(s, key) !== null ? 'jump' : 'off');
+}
+function _styleBakeBtn(el, mode) {
+  if (el._ocMode === mode) return;
+  el._ocMode = mode;
+  el.classList.toggle('bake-jump', mode === 'jump');
+  _styleReplaceBtn(el, mode !== 'off');
+}
+// Row bolt button: bake this one property now, as if it alone were selected
+// and Go pressed. The selection is left as it was (minus this property, which
+// is baked). Its own spinner shows while it runs, not Go's.
+// Outside every pair of the property, it acts like Go does then: the first
+// press jumps to the property's nearest pair, the next one bakes it.
+var _rowBakeKey = null; // the row whose bolt started the bake that is running
+async function _bakeRowKey(key) {
+  var s = getState();
+  var b = _rowBtn(key, 'bake');
+  if (s.isBaking || (b && b._ocSpin)) return;
+  if ((s.validParamKeys || []).indexOf(key) < 0 || !(s.paramContexts && s.paramContexts[key])) {
+    var near = _rowNearSec(s, key);
+    if (near !== null) _jumpToParam({ jumpSec: near });
+    return;
+  }
+  _btnBusy(b, true);
+  try { await _bakeKeysNow([key], key); } finally { _btnBusy(b, false); }
+}
+// Go's bake: the given properties that are ready under the playhead, re-read
+// from Premiere first, then recorded for the undo buttons
+async function _bakeKeysNow(keys, rowKey) {
+  var s = getState();
+  var bakedKeys = (keys || [])
+    .filter(function(k){ return (s.validParamKeys || []).indexOf(k) >= 0 && s.paramContexts && s.paramContexts[k]; });
+  var contexts = bakedKeys.map(function(k){ return s.paramContexts[k]; });
+  if (s.isBaking || contexts.length === 0) return;
+  _pvStop();
+  _rowBakeKey = rowKey || null;
+  setState({ isBaking: true, status: 'baking' });
+  try {
+    // The rows come from the last poll, which can be up to a second old (it
+    // is cached while the playhead stands still), and its values and
+    // property handles go stale as soon as a keyframe is edited in Effect
+    // Controls. Re-read the clip now and bake what is really there.
+    var fresh = await _freshBakeContexts(s, bakedKeys);
+    bakedKeys = fresh.keys;
+    contexts  = fresh.contexts;
+    s = Object.assign({}, s, { clipId: fresh.result.clipId, availableParams: fresh.result.availableParams || [],
+                               paramContexts: fresh.result.paramContexts || {}, validParamKeys: fresh.result.validParamKeys || [] });
+    var written = (await bakeKeyframes(contexts, s.curve)) || [];
+    _recordBakes(s, bakedKeys, contexts, written); // remembered for the undo buttons
+    _showUndoBtn(_hasSessionBakes());
+    _invalidateCache(); // keyframes changed — force full re-scan on next poll
+    _skipPollUntil = Date.now() + DONE_DISPLAY_MS;
+    var newBaked = (s.bakedParamKeys || []).concat(bakedKeys.filter(function(k){ return (s.bakedParamKeys || []).indexOf(k) < 0; }));
+    // The baked pairs are one frame apart now, so those properties are no
+    // longer bakeable; drop them from the valid set straight away rather
+    // than waiting for the next poll (polling pauses while "Done" shows).
+    var ctxLeft = {};
+    Object.keys(s.paramContexts || {}).forEach(function(k){ if (bakedKeys.indexOf(k) < 0) ctxLeft[k] = s.paramContexts[k]; });
+    setState({
+      isBaking: false, status: 'done',
+      bakedParamKeys:    newBaked,
+      availableParams:   _tlSpansAfterBake(s, bakedKeys), // green bar on the timeline right away
+      validParamKeys:    (s.validParamKeys || []).filter(function(k){ return bakedKeys.indexOf(k) < 0; }),
+      paramContexts:     ctxLeft,
+      selectedParamKeys: (s.selectedParamKeys || []).filter(function(k){ return bakedKeys.indexOf(k) < 0; }),
+    });
+    setTimeout(function() {
+      _lastStatus = '';
+      setState({ status: 'idle' });
+    }, DONE_DISPLAY_MS);
+  } catch(err) {
+    console.error('[FS] bake error:', err);
+    _skipPollUntil = Date.now() + ERROR_DISPLAY_MS;
+    setState({ isBaking: false, status: 'error', hint: err && err.message ? err.message : String(err) });
+  } finally {
+    _rowBakeKey = null;
+  }
 }
 
 // Go: scan the clip again and keep the selected properties that are still

@@ -2262,6 +2262,46 @@ function _replaceBakeForKey(key) {
 }
 
 // The Replace button's icon: two arrows going round
+// The row bake button's icon: Go's bolt
+var _icBolt = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none">'
+  + '<path d="M13 2L4.5 13.5H12L11 22L19.5 10.5H12L13 2Z" fill="currentColor" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+// The bolt's three looks: 'ready' (blue: a press bakes), 'jump' (grey but live:
+// the playhead isn't inside any of the property's pairs, so a press jumps to the
+// nearest one, like Go), 'off' (dimmed and inert: no pair to apply the curve to)
+function _rowNearSec(s, key) {
+  var r = (s.availableParams || []).filter(function(p) { return p.key === key; })[0];
+  return r && typeof r.nearSec === 'number' ? r.nearSec : null;
+}
+function _bakeMode(s, key, isValid) {
+  return isValid ? 'ready' : (_rowNearSec(s, key) !== null ? 'jump' : 'off');
+}
+function _styleBakeBtn(el, mode) {
+  if (el._ocMode === mode) return;
+  el._ocMode = mode;
+  el.classList.toggle('bake-jump', mode === 'jump');
+  _styleReplaceBtn(el, mode !== 'off');
+}
+// Row bolt button: bake this one property now, as if it alone were selected
+// and Go pressed. The selection is left as it was (minus this property, which
+// is baked). Its own spinner shows while it runs, not Go's.
+// Outside every pair of the property, it acts like Go does then: the first
+// press jumps to the property's nearest pair, the next one bakes it.
+var _rowBakeKey = null; // the row whose bolt started the bake that is running
+function _bakeRowKey(key) {
+  var s = getState();
+  var b = _rowBtn(key, 'bake');
+  if (s.isBaking || (b && b._ocSpin)) return;
+  if ((s.validParamKeys || []).indexOf(key) < 0 || !(s.paramContexts && s.paramContexts[key])) {
+    var near = _rowNearSec(s, key);
+    if (near !== null) _jumpToParam({ jumpSec: near });
+    return;
+  }
+  if (!(_bridge && _bridge.onGo)) return;
+  _pvStop();
+  _btnBusy(b, true);
+  _rowBakeKey = key;
+  _bridge.onGo(s, [key], function() { _rowBakeKey = null; _btnBusy(b, false); });
+}
 var _icReplace = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none">'
   + '<path d="M11.3 5.2A4.6 4.6 0 0 0 3 4.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'
   + '<path d="M2.7 8.8A4.6 4.6 0 0 0 11 9.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'
@@ -3591,13 +3631,31 @@ function renderUI(s) {
           var live = (getState().availableParams || []).filter(function(x){ return x.key === p.key; })[0];
           _jumpToParam(live || p);
         });
+        // Bake: Go for this property alone, without selecting it. On every row
+        // without a bake. Outside the property's pairs it jumps to the nearest
+        // one first, like Go; dimmed when there is none (sync pass, _bakeMode)
+        var propBake = document.createElement('span');
+        propBake.className = 'prop-bake';
+        _addPressState(propBake);
+        _attachTooltip(propBake, function() {
+          var m = propBake._ocMode;
+          return m === 'jump' ? 'Jump to this property\'s nearest keyframe pair (press again to apply the curve)'
+               : m === 'off'  ? 'No keyframe pair to apply the curve to'
+               : 'Apply the curve to this property now';
+        });
+        propBake.innerHTML = _icBolt;
+        propBake.addEventListener('click', function(ev) {
+          ev.stopPropagation();
+          _bakeRowKey(p.key);
+        });
         btn.appendChild(propCurve);
         btn.appendChild(propReplace);
         btn.appendChild(propUndo);
+        btn.appendChild(propBake);
         btn.appendChild(propPin);
         btn.dataset.key = p.key;
         // The sync pass below reads these instead of querying for them each tick
-        btn._oc = { mark: propDiamond, pin: propPin, undo: propUndo, curve: propCurve, replace: propReplace };
+        btn._oc = { mark: propDiamond, pin: propPin, undo: propUndo, curve: propCurve, replace: propReplace, bake: propBake };
         // Hovering a row lights its lane in the mini timeline (a hovered lane lights the row)
         btn.addEventListener('mouseenter', function() { _tlHighlightLane(p.key); });
         btn.addEventListener('mouseleave', function() { _tlHighlightLane(null); });
@@ -3620,7 +3678,7 @@ function renderUI(s) {
       var brow       = isBakedRow ? (s.availableParams || []).filter(function(x){ return x.key === k; })[0] : null;
       var hasCurve   = !!(brow && brow.bakeCurve);
       var replOk     = _replaceOk(brow, s.curve);
-      var stateKey   = (isSel ? 's' : '') + (isBakedRow ? 'b' : '') + (isValid ? 'v' : '') + (hasCurve ? 'c' : '') + (replOk ? 'r' : '');
+      var stateKey   = (isSel ? 's' : '') + (isBakedRow ? 'b' : '') + (isValid ? 'v' : '') + (hasCurve ? 'c' : '') + (replOk ? 'r' : '') + (!isValid && !isBakedRow && _rowNearSec(s, k) !== null ? 'j' : '');
       // The Load Curve icon draws the baked curve: compared as its path, so a
       // Replace (a new curve with the same state key) redraws it
       var curveD     = hasCurve ? _rowCurveD(brow.bakeCurve) : '';
@@ -3661,6 +3719,11 @@ function renderUI(s) {
       if (replEl) { var rd = isBakedRow ? 'flex' : 'none'; if (replEl.style.display !== rd) replEl.style.display = rd; _styleReplaceBtn(replEl, replOk); }
       var curveEl = els.curve || btn.querySelector('.prop-curve');
       if (curveEl) { var cd = hasCurve ? 'flex' : 'none'; if (curveEl.style.display !== cd) curveEl.style.display = cd; }
+      var bakeEl = els.bake || btn.querySelector('.prop-bake');
+      if (bakeEl) {
+        var bd = isBakedRow ? 'none' : 'flex'; if (bakeEl.style.display !== bd) bakeEl.style.display = bd;
+        _styleBakeBtn(bakeEl, _bakeMode(s, k, isValid));
+      }
     });
   }
 
@@ -3724,7 +3787,9 @@ function renderUI(s) {
     goBtn.classList.toggle('go-select', _goSelectsAll(s) || _goJumps(s));
     var goLabel = document.getElementById('go-label');
     // Change-only: isBaking is false on all but a handful of renders
-    var onD = s.isBaking ? 'none' : 'inline', spD = s.isBaking ? 'inline-block' : 'none';
+    // A row's bolt shows its own spinner, not Go's
+    var goBusy = s.isBaking && !_rowBakeKey;
+    var onD = goBusy ? 'none' : 'inline', spD = goBusy ? 'inline-block' : 'none';
     if (goArrow   && goArrow.style.display   !== onD) goArrow.style.display   = onD;
     if (goLabel   && goLabel.style.display   !== onD) goLabel.style.display   = onD;
     if (goSpinner && goSpinner.style.display !== spD) goSpinner.style.display = spD;
@@ -5077,6 +5142,7 @@ function initPanel() {
         var rBaked = (rs.bakedParamKeys    || []).indexOf(rowKey) >= 0;
         var _icSel   = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2.6 7.4L5.6 10.4L11.4 3.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
         var _icUnsel = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M3.5 3.5L10.5 10.5M10.5 3.5L3.5 10.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
+        if (rValid && !rBaked) _miniItem('Apply Curve Now', _icBolt, function() { _bakeRowKey(rowKey); });
         if (rSel) _miniItem('Deselect', _icUnsel, function() { _togglePropKey(rowKey); });
         else if (rValid) _miniItem('Select for Go', _icSel, function() { _togglePropKey(rowKey); });
         _miniItem('Jump to Keyframes', rIc(rels.pin), function() {

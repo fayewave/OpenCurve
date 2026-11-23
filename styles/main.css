@@ -351,6 +351,7 @@ html, body {
 .prop-undo,
 .prop-curve,
 .prop-replace,
+.prop-bake,
 .pager-btn {
   position: relative;
 }
@@ -1006,6 +1007,56 @@ html, body {
   background-image: none;
   color: #6f6f6f;
   cursor: default;
+}
+
+/* Bake (Go's bolt) on a row without a bake: applies the curve to this property
+   alone. Blue like the ready pin; dimmed grey (written inline too, by
+   _styleReplaceBtn) while the property has no pair to apply to. */
+.prop-bake {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  margin-left: 6px;
+  border-radius: 3px;
+  background-color: rgba(74,158,255,0.22);
+  background-image: linear-gradient(to right, rgba(255,255,255,0.06), rgba(255,255,255,0));
+  color: #7dc4ff;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.prop-bake:hover, .prop-bake.hover {
+  background-color: rgba(74,158,255,0.42);
+  background-image: linear-gradient(to right, rgba(255,255,255,0.09), rgba(255,255,255,0));
+  color: #ffffff;
+}
+.prop-bake:active, .prop-bake.pressed {
+  background-color: rgba(74,158,255,0.62);
+  background-image: linear-gradient(to right, rgba(255,255,255,0.09), rgba(255,255,255,0));
+  color: #ffffff;
+}
+.prop-bake.btn-dim {
+  background-color: #2b2b2b;
+  background-image: none;
+  color: #6f6f6f;
+  cursor: default;
+}
+/* The playhead isn't inside any of the property's pairs: grey like the
+   dimmed button but live, a press jumps to the nearest pair (like Go) */
+.prop-bake.bake-jump {
+  background-color: #2b2b2b;
+  background-image: linear-gradient(to right, rgba(255,255,255,0.05), rgba(255,255,255,0));
+  color: #9a9a9a;
+}
+.prop-bake.bake-jump:hover, .prop-bake.bake-jump.hover {
+  background-color: #3a3a3a;
+  color: #ffffff;
+}
+.prop-bake.bake-jump:active, .prop-bake.bake-jump.pressed {
+  background-color: #4a4a4a;
+  color: #ffffff;
 }
 
 
