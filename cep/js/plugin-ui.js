@@ -2125,13 +2125,16 @@ function _presetEditSync(force) {
       _peDot = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       _peDot.setAttribute('class', 'preset-edit-dot');
       _peDot.setAttribute('width', '8'); _peDot.setAttribute('height', '8'); _peDot.setAttribute('viewBox', '0 0 8 8');
-      _peDot.style.cssText = 'position:absolute;top:5px;right:5px;pointer-events:none;';
+      // after the preset's name, in list and grid alike (it sat in the tile's
+      // top-right corner until 2026-11-23)
+      _peDot.style.cssText = 'flex-shrink:0;margin-left:5px;pointer-events:none;';
       var dc = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
       dc.setAttribute('cx', '4'); dc.setAttribute('cy', '4'); dc.setAttribute('r', '3');
       _peDot.appendChild(dc);
     }
     _peDot.firstChild.setAttribute('fill', _curveColor);
-    if (_peDot.parentNode !== edTile) edTile.appendChild(_peDot);
+    var dotHome = edTile._ocNameRow || edTile;
+    if (_peDot.parentNode !== dotHome) dotHome.appendChild(_peDot);
   } else if (_peDot && _peDot.parentNode) _peDot.parentNode.removeChild(_peDot);
   // Graph bar chip
   var chip = document.getElementById('preset-edit-chip');
@@ -4736,10 +4739,16 @@ function initPanel() {
     thumb.appendChild(tp); btn.appendChild(thumb);
     _tileAnimHook(btn, thumb, function() { return preset.curve; });
 
+    // Name, in a row that also takes the edited dot right after the text
+    // (_presetEditSync); _applyPresetLayout styles the row per layout
+    var nameRow = document.createElement('span');
+    nameRow.className = 'preset-name-row';
     var nameSpan = document.createElement('span');
     nameSpan.className = 'preset-name';
     nameSpan.textContent = preset.name;
-    btn.appendChild(nameSpan);
+    nameRow.appendChild(nameSpan);
+    btn.appendChild(nameRow);
+    btn._ocNameRow = nameRow;
     btn._ocTag = _cleanTag(preset.tag); // colour tag dot
     _tagSyncTile(btn);
 
@@ -5761,8 +5770,22 @@ function _presetSearchSync(res) {
       var q = _presetQuery.trim();
       if (q.length > 30) q = q.slice(0, 29) + '\u2026';
       var names = tags.map(function(tg) { return _TAG_COLOURS[tg - 1].name; }).join(' or ');
-      empty.textContent = !tagOn ? 'No presets match \u201c' + q + '\u201d'
+      var msg = !tagOn ? 'No presets match \u201c' + q + '\u201d'
         : (q ? 'No ' + names + ' presets match \u201c' + q + '\u201d' : 'No presets tagged ' + names);
+      // The line, then a Reset search button under it that clears the words
+      // and the colours, like the box's cross (built once; the box itself
+      // ignores the pointer, the button takes it)
+      if (!empty._ocText) {
+        empty._ocText = document.createElement('div');
+        empty.appendChild(empty._ocText);
+        var bw = document.createElement('div');
+        bw.style.cssText = 'display:flex;justify-content:center;margin-top:12px;';
+        var rb = _modalBtn('Reset search', function(e) { if (e) e.stopPropagation(); _presetSearchClearAll(); });
+        rb.style.pointerEvents = 'auto';
+        bw.appendChild(rb);
+        empty.appendChild(bw);
+      }
+      if (empty._ocText.textContent !== msg) empty._ocText.textContent = msg;
     }
   }
 }
@@ -6091,16 +6114,19 @@ function _applyPresetLayout(force) {
 
   list.querySelectorAll('.preset-btn').forEach(_tagSyncTile); // tag dots: list end or grid corner
   list.querySelectorAll('.preset-name').forEach(function(n) {
+    // A preset's name sits in a row with the edited dot after it; the update
+    // tile's name has no row
+    var row = n.parentNode && n.parentNode.className === 'preset-name-row' ? n.parentNode : null;
     if (isGrid) {
-      // One line, cut with an ellipsis. The name spans the tile's whole content
-      // box, so the cut lands exactly where the text used to wrap onto a second
-      // line (the update tile's <br> still breaks it on purpose)
+      // One line, cut with an ellipsis. The name (or its row) spans the tile's
+      // whole content box, so the cut lands exactly where the text used to wrap
+      // onto a second line (the update tile's <br> still breaks it on purpose)
       n.style.whiteSpace = 'nowrap';
       n.style.overflow = 'hidden';
       n.style.textOverflow = 'ellipsis';
-      n.style.width = '100%';
+      n.style.width = row ? '' : '100%';
       n.style.maxWidth = '100%';
-      n.style.marginTop = '4px';
+      n.style.marginTop = row ? '' : '4px';
     } else {
       n.style.whiteSpace = '';
       n.style.overflow = '';
@@ -6108,6 +6134,20 @@ function _applyPresetLayout(force) {
       n.style.width = '';
       n.style.maxWidth = '';
       n.style.marginTop = '';
+    }
+    if (row) {
+      // The name shrinks to its text (cut when it must), so the dot follows it:
+      // centred with it in a grid tile, at the start of the row's room in a list
+      n.style.flex = '0 1 auto';
+      n.style.minWidth = '0';
+      row.style.display = 'flex';
+      row.style.alignItems = 'center';
+      row.style.minWidth = '0';
+      row.style.justifyContent = isGrid ? 'center' : '';
+      row.style.width = isGrid ? '100%' : '';
+      row.style.maxWidth = isGrid ? '100%' : '';
+      row.style.marginTop = isGrid ? '4px' : '';
+      row.style.flex = isGrid ? '' : '1 1 auto';
     }
   });
 
