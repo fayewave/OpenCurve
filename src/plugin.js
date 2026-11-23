@@ -7222,7 +7222,7 @@ function initPanel() {
   function _newInPtb() { return false; }
   // Left: the menu button (and New Preset while it is here); right: List/Grid, Graph, Timeline, Settings
   // ... plus the search box's _PS_MIN and its 5px margin
-  var _PS_MIN = 80;
+  var _PS_MIN = 100;
   function _ptbNeed() { var left = _newInPtb() ? 2 : 1; return (left * 26 + (left - 1) * 5) + (4 * 26 + 3 * 5) + 10 + 8 + _PS_MIN + 5; }
   var _ptbCollapsed = null;
   var _ptbDismiss   = null;
@@ -7371,7 +7371,10 @@ function initPanel() {
     for (var i = 0; i < raw.length; i++) {
       if (!_validPreset(raw[i])) continue;
       var p = raw[i];
-      out.push({ id: String(p.id || ('p' + i)), name: p.name, curve: _normalizeCurve(_cloneCurve(p.curve)), builtIn: !!p.builtIn });
+      var o = { id: String(p.id || ('p' + i)), name: p.name, curve: _normalizeCurve(_cloneCurve(p.curve)), builtIn: !!p.builtIn };
+      var tg = _cleanTag(p.tag);
+      if (tg) o.tag = tg; // colour tag
+      out.push(o);
     }
     if (out.length !== raw.length) console.log('[OC] dropped ' + (raw.length - out.length) + ' malformed preset(s) from storage');
     // An empty list is a real state (every preset can be deleted, built-ins too),
@@ -7471,10 +7474,59 @@ function initPanel() {
       _applyPresetLayout(true); // re-pages
     });
   }, _icDelete);
+  // Colour tag row (2026-11-23, like Looker): seven swatches with no names
+  // after a divider; the preset's own colour wears a ring, and clicking it
+  // again takes the tag off. Built once; _showCtxMenu moves the ring.
+  var _tagCells = [];
+  (function() {
+    var sep = document.createElement('div');
+    sep.style.cssText = 'border-top:1px solid rgba(255,255,255,0.07);margin:4px 0;';
+    _ctxMenu.appendChild(sep);
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;height:30px;padding:0 10px;';
+    _TAG_COLOURS.forEach(function(col, i) {
+      var cell = document.createElement('div');
+      cell.style.cssText = 'display:flex;align-items:center;justify-content:center;flex-shrink:0;width:24px;height:30px;cursor:pointer;';
+      var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('width', '24'); svg.setAttribute('height', '24'); svg.setAttribute('viewBox', '0 0 24 24');
+      var ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      ring.setAttribute('cx', '12'); ring.setAttribute('cy', '12'); ring.setAttribute('r', '10');
+      ring.setAttribute('fill', 'none'); ring.setAttribute('stroke', '#d4d4d4'); ring.setAttribute('stroke-width', '1.5');
+      ring.setAttribute('visibility', 'hidden');
+      var dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      dot.setAttribute('cx', '12'); dot.setAttribute('cy', '12'); dot.setAttribute('r', '7');
+      dot.setAttribute('fill', col.hex);
+      svg.appendChild(ring); svg.appendChild(dot);
+      cell.appendChild(svg);
+      cell.addEventListener('pointerenter', function() { dot.setAttribute('r', '8'); });
+      cell.addEventListener('pointerleave', function() { dot.setAttribute('r', '7'); });
+      cell.addEventListener('click', function(ev) {
+        ev.stopPropagation();
+        var t = _ctxTarget; // capture before hide nulls it
+        _hideCtxMenu();
+        dot.setAttribute('r', '7');
+        if (!t) return;
+        var tag = (t.preset.tag | 0) === i + 1 ? 0 : i + 1; // its own colour again: untag
+        if (tag) t.preset.tag = tag; else delete t.preset.tag;
+        _savePresetList(_presetList);
+        if (t.btn) { t.btn._ocTag = tag; _tagSyncTile(t.btn); }
+        _applyPresetLayout(true); // a colour filter may now hide or show it
+      });
+      _attachTooltip(cell, col.name);
+      row.appendChild(cell);
+      _tagCells.push(ring);
+    });
+    _ctxMenu.appendChild(row);
+  })();
   function _showCtxMenu(preset, btn, startRename, e) {
     var existingMini = document.getElementById('_mini-ctx');
     if (existingMini && existingMini.parentNode) existingMini.parentNode.removeChild(existingMini);
     _ctxTarget = { preset: preset, btn: btn, startRename: startRename };
+    _hideTagFilterMenu();
+    for (var ti = 0; ti < _tagCells.length; ti++) {
+      var vis = (preset.tag | 0) === ti + 1 ? 'visible' : 'hidden';
+      if (_tagCells[ti].getAttribute('visibility') !== vis) _tagCells[ti].setAttribute('visibility', vis);
+    }
     _ctxMenuShadow(_ctxMenu);
     _ctxMenu.style.left = '0px';
     _ctxMenu.style.top = '0px';
@@ -7497,6 +7549,7 @@ function initPanel() {
   // only closed on an outside press. Esc and the resize observer close them now.
   _closeMenus = function() {
     var open = false;
+    if (_hideTagFilterMenu()) open = true;
     if (_ctxMenu && _ctxMenu.style.display !== 'none') { _hideCtxMenu(); open = true; }
     var mini = document.getElementById('_mini-ctx');
     if (mini && mini.parentNode) { mini.parentNode.removeChild(mini); open = true; }
@@ -7606,6 +7659,8 @@ function initPanel() {
     nameSpan.className = 'preset-name';
     nameSpan.textContent = preset.name;
     btn.appendChild(nameSpan);
+    btn._ocTag = _cleanTag(preset.tag); // colour tag dot
+    _tagSyncTile(btn);
 
     // Apply curve on click
     btn.addEventListener('click', function(e) {
@@ -7893,7 +7948,7 @@ function initPanel() {
   function _promptNewPreset(curve, defName, title, makeActive) {
     curve = _cloneCurve(curve);
     _renamePresetDialog(defName, function(name) {
-      _presetSearchSet(''); // so the new tile is on show
+      _presetSearchClearAll(); // so the new tile is on show
       var preset = { id: 'c' + Date.now(), name: name, curve: curve };
       _presetList.push(preset);
       _savePresetList(_presetList);
@@ -7917,7 +7972,7 @@ function initPanel() {
   function _addPresetEntries(entries) {
     var list = document.getElementById('all-presets-list');
     if (!list || !entries.length) return;
-    _presetSearchSet(''); // so the new tiles are on show
+    _presetSearchClearAll(); // so the new tiles are on show
     var first = null;
     entries.forEach(function(p) {
       _presetList.push(p);
@@ -7935,7 +7990,7 @@ function initPanel() {
   function _exportPresetsToFile() {
     var mine = _presetList.filter(function(p) { return !p.builtIn; });
     if (!mine.length) { _showCopyToast('No presets to export'); return; }
-    var data = { opencurve: 1, version: CURRENT_VERSION, presets: mine.map(function(p) { return { name: p.name, curve: _cloneCurve(p.curve) }; }) };
+    var data = { opencurve: 1, version: CURRENT_VERSION, presets: mine.map(function(p) { var o = { name: p.name, curve: _cloneCurve(p.curve) }; if (p.tag) o.tag = p.tag; return o; }) };
     _saveTextFile('opencurve-presets.json', JSON.stringify(data, null, 2)).then(function(ok) {
       if (ok) _showCopyToast('Exported ' + mine.length + ' preset' + (mine.length === 1 ? '' : 's'), '#3ddc84');
     }, function(e) { console.log('[OC] export failed:', e); _showCopyToast('Export failed', '#ff9090'); });
@@ -7959,6 +8014,8 @@ function initPanel() {
         var c = typeof raw === 'string' ? _curveFromText(raw) : (raw ? _curveFromText(_curveToText(raw)) : null); // round trip validates the shape
         if (!c) { skipped++; return; }
         var entry = { id: 'i' + seq + '_' + i, name: String(p.name || ('Imported ' + (i + 1))).slice(0, 60), curve: c };
+        var itg = _cleanTag(p.tag);
+        if (itg) entry.tag = itg;
         if (have[_presetSig(entry)]) { skipped++; return; }
         have[_presetSig(entry)] = true;
         add.push(entry);
@@ -8949,13 +9006,15 @@ function _presetFilterMark() {
   var res = { shown: 0, total: 0 };
   if (!list) return res;
   var words = _presetWords();
+  var tagOn = _tagFilterOn();
   var tiles = list.querySelectorAll('.preset-btn');
   for (var i = 0; i < tiles.length; i++) {
     var b = tiles[i], f = false;
-    if (b.id === '_update-notif') f = words.length > 0;
+    if (b.id === '_update-notif') f = words.length > 0 || tagOn;
     else {
       var n = b.querySelector('.preset-name'), t = n ? String(n.textContent).toLowerCase() : '';
       for (var k = 0; k < words.length; k++) if (t.indexOf(words[k]) < 0) { f = true; break; }
+      if (!f && tagOn && !_tagFilter[b._ocTag | 0]) f = true; // the funnel's colours: any of them
       res.total++;
       if (!f) res.shown++;
     }
@@ -8968,9 +9027,10 @@ function _presetSearchSync(res) {
   if (res) _psLastRes = res; else res = _psLastRes;
   var box = document.getElementById('preset-search');
   if (!box) return;
-  var on = _presetWords().length > 0;
+  var tags = _tagFilterList(), tagOn = tags.length > 0;
+  var on = _presetWords().length > 0 || tagOn;
   var col = /^#[0-9a-fA-F]{6}$/.test(_curveColor) ? _curveColor : '#ffffff';
-  var sig = (on ? 1 : 0) + '|' + col + '|' + res.shown + '|' + res.total + '|' + _presetQuery;
+  var sig = (on ? 1 : 0) + '|' + col + '|' + res.shown + '|' + res.total + '|' + _presetQuery + '|' + tags.join(',');
   if (sig === _psSig) return; // every write below is behind this
   _psSig = sig;
   box.style.backgroundColor = on ? _hexToRgba(col, 0.8) : '';
@@ -8985,7 +9045,24 @@ function _presetSearchSync(res) {
     if (on) { cnt.textContent = res.shown + ' of ' + res.total; cnt.style.color = col; }
   }
   var clr = document.getElementById('preset-search-clear');
-  if (clr) clr.style.display = _presetQuery ? 'flex' : 'none';
+  if (clr) clr.style.display = (_presetQuery || tagOn) ? 'flex' : 'none';
+  // The colours being filtered on, as dots before the text, and a lit funnel
+  var chips = document.getElementById('preset-search-tags');
+  if (chips) {
+    while (chips.firstChild) chips.removeChild(chips.firstChild);
+    tags.forEach(function(tg, j) {
+      var d = _tagDotSvg(_TAG_COLOURS[tg - 1].hex, 8);
+      d.style.cssText = 'flex-shrink:0;' + (j ? 'margin-left:3px;' : '');
+      chips.appendChild(d);
+    });
+    chips.style.display = tagOn ? 'flex' : 'none';
+  }
+  var fb = document.getElementById('preset-search-filter');
+  if (fb) {
+    fb.style.backgroundColor = tagOn ? _hexToRgba(col, 0.2) : '';
+    var fp = fb.querySelector('path');
+    if (fp) fp.setAttribute('stroke', tagOn ? col : 'currentColor');
+  }
   var empty = document.getElementById('preset-search-empty');
   if (empty) {
     var none = on && res.shown === 0;
@@ -8993,7 +9070,9 @@ function _presetSearchSync(res) {
     if (none) {
       var q = _presetQuery.trim();
       if (q.length > 30) q = q.slice(0, 29) + '\u2026';
-      empty.textContent = 'No presets match \u201c' + q + '\u201d';
+      var names = tags.map(function(tg) { return _TAG_COLOURS[tg - 1].name; }).join(' or ');
+      empty.textContent = !tagOn ? 'No presets match \u201c' + q + '\u201d'
+        : (q ? 'No ' + names + ' presets match \u201c' + q + '\u201d' : 'No presets tagged ' + names);
     }
   }
 }
@@ -9013,6 +9092,7 @@ function _presetSearchInit() {
   var box = document.getElementById('preset-search');
   var inp = document.getElementById('preset-search-input');
   var clr = document.getElementById('preset-search-clear');
+  var fb  = document.getElementById('preset-search-filter');
   if (!box || !inp || box._ocWired) return;
   box._ocWired = true;
   function fromInput() { _presetSearchSet(inp.value); }
@@ -9021,7 +9101,8 @@ function _presetSearchInit() {
   inp.addEventListener('keydown', function(e) {
     if (e.key === 'Escape' || e.keyCode === 27) {
       e.preventDefault();
-      if (_presetQuery) _presetSearchSet(''); else { try { inp.blur(); } catch(_) {} }
+      if (_hideTagFilterMenu()) return;
+      if (_presetQuery || _tagFilterOn()) _presetSearchClearAll(); else { try { inp.blur(); } catch(_) {} }
     } else if (e.key === 'Enter' || e.keyCode === 13) {
       e.preventDefault();
       _pressPreset(0); // the first tile left
@@ -9030,21 +9111,200 @@ function _presetSearchInit() {
   // A press anywhere on the box types into it (the key sink's own deferred
   // grab is queued first, so this one wins)
   box.addEventListener('pointerdown', function(e) {
-    if (e.target === inp || (clr && clr.contains(e.target))) return;
+    if (e.target === inp || (clr && clr.contains(e.target)) || (fb && fb.contains(e.target))) return;
     setTimeout(function() { try { inp.focus(); } catch(_) {} }, 0);
   });
   // Right-click anywhere on the box clears it, like the cross (no Cut / Copy /
-  // Paste menu on this field)
+  // Paste menu on this field): the words and the colour filter together
   box.addEventListener('contextmenu', function(e) {
     e.preventDefault();
     e.stopPropagation();
-    _presetSearchSet('');
+    _presetSearchClearAll();
   });
   if (clr) {
-    clr.addEventListener('click', function(e) { e.stopPropagation(); _presetSearchSet(''); });
+    clr.addEventListener('click', function(e) { e.stopPropagation(); _presetSearchClearAll(); });
     _attachTooltip(clr, 'Clear search (Esc)');
   }
+  if (fb) {
+    fb.addEventListener('click', function(e) {
+      e.stopPropagation();
+      if (!_hideTagFilterMenu()) _showTagFilterMenu(false);
+    });
+    _attachTooltip(fb, function() {
+      if (document.getElementById('_tag-filter-menu')) return '';
+      var on = _tagFilterList();
+      if (!on.length) return 'Filter by colour tag';
+      return 'Showing ' + on.map(function(t) { return _TAG_COLOURS[t - 1].name; }).join(' or ') + ' (right-click to clear)';
+    });
+  }
   _presetFilterMark();
+}
+
+// ─── Colour tags (2026-11-23, like Looker) ─────────────────────
+// A preset can carry one colour tag (preset.tag, 1-7 into _TAG_COLOURS; saved
+// with the list and in exported files), set from the tile's right-click menu:
+// a row of seven swatches, the preset's own colour ringed, a click on it again
+// takes the tag off. Tagged tiles show an 8px dot (_tagSyncTile: at the right
+// end of a list row, the top-left corner of a grid tile; the edited dot keeps
+// the top-right). The funnel in the search box (#preset-search-filter) opens a
+// menu of the colours with their counts; picks toggle (_tagFilter, several
+// colours = any of them) and the menu stays open. Colours and the typed words
+// combine (both have to match). While colours filter, their dots show before
+// the text and the funnel takes the theme colour. The cross, Esc and a
+// right-click on the box clear the words and the colours together.
+var _TAG_COLOURS = [
+  { name: 'Red',    hex: '#e5484d' },
+  { name: 'Orange', hex: '#f08a24' },
+  { name: 'Yellow', hex: '#f2c94c' },
+  { name: 'Green',  hex: '#46a758' },
+  { name: 'Blue',   hex: '#3e8eed' },
+  { name: 'Purple', hex: '#9b59d0' },
+  { name: 'Grey',   hex: '#8b8b8b' }
+];
+var _tagFilter = {}; // tag (1-7) -> true while the funnel filters on it
+function _cleanTag(t) {
+  t = +t;
+  return (t >= 1 && t <= _TAG_COLOURS.length && Math.floor(t) === t) ? t : 0;
+}
+function _tagFilterOn() { for (var k in _tagFilter) if (_tagFilter[k]) return true; return false; }
+function _tagFilterList() {
+  var out = [];
+  for (var i = 1; i <= _TAG_COLOURS.length; i++) if (_tagFilter[i]) out.push(i);
+  return out;
+}
+function _tagDotSvg(hex, size) {
+  var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', String(size)); svg.setAttribute('height', String(size));
+  svg.setAttribute('viewBox', '0 0 8 8');
+  var c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  c.setAttribute('cx', '4'); c.setAttribute('cy', '4'); c.setAttribute('r', '4');
+  c.setAttribute('fill', hex);
+  svg.appendChild(c);
+  return svg;
+}
+// The tile's tag dot, built, recoloured, placed or removed; change-only
+function _tagSyncTile(btn) {
+  var col = _TAG_COLOURS[(btn._ocTag | 0) - 1];
+  var dot = btn._ocTagDot;
+  if (!col) {
+    if (dot && dot.parentNode) dot.parentNode.removeChild(dot);
+    btn._ocTagDot = null;
+    return;
+  }
+  if (!dot) {
+    dot = _tagDotSvg(col.hex, 8);
+    dot.setAttribute('class', 'preset-tag-dot');
+    btn._ocTagDot = dot;
+  }
+  if (dot.parentNode !== btn) btn.appendChild(dot); // after the name: a list row's flex end
+  var c = dot.firstChild;
+  if (c.getAttribute('fill') !== col.hex) c.setAttribute('fill', col.hex);
+  var css = _presetLayout === 'grid'
+    ? 'position:absolute;top:7px;left:7px;pointer-events:none;'
+    : 'flex-shrink:0;margin-left:8px;margin-right:2px;pointer-events:none;';
+  if (dot._ocCss !== css) { dot.style.cssText = css; dot._ocCss = css; }
+}
+function _presetSearchClearAll() {
+  _tagFilter = {};
+  _hideTagFilterMenu();
+  var inp = document.getElementById('preset-search-input');
+  if (inp && inp.value) inp.value = '';
+  _presetQuery = '';
+  _psRelayout();
+}
+var _tagMenuDismiss = null, _tagMenuPos = null;
+function _hideTagFilterMenu() {
+  var m = document.getElementById('_tag-filter-menu');
+  if (_tagMenuDismiss) { window.removeEventListener('pointerdown', _tagMenuDismiss, true); _tagMenuDismiss = null; }
+  if (m && m.parentNode) { m.parentNode.removeChild(m); return true; }
+  return false;
+}
+function _showTagFilterMenu(keepPos) {
+  var fb = document.getElementById('preset-search-filter');
+  if (!fb) return;
+  var old = document.getElementById('_tag-filter-menu');
+  if (old && old.parentNode) old.parentNode.removeChild(old);
+  // How many presets wear each colour
+  var counts = {};
+  var tiles = document.querySelectorAll('#all-presets-list .preset-btn');
+  for (var t = 0; t < tiles.length; t++) {
+    var tg = tiles[t]._ocTag | 0;
+    if (tg) counts[tg] = (counts[tg] || 0) + 1;
+  }
+  var menu = document.createElement('div');
+  menu.className = 'ctx-menu';
+  menu.id = '_tag-filter-menu';
+  menu.style.display = 'block';
+  menu.style.minWidth = '180px';
+  _TAG_COLOURS.forEach(function(col, i) {
+    var tag = i + 1, on = !!_tagFilter[tag], n = counts[tag] || 0;
+    var it = document.createElement('div');
+    it.className = 'ctx-menu-item';
+    it.style.display = 'flex';
+    it.style.alignItems = 'center';
+    if (!n && !on) it.style.color = '#7a7a7a';
+    var tick = document.createElement('span');
+    tick.style.cssText = 'display:flex;align-items:center;justify-content:center;flex-shrink:0;width:14px;margin-right:8px;';
+    if (on) tick.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2.5 7.5l3 3 6-6.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    it.appendChild(tick);
+    var dot = _tagDotSvg(col.hex, 10);
+    dot.style.cssText = 'flex-shrink:0;margin-right:10px;';
+    it.appendChild(dot);
+    var lb = document.createElement('span');
+    lb.textContent = col.name;
+    it.appendChild(lb);
+    var cn = document.createElement('span');
+    cn.textContent = String(n);
+    cn.style.cssText = 'margin-left:auto;padding-left:16px;font-size:12px;color:#8c8c8c;';
+    it.appendChild(cn);
+    it.addEventListener('click', function(ev) {
+      ev.stopPropagation();
+      if (_tagFilter[tag]) delete _tagFilter[tag]; else _tagFilter[tag] = true;
+      _psRelayout();
+      _showTagFilterMenu(true); // stays open, ticks updated
+    });
+    menu.appendChild(it);
+  });
+  if (_tagFilterOn()) {
+    var sep = document.createElement('div');
+    sep.style.cssText = 'border-top:1px solid rgba(255,255,255,0.07);margin:3px 0;';
+    menu.appendChild(sep);
+    var cl = document.createElement('div');
+    cl.className = 'ctx-menu-item';
+    cl.textContent = 'Clear colour filter';
+    cl.addEventListener('click', function(ev) {
+      ev.stopPropagation();
+      _tagFilter = {};
+      _psRelayout();
+      _hideTagFilterMenu();
+    });
+    menu.appendChild(cl);
+  }
+  menu.style.left = '0px';
+  menu.style.top = '0px';
+  document.body.appendChild(menu);
+  if (typeof _ctxMenuShadow === 'function') _ctxMenuShadow(menu);
+  void menu.offsetHeight;
+  if (!(keepPos && _tagMenuPos)) {
+    // Below the funnel, its right edge on the funnel's; above when there is no room
+    var r = fb.getBoundingClientRect();
+    var mw = menu.offsetWidth || 180, mh = menu.offsetHeight || 220;
+    var ww = document.documentElement.clientWidth || document.body.clientWidth;
+    var wh = document.documentElement.clientHeight || document.body.clientHeight;
+    var x = Math.max(0, Math.min(r.right + 3 - mw, ww - mw));
+    var y = (r.bottom + 5 + mh > wh) ? Math.max(0, r.top - 5 - mh) : r.bottom + 5;
+    _tagMenuPos = { x: x, y: y };
+  }
+  menu.style.left = _tagMenuPos.x + 'px';
+  menu.style.top = _tagMenuPos.y + 'px';
+  if (_tagMenuDismiss) window.removeEventListener('pointerdown', _tagMenuDismiss, true);
+  _tagMenuDismiss = function(ev) {
+    var m = document.getElementById('_tag-filter-menu');
+    if ((m && m.contains(ev.target)) || fb.contains(ev.target)) return;
+    _hideTagFilterMenu();
+  };
+  var d = _tagMenuDismiss;
+  setTimeout(function() { if (_tagMenuDismiss === d) window.addEventListener('pointerdown', d, true); }, 0);
 }
 
 function _applyPresetLayout(force) {
@@ -9159,6 +9419,7 @@ function _applyPresetLayout(force) {
   });
 
   // Preset name text wrapping
+  list.querySelectorAll('.preset-btn').forEach(_tagSyncTile); // tag dots: list end or grid corner
   list.querySelectorAll('.preset-name').forEach(function(n) {
     if (isGrid) {
       // One line, cut with an ellipsis. The name spans the tile's whole content

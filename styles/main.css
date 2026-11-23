@@ -458,6 +458,30 @@ html, body {
   background-color: rgba(255,255,255,0.12);
   color: #ffffff;
 }
+/* Colour tags (2026-11-23): the chosen colours' dots before the search text
+   while the funnel filters on them, and the funnel button at the box's right */
+.ps-tags {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-right: 5px;
+}
+.ps-filter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 20px;
+  margin-left: 3px;
+  border-radius: 4px;
+  color: #bdbdbd;
+  cursor: pointer;
+}
+.ps-filter:hover {
+  background-color: rgba(255,255,255,0.12);
+  color: #ffffff;
+}
 /* "No presets match": over the empty list while a search finds nothing */
 .ps-empty {
   position: absolute;
