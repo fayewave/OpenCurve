@@ -5546,7 +5546,8 @@ function _tlInit() {
   svg.addEventListener('pointerdown', function(e) {
     if (e.button !== 0) return;
     var p = pos(e), li = laneAt(p.y), now = Date.now();
-    if (lastUp && li >= 0 && lastUp.lane === li && now - lastUp.t < _TL_DBL_MS && Math.abs(p.x - lastUp.x) < 12) {
+    // Settings > Double-Click Lanes off: a second press is just another jump
+    if (_tlDblOn && lastUp && li >= 0 && lastUp.lane === li && now - lastUp.t < _TL_DBL_MS && Math.abs(p.x - lastUp.x) < 12) {
       toggleLane(li);
       return;
     }
@@ -5566,7 +5567,7 @@ function _tlInit() {
     var t = target(p.x, li);
     if (t) _jumpToParam({ jumpSec: t.sec });
   });
-  svg.addEventListener('dblclick', function(e) { toggleLane(laneAt(pos(e).y)); });
+  svg.addEventListener('dblclick', function(e) { if (_tlDblOn) toggleLane(laneAt(pos(e).y)); });
   // Over the visible lanes: across the SVG, and down the scroll box only (the SVG
   // runs on beneath it while the rows are scrolled)
   function overLanes(e) {
@@ -8464,6 +8465,10 @@ var _UPDATE_NOTIF_KEY   = 'opencurve-update-notif'; // kept in the Exchange buil
 var _updateNotifsOn     = localStorage.getItem(_UPDATE_NOTIF_KEY) !== 'off'; // [exchange-strip-line]
 var _ANIM_KEY           = 'opencurve-animations';
 var _animationsOn       = localStorage.getItem(_ANIM_KEY) !== 'off';
+// Settings > Double-Click Lanes: a double press on a timeline lane selects or
+// deselects that property for Go (on by default)
+var _TL_DBL_KEY         = 'opencurve-tl-dblclick';
+var _tlDblOn            = localStorage.getItem(_TL_DBL_KEY) !== 'off';
 // 2.0.0: "Scan During Playback" is always on (the toggle only made the panel
 // worse). Drop the old key so a user who had turned it off comes back on.
 try { localStorage.removeItem('opencurve-scan-during-playback'); } catch(e) {}
@@ -9260,7 +9265,7 @@ function _showWelcome(force) {
     if (text == null) return cell; // empty cell keeps an odd count level
     var inner = document.createElement('div');
     inner.style.cssText = 'flex:1;min-width:0;box-sizing:border-box;border-radius:7px;background-color:#232323;'
-      + 'display:flex;flex-direction:row;align-items:center;min-height:46px;padding:9px 12px 9px 13px;';
+      + 'display:flex;flex-direction:row;align-items:center;min-height:34px;padding:6px 12px 6px 13px;';
     var dot = document.createElement('div');
     dot.style.cssText = 'width:6px;height:6px;border-radius:3px;background:' + _curveColor + ';margin-right:10px;flex:0 0 6px;';
     var txt = document.createElement('div');
@@ -9273,7 +9278,7 @@ function _showWelcome(force) {
   }
   for (var i = 0; i < half; i++) {
     var row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:stretch;' + (i < half - 1 ? 'margin-bottom:8px;' : '');
+    row.style.cssText = 'display:flex;align-items:stretch;' + (i < half - 1 ? 'margin-bottom:6px;' : '');
     row.appendChild(item(_WELCOME_ITEMS[i], false));
     row.appendChild(item(i + half < _WELCOME_ITEMS.length ? _WELCOME_ITEMS[i + half] : null, true));
     list.appendChild(row);
@@ -9433,7 +9438,7 @@ function _confirmReset() {
     // Bake records are deliberately kept: they are a record of work done on the
     // project, not a setting, and the dialog does not offer to clear them.
     ['opencurve-presets-v10', 'opencurve-sidebar-width', _WELCOME_KEY, _CURVE_COLOR_KEY, _GRID_KEY,
-     _LAYOUT_KEY, _ANIM_KEY, _AUTO_ZOOM_KEY, _UPDATE_NOTIF_KEY, _GRAPH_KEY, _PEAK_KEY, _BN_KEY, _DRAG_GHOST_KEY,
+     _LAYOUT_KEY, _ANIM_KEY, _TL_DBL_KEY, _AUTO_ZOOM_KEY, _UPDATE_NOTIF_KEY, _GRAPH_KEY, _PEAK_KEY, _BN_KEY, _DRAG_GHOST_KEY,
      _DENSITY_KEY, _TL_KEY, _TL_ZOOM_KEY, _TL_PROPS_KEY, _TL_H_KEY
     ].forEach(function(k) { try { localStorage.removeItem(k); } catch(_) {} });
 
@@ -9446,6 +9451,7 @@ function _confirmReset() {
     _gridSize       = 8;
     _presetLayout   = 'list';
     _animationsOn   = true;
+    _tlDblOn        = true;
     _autoZoomOn     = true;
     _autoZoomFrom   = null;
     _updateNotifsOn = true; // [exchange-strip-line]
@@ -9958,6 +9964,11 @@ function _showSettingsModal() {
       function() { return _graphVisible; }, function(v) { _setGraphVisible(v); }),
     _toggleCard('Show Timeline', null,
       function() { return _tlVisible; }, function(v) { _setTimelineVisible(v); }),
+    _toggleCard('Double-Click Lanes', 'Double-click a timeline lane to select its property for Go',
+      function() { return _tlDblOn; }, function(v) {
+        _tlDblOn = v;
+        localStorage.setItem(_TL_DBL_KEY, v ? 'on' : 'off');
+      }),
     _toggleCard('Ghost', 'While you drag, the curve\'s starting shape stays faintly behind it',
       function() { return _dragGhost; }, function(v) { _setDragGhost(v); }),
     _toggleCard('Hover Preview', 'A dot runs along a preset\'s thumbnail to show the pace of the ease',
