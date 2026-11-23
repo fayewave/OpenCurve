@@ -8933,7 +8933,8 @@ function _fitGoForUndo() {
 // carries _ocFiltered (_presetTiles leaves them out and _presetPageApply hides them); the
 // update tile shows only with no search. While a search is on, the box takes
 // the theme colour (its outline, the icon and an "n of N" count) and the clear
-// cross shows; a search with no match puts a line over the empty list. Esc in
+// cross shows (a right-click on the box clears it too); a search with no match
+// puts a line over the empty list. Esc in
 // the box clears it (a second Esc leaves the box), Enter clicks the first tile
 // left. Adding a preset (New, Paste, Import) clears the search so the new tile
 // is on show. Session only. _applyPresetLayout marks the tiles on every pass.
@@ -9031,6 +9032,13 @@ function _presetSearchInit() {
   box.addEventListener('pointerdown', function(e) {
     if (e.target === inp || (clr && clr.contains(e.target))) return;
     setTimeout(function() { try { inp.focus(); } catch(_) {} }, 0);
+  });
+  // Right-click anywhere on the box clears it, like the cross (no Cut / Copy /
+  // Paste menu on this field)
+  box.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    _presetSearchSet('');
   });
   if (clr) {
     clr.addEventListener('click', function(e) { e.stopPropagation(); _presetSearchSet(''); });
