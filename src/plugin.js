@@ -7493,7 +7493,7 @@ function initPanel() {
       var ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
       ring.setAttribute('cx', '12'); ring.setAttribute('cy', '12'); ring.setAttribute('r', '10');
       ring.setAttribute('fill', 'none'); ring.setAttribute('stroke', '#d4d4d4'); ring.setAttribute('stroke-width', '1.5');
-      ring.setAttribute('visibility', 'hidden');
+      ring.setAttribute('visibility', 'hidden'); ring.setAttribute('opacity', '0'); // UXP ignores visibility alone (like _svgShow)
       var dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
       dot.setAttribute('cx', '12'); dot.setAttribute('cy', '12'); dot.setAttribute('r', '7');
       dot.setAttribute('fill', col.hex);
@@ -7525,8 +7525,11 @@ function initPanel() {
     _ctxTarget = { preset: preset, btn: btn, startRename: startRename };
     _hideTagFilterMenu();
     for (var ti = 0; ti < _tagCells.length; ti++) {
-      var vis = (preset.tag | 0) === ti + 1 ? 'visible' : 'hidden';
-      if (_tagCells[ti].getAttribute('visibility') !== vis) _tagCells[ti].setAttribute('visibility', vis);
+      var mine = (preset.tag | 0) === ti + 1, vis = mine ? 'visible' : 'hidden';
+      if (_tagCells[ti].getAttribute('visibility') !== vis) {
+        _tagCells[ti].setAttribute('visibility', vis);
+        _tagCells[ti].setAttribute('opacity', mine ? '1' : '0');
+      }
     }
     _ctxMenuShadow(_ctxMenu);
     _ctxMenu.style.left = '0px';
