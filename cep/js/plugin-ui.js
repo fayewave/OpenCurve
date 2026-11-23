@@ -6538,7 +6538,7 @@ var _WELCOME_ITEMS = [ // titles only, split over two columns (the left one firs
   'Instant bake per property',
   'Smarter Go button',
   'Right-click property actions',
-  'Redesigned Settings'
+  'Search and filters'
 ];
 
 // force: show it even when already seen (the Settings version badge)
