@@ -7005,8 +7005,8 @@ function _showSettingsModal() {
   var veilBtn = _el('display:flex;align-items:center;justify-content:center;flex-shrink:0;box-sizing:border-box;height:30px;padding:0 2px 0 4px;margin-left:0;border-radius:6px;cursor:pointer;');
   veilBtn.innerHTML = '<svg width="109" height="26" viewBox="-6 -6 1213 288" fill="none">' // a little under the buttons' 30px
     + '<path fill-rule="evenodd" d="M322.26,0.67L1200.74,0.67L1200.74,275.87L322.26,275.87ZM393.17 64.79H437.62L506.75 185.31H510.87L580.01 64.79H623.63L539.26 211.76H477.54ZM646.26 211.76V64.79H847.91V91.24H687.41V125.05H806.76V151.5H687.41V185.31H847.91V211.76ZM924.04 64.79V211.76H882.89V64.79ZM1006.35 64.79V185.31H1129.8V211.76H965.19V64.79ZM0.63,0.67L275.83,0.67L275.83,275.87L0.63,275.87ZM232.75,138.27L138.23,212.35L43.7,138.27L138.23,64.19Z" fill="#cccccc"/></svg>';
-  // "for more plugins visit" ahead of the logo, part of the same button
-  var veilText = _el('font-size:13px;line-height:16px;color:#bdbdbd;white-space:nowrap;margin-right:8px;', 'for more plugins visit');
+  // "for more of my free plugins visit" ahead of the logo, part of the same button
+  var veilText = _el('font-size:13px;line-height:16px;color:#bdbdbd;white-space:nowrap;margin-right:8px;', 'for more of my free plugins visit');
   veilBtn.insertBefore(veilText, veilBtn.firstChild);
   var veilPath = veilBtn.querySelector('path');
   var veilHot = false, veilDown = false;
@@ -7055,12 +7055,13 @@ function _showSettingsModal() {
 
   // Footer layout, narrowing in steps: everything on one row; then Report an
   // Issue and Reset All Settings shortened to Report / Reset; then the
-  // (short) buttons dropped under the credit row. Widths are measured once
-  // from the full row. What the short labels save is estimated from the
+  // (short) buttons dropped under the credit row; then, when even that row
+  // is too wide, "made by faye!" on its own line above the Veil link. Widths
+  // are measured once from the full row. What the short labels save is estimated from the
   // label widths by character count until the first switch, then measured
   // (a deferred read, so the new text has been laid out).
   var _footShort = [[issueRow, 'Report an Issue', 'Report'], [resetRow, 'Reset All Settings', 'Reset']];
-  var footNeed = 0, footRW = 0, footSave = 0, footSaveMeasured = false, footMode = 'row', footLastW = 0;
+  var footNeed = 0, footLW = 0, footRW = 0, footSave = 0, footSaveMeasured = false, footMode = 'row', footLastW = 0;
   function _footSetShort(on) {
     _footShort.forEach(function(e) { e[0]._ocText.textContent = on ? e[2] : e[1]; });
   }
@@ -7072,6 +7073,7 @@ function _showSettingsModal() {
       var lw = Math.max(footerLeft.getBoundingClientRect().width, footerLeft.scrollWidth || 0), rw = footerRight.getBoundingClientRect().width;
       if (lw && rw) {
         footNeed = Math.ceil(lw + rw) + 24 + 12;
+        footLW = Math.ceil(lw) + 24 + 12;
         footRW = rw;
         footSave = 0;
         _footShort.forEach(function(e) {
@@ -7081,15 +7083,19 @@ function _showSettingsModal() {
         footSave = Math.max(0, footSave);
       }
     }
-    var mode = !footNeed || w >= footNeed ? 'row' : w >= footNeed - footSave ? 'short' : 'stack';
+    var mode = !footNeed || w >= footNeed ? 'row' : w >= footNeed - footSave ? 'short' : w >= footLW ? 'stack' : 'tight';
     if (mode === footMode) return;
     var wasShort = footMode !== 'row', short = mode !== 'row';
     footMode = mode;
     if (short !== wasShort) _footSetShort(short);
-    var stack = mode === 'stack';
+    var stack = mode === 'stack' || mode === 'tight', tight = mode === 'tight';
     footerRow.style.flexDirection = stack ? 'column' : 'row';
     footerRow.style.alignItems = stack ? 'flex-start' : 'center';
     footerRight.style.marginTop = stack ? '8px' : '';
+    footerLeft.style.flexDirection = tight ? 'column' : 'row';
+    footerLeft.style.alignItems = tight ? 'flex-start' : 'center';
+    veilBtn.style.marginLeft = tight ? '-4px' : '0'; // its text lines up under "made by faye!"
+    veilBtn.style.marginTop = tight ? '2px' : '';
     if (short && !footSaveMeasured) {
       footSaveMeasured = true;
       setTimeout(function() {
