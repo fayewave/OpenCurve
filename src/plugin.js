@@ -9758,7 +9758,6 @@ function _showNumericPanel() {
   var textTf = _mkTextField(13), textInp = textTf.input;
   box.appendChild(textTf.wrap);
   textInp.addEventListener('keydown', onKey);
-  _attachTooltip(textInp, 'The curve as cubic-bezier() or opencurve() text. Edit it and press Enter or Apply; this is also where a curve with added points is typed');
 
   var err = document.createElement('div');
   err.style.cssText = 'color:#ff9090;font-size:12px;line-height:14px;min-height:12px;margin:4px 0 0;'; // empty: the popups' 16px above the buttons
