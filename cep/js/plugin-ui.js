@@ -4298,7 +4298,9 @@ function initPanel() {
   // New Preset shows here only while the graph is off (with the graph on it is
   // New... in the graph bar, #pe-new), so it only counts, and only collapses
   // here, then (_newPresetPlace)
-  function _newInPtb() { return !_graphVisible; }
+  // Never since 2026-11-23 (Faye's request): with the graph off New Preset is
+  // an item in this bar's menu instead of a button here
+  function _newInPtb() { return false; }
   // Left: the menu button (and New Preset while it is here); right: List/Grid, Graph, Timeline, Settings
   // ... plus the search box's _PS_MIN and its 5px margin
   var _PS_MIN = 80;
@@ -4364,6 +4366,8 @@ function initPanel() {
       menu.appendChild(it);
     }
     function svgOf(id, sel) { var b = document.getElementById(id); return b ? b.querySelector(sel || 'svg') : null; }
+    // With the graph off the graph bar's New... is hidden too, so New Preset is here
+    if (!_graphVisible) item('New Preset…', svgOf('preset-new'), function() { var nb = document.getElementById('preset-new'); if (nb) nb.click(); });
     item('Paste Preset', _icPaste, function() { _pasteCoordinates(); });
     item('Export Presets\u2026', _icExport, function() { _exportPresetsToFile(); });
     item('Import Presets\u2026', _icImport, function() { _importPresetsFromFile(); });
@@ -4372,8 +4376,6 @@ function initPanel() {
       var sep = document.createElement('div');
       sep.style.cssText = 'border-top:1px solid rgba(255,255,255,0.07);margin:3px 0;';
       menu.appendChild(sep);
-      var newBtn = document.getElementById('preset-new');
-      if (_newInPtb()) item('New Preset', svgOf('preset-new'), function() { if (newBtn) newBtn.click(); }); // with the graph on it is New... in the graph bar
       item(_presetLayout === 'list' ? 'Grid View' : 'List View',
            svgOf('preset-layout', _presetLayout === 'list' ? '.ic-grid' : '.ic-list'),
            function() { _presetLayout = _presetLayout === 'list' ? 'grid' : 'list'; localStorage.setItem(_LAYOUT_KEY, _presetLayout); _applyPresetLayout(true); });
@@ -4417,8 +4419,8 @@ function initPanel() {
     var b = document.getElementById('preset-new');
     if (!b || !ptb || !pMenuBtn || _newPlacedFor === _graphVisible) return;
     _newPlacedFor = _graphVisible;
-    if (_graphVisible && b.style.display !== 'none') b.style.display = 'none';
-    _ptbCollapsed = null; _ptbLayout();          // the preset bar's room changed; shows it while the graph is off
+    if (b.style.display !== 'none') b.style.display = 'none'; // never shown in the bar (the menu has it while the graph is off)
+    _ptbCollapsed = null; _ptbLayout();
   };
   _newPresetPlace();
   _ptbLayout();
