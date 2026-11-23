@@ -5829,13 +5829,10 @@ function _presetSearchInit() {
     if (e.target === inp || (clr && clr.contains(e.target)) || (fb && fb.contains(e.target))) return;
     setTimeout(function() { try { inp.focus(); } catch(_) {} }, 0);
   });
-  // Right-click anywhere on the box clears it, like the cross (no Cut / Copy /
-  // Paste menu on this field): the words and the colour filter together
-  box.addEventListener('contextmenu', function(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    _presetSearchClearAll();
-  });
+  // A right-click on the box is left to the field, so Cut / Copy / Paste
+  // still work in it; it only stops here, so no panel menu opens over it.
+  // (It cleared the search like the cross until 2026-11-23.)
+  box.addEventListener('contextmenu', function(e) { e.stopPropagation(); });
   if (clr) {
     clr.addEventListener('click', function(e) { e.stopPropagation(); _presetSearchClearAll(); });
     _attachTooltip(clr, 'Clear search (Esc)');
