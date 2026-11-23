@@ -2054,16 +2054,21 @@ var _peChipRoom = true;         // set by the graph bar's layout (_tbLayout): ro
 var _peRoom = Infinity;         // ... and the room it has (px), for the name test below
 // Room the name and "Edited" need beside the buttons: the name may be cut to
 // about 8 characters (12px text, ~6.6px each) before it goes altogether
-// Save and Revert carry their labels when the whole chip fits labelled
+// Update and Revert carry their labels when the whole chip fits labelled
 // (_PE_CHIP_FULL), and also once the name has gone, when the two labelled
-// buttons alone fit (_PE_BTNS_LABELLED); otherwise they are 26px icon squares
-var _PE_CHIP_FULL = 230;     // name + Edited + the labelled Save and Revert buttons
-var _PE_BTNS_LABELLED = 142; // the labelled Save and Revert buttons alone (semibold)
+// buttons alone fit (_PE_BTNS_LABELLED); otherwise they are 26px icon squares.
+// New (#pe-new) sits at the bar's right end, apart from the chip, and is
+// counted in both: it is labelled exactly when they are
+var _PE_CHIP_FULL = 310;     // name + Edited + labelled Update and Revert, + 5 + the labelled New
+var _PE_BTNS_LABELLED = 222; // the labelled Update and Revert alone, + 5 + the labelled New
+var _PE_NEW_W = 62;          // New with its label (an icon square is 26)
+var _peNewRoom = true;       // set by the graph bar's layout: room for New at all
+var _peMaxW = null;
 var _peLabels = null;
 function _peSetLabels(on) {
   if (on === _peLabels) return;
   _peLabels = on;
-  ['pe-save', 'pe-revert'].forEach(function(id) {
+  ['pe-save', 'pe-revert', 'pe-new'].forEach(function(id) {
     var b = document.getElementById(id);
     if (!b) return;
     var sp = b.querySelector('span'), sv = b.querySelector('svg');
@@ -2073,7 +2078,7 @@ function _peSetLabels(on) {
   });
 }
 function _peNameFits(name, ed) {
-  return _peRoom >= 9 + Math.min(name.length, 8) * 6.6 + (ed ? 5 + 40 + 3 + 2 * 31 : 9);
+  return _peRoom >= 9 + Math.min(name.length, 8) * 6.6 + (ed ? 5 + 40 + 3 + 2 * 31 : 9) + 31; // + New... as an icon
 }
 function _presetEditInfo() {
   if (_srcPresetId === null || !_presetByIdRef) return null;
@@ -2091,9 +2096,17 @@ function _presetEditSync(force) {
   var id = inf ? String(inf.preset.id) : null, ed = !!(inf && inf.edited);
   var name = inf ? inf.preset.name : '';
   var _peNameRoom = _peNameFits(name, ed) || _peRoom >= _PE_CHIP_FULL;
-  var labels = _peRoom >= _PE_CHIP_FULL || (!_peNameRoom && _peRoom >= _PE_BTNS_LABELLED);
+  var labels;
+  if (id === null) labels = _peRoom >= _PE_NEW_W;  // New alone
+  else if (!ed) labels = _peRoom >= (_peNameRoom ? 9 + Math.min(name.length, 14) * 6.6 + 9 + 5 : 0) + _PE_NEW_W; // the name, then New
+  else labels = _peRoom >= _PE_CHIP_FULL || (!_peNameRoom && _peRoom >= _PE_BTNS_LABELLED);
   _peSetLabels(labels);
-  var sig = id + '|' + ed + '|' + name + '|' + _curveColor + '|' + _peChipRoom + '|' + _peNameRoom + '|' + labels;
+  // The chip gets the room New leaves (an inline max-width, so it can never
+  // run into it); written on every room change, compared first
+  var newW = _peNewRoom ? (labels ? _PE_NEW_W : 26) + 5 : 0;
+  var mw = (_peChipRoom && isFinite(_peRoom)) ? Math.max(0, Math.floor(_peRoom - newW)) + 'px' : '';
+  if (mw !== _peMaxW) { var ch0 = document.getElementById('preset-edit-chip'); if (ch0) { _peMaxW = mw; ch0.style.maxWidth = mw; } }
+  var sig = id + '|' + ed + '|' + name + '|' + _curveColor + '|' + _peChipRoom + '|' + _peNameRoom + '|' + labels + '|' + _peNewRoom;
   if (!force && sig === _peSig) return;
   _peSig = sig;
   // Tiles: state classes on the tile itself (UXP restyles reliably that way)
@@ -2145,15 +2158,37 @@ function _presetEditSync(force) {
     }
     var disp = show ? 'flex' : 'none';
     if (chip.style.display !== disp) chip.style.display = disp;
+    // New at the bar's right end: on show whenever there is room
+    var nb = document.getElementById('pe-new');
+    if (nb) {
+      var nd = _peNewRoom ? 'flex' : 'none';
+      if (nb.style.display !== nd) nb.style.display = nd;
+    }
   }
 }
+function _peNewShown() {
+  var b = document.getElementById('pe-new');
+  return !!(b && b.style.display !== 'none');
+}
+// New Preset's default name: the next free "<source preset> N" while the curve
+// came from a preset (Cubic In -> Cubic In 2), else "Custom N"
+var _presetNamesRef = null; // set in initPanel: the preset names in use
+function _newPresetName(customN) {
+  var inf = _presetEditInfo();
+  if (!inf || !_presetNamesRef) return 'Custom ' + customN;
+  var taken = {};
+  _presetNamesRef().forEach(function(n) { taken[n] = true; });
+  var base = inf.preset.name.replace(/ \d+$/, ''), n = 2;
+  while (taken[base + ' ' + n]) n++;
+  return base + ' ' + n;
+}
 stateListeners.push(function() { _presetEditSync(); });
-// Save: write the graph's curve into the preset it came from (built-ins too)
+// Update (#pe-save): overwrite the preset the curve came from with the graph's curve (built-ins too)
 function _presetEditSave() {
   var p = _presetEdited();
   if (!p || !_presetOverwriteRef) return;
   _presetOverwriteRef(p, state.curve);
-  _showCopyToast('Saved to "' + p.name + '"', '#3ddc84');
+  _showCopyToast('Updated "' + p.name + '"', '#3ddc84');
 }
 // Revert: ease back to the preset's curve, like clicking its tile
 function _presetEditRevert() {
@@ -3870,7 +3905,7 @@ function initPanel() {
   // Full screen: the graph column takes the whole panel until pressed again
   var fullBtn = document.getElementById('graph-full');
   if (fullBtn) {
-    _attachTooltip(fullBtn, function() { return _graphFull ? 'Exit full screen' : 'Full-screen graph'; });
+    _attachTooltip(fullBtn, function() { return _graphFull ? 'Exit full screen' : 'Full-screen graph'; }, 'right');
     fullBtn.addEventListener('click', function() { _setGraphFull(!_graphFull); });
   }
 
@@ -4023,8 +4058,9 @@ function initPanel() {
   // area's left side (#graph-side-tools), above the zoom button in its
   // bottom-left corner. When the area is too short for both (_SIDE_NEED), the
   // column's buttons hide with inline display and the graph menu lists them.
-  // The bar itself only holds the menu button and New Preset at the left and
-  // Full Screen at the right, with the preset chip between (_tbChipLayout).
+  // The bar itself only holds the menu button and the preset chip at the left
+  // and New at the right (_tbChipLayout); Full Screen sits under Zoom in the
+  // graph area's bottom-left corner.
   // Widths are the CSS ones (26px buttons, 5px margins, 5px padding each side),
   // plus a little air.
   var toolbar  = document.getElementById('graph-toolbar');
@@ -4035,13 +4071,11 @@ function initPanel() {
   // Ghost is a Settings row now; its hidden button is kept for _setDragGhost and
   // the drag ghost's icon. The column's tools join the dropdown once it hides.
   var _tbTools = [peakBtn, bounceBtn, addPtBtn]; // zoom never hides
-  // New Preset heads the column while the graph is shown (_newPresetPlace)
-  function _newInSide() { var b = document.getElementById('preset-new'); return !!(b && b.parentNode && b.parentNode.id === 'graph-side-tools'); }
-  // Bar: the menu button on the left, Full Screen on the right
-  var _TB_NEED = 26 + 26 + 10 + 8;
-  // Column: four buttons (New Preset and the three modes) and their 5px gaps
-  // from the top + 8px air + zoom + 5px
-  var _SIDE_NEED = (4 * 26 + 3 * 5) + 8 + 26 + 5;
+  // Bar: the menu button on the left
+  var _TB_NEED = 26 + 10 + 8;
+  // Column: the three mode buttons and their 5px gaps from the top + 8px air
+  // + Zoom and Full Screen in the bottom-left corner, each 26px + 5px
+  var _SIDE_NEED = (3 * 26 + 2 * 5) + 8 + 2 * (26 + 5);
   var _tbCollapsed = null;
   var _tbDismiss   = null;
   function _hideToolsMenu() {
@@ -4049,25 +4083,20 @@ function initPanel() {
     if (m && m.parentNode) m.parentNode.removeChild(m);
     if (_tbDismiss) { window.removeEventListener('pointerdown', _tbDismiss); _tbDismiss = null; }
   }
-  // Edited preset chip (#preset-edit-chip, between the two groups): it gets the
-  // room the tools leave, capped by an inline max-width so it can never push the
-  // right group over it. Below _PE_CHIP_FULL, Save and Revert drop their labels
-  // and become 26px icon buttons; once the name would be cut short
-  // (_peNameFits) it and "Edited" go and the two buttons stay; below
-  // _PE_CHIP_BARE the chip hides (the dropdown then
-  // lists Save and Revert). Written only when the value changes.
-  var _PE_CHIP_BARE = 60;  // the two icon-only buttons alone
-  var _peChipMaxW = null;
+  // Edited preset chip (#preset-edit-chip, after the menu button) and New
+  // (#pe-new, the right end): they share the rest of the bar (_presetEditSync
+  // caps the chip with an inline max-width so it never runs into New).
+  // Below _PE_CHIP_FULL, Update, Revert and New drop their labels and become
+  // 26px icon buttons; once the name would be cut short (_peNameFits) it and
+  // "Edited" go and the buttons stay; below _PE_CHIP_BARE the chip hides and
+  // below 26px New does too (the dropdown then lists what went).
+  var _PE_CHIP_BARE = 88;  // icon-only Update and Revert (57) + New as an icon (31)
   function _tbChipLayout(w) {
-    var chip = document.getElementById('preset-edit-chip');
-    if (!chip) return;
-    var room = w - 2 * 36; // #pe-center's width: the bar between the menu button and Full Screen
-    var fits = room >= _PE_CHIP_BARE;
-    var mw = fits ? Math.floor(room) + 'px' : '';
-    if (mw !== _peChipMaxW) { _peChipMaxW = mw; chip.style.maxWidth = mw; }
+    var room = w - 36 - 5; // #pe-center's width: from after the menu button to the bar's right padding
     _peRoom = room;
-    _peChipRoom = fits;
-    _presetEditSync(); // compares its signature first: the name test depends on the room
+    _peChipRoom = room >= _PE_CHIP_BARE;
+    _peNewRoom = room >= 26;
+    _presetEditSync(); // compares first: the name test and the chip's max-width depend on the room
   }
   function _tbLayout() {
     if (!toolbar || !menuBtn) return;
@@ -4080,7 +4109,6 @@ function initPanel() {
     _tbCollapsed = collapse;
     // inline display: UXP ignores class-driven display changes
     _tbTools.forEach(function(b) { if (b) b.style.display = collapse ? 'none' : ''; });
-    if (_newInSide()) document.getElementById('preset-new').style.display = collapse ? 'none' : '';
     _hideToolsMenu();
     _hideZoomSlider(); // its anchor may just have been hidden
     _stylePeakBtn(); // the menu button only carries the A-curve tint while collapsed
@@ -4123,12 +4151,12 @@ function initPanel() {
     }
     var edP = _presetEdited();
     if (edP && !_presetChipShown()) { // no room for the chip: its two actions come first here
-      item('Save to "' + edP.name + '"', document.getElementById('pe-save'), _presetEditSave);
+      item('Update "' + edP.name + '"', document.getElementById('pe-save'), _presetEditSave);
       item('Revert to "' + edP.name + '"', document.getElementById('pe-revert'), _presetEditRevert);
     }
+    var peNewM = document.getElementById('pe-new');
+    if (peNewM && !_peNewShown()) item('New Preset\u2026', peNewM, function() { peNewM.click(); });
     if (_tbCollapsed) {
-      var newBtnS = document.getElementById('preset-new');
-      if (_newInSide()) item('New Preset', newBtnS, function() { newBtnS.click(); });
       item(_peakMode ? 'A-curve Mode: On' : 'A-curve Mode', peakBtn, function() { _setPeakMode(!_peakMode); }, { active: _peakMode });
       item(_bounceMode ? 'Bounce Mode: On' : 'Bounce Mode', bounceBtn, function() { _setBounceMode(!_bounceMode); }, { active: _bounceMode });
       item('Add Point', addPtBtn, function() { if (_peakMode) _setPeakMode(false); _addPoint(); });
@@ -4160,7 +4188,7 @@ function initPanel() {
   }
   var peSave = document.getElementById('pe-save'), peRevert = document.getElementById('pe-revert');
   if (peSave) {
-    _attachTooltip(peSave, function() { var p = _presetEdited(); return p ? 'Save to "' + p.name + '"' : ''; });
+    _attachTooltip(peSave, function() { var p = _presetEdited(); return p ? 'Overwrite "' + p.name + '" with this curve' : ''; });
     peSave.addEventListener('click', _presetEditSave);
   }
   if (peRevert) {
@@ -4194,9 +4222,10 @@ function initPanel() {
   var ptb      = document.getElementById('preset-toolbar');
   var pMenuBtn = document.getElementById('preset-tools-menu');
   var _PTB_IDS = ['preset-new', 'preset-layout', 'toggle-graph', 'toggle-timeline'];
-  // New Preset lives in the graph bar while the graph is shown (_newPresetPlace),
-  // so it only counts, and only collapses here, while it is in this bar
-  function _newInPtb() { var b = document.getElementById('preset-new'); return !!(b && ptb && b.parentNode === ptb); }
+  // New Preset shows here only while the graph is off (with the graph on it is
+  // New... in the graph bar, #pe-new), so it only counts, and only collapses
+  // here, then (_newPresetPlace)
+  function _newInPtb() { return !_graphVisible; }
   // Left: the menu button (and New Preset while it is here); right: List/Grid, Graph, Timeline, Settings
   function _ptbNeed() { var left = _newInPtb() ? 2 : 1; return (left * 26 + (left - 1) * 5) + (4 * 26 + 3 * 5) + 10 + 8; }
   var _ptbCollapsed = null;
@@ -4269,7 +4298,7 @@ function initPanel() {
       sep.style.cssText = 'border-top:1px solid rgba(255,255,255,0.07);margin:3px 0;';
       menu.appendChild(sep);
       var newBtn = document.getElementById('preset-new');
-      if (_newInPtb()) item('New Preset', svgOf('preset-new'), function() { if (newBtn) newBtn.click(); }); // in the graph bar it stays on show
+      if (_newInPtb()) item('New Preset', svgOf('preset-new'), function() { if (newBtn) newBtn.click(); }); // with the graph on it is New... in the graph bar
       item(_presetLayout === 'list' ? 'Grid View' : 'List View',
            svgOf('preset-layout', _presetLayout === 'list' ? '.ic-grid' : '.ic-list'),
            function() { _presetLayout = _presetLayout === 'list' ? 'grid' : 'list'; localStorage.setItem(_LAYOUT_KEY, _presetLayout); _applyPresetLayout(true); });
@@ -4305,20 +4334,16 @@ function initPanel() {
     });
   }
   if (ptb && typeof ResizeObserver !== 'undefined') new ResizeObserver(_ptbLayout).observe(ptb);
-  // New Preset heads the tool column down the graph's left side while the graph
-  // is shown and goes back next to the preset bar's menu button while it is off
-  // (the column hides with the graph). _applyGraphVisibility calls this on every change.
+  // New Preset (#preset-new, next to the preset bar's menu button) shows only
+  // while the graph is off; with the graph on, New... in the graph bar
+  // (#pe-new) does its job. _applyGraphVisibility calls this on every change.
+  var _newPlacedFor = null;
   _newPresetPlace = function() {
-    var b = document.getElementById('preset-new'), side = document.getElementById('graph-side-tools');
-    if (!b || !side || !ptb || !pMenuBtn) return;
-    var host = _graphVisible ? side : ptb;
-    if (b.parentNode !== host) {
-      if (_graphVisible) side.insertBefore(b, side.firstChild);
-      else ptb.insertBefore(b, pMenuBtn.nextSibling);
-      var d = (_graphVisible && _tbCollapsed) ? 'none' : ''; // a short graph area folds the column into the menu
-      if (b.style.display !== d) b.style.display = d;
-      _ptbCollapsed = null; _ptbLayout();        // the preset bar's room changed
-    }
+    var b = document.getElementById('preset-new');
+    if (!b || !ptb || !pMenuBtn || _newPlacedFor === _graphVisible) return;
+    _newPlacedFor = _graphVisible;
+    if (_graphVisible && b.style.display !== 'none') b.style.display = 'none';
+    _ptbCollapsed = null; _ptbLayout();          // the preset bar's room changed; shows it while the graph is off
   };
   _newPresetPlace();
   _ptbLayout();
@@ -4828,6 +4853,7 @@ function initPanel() {
     }, { title: title, ok: 'Save' });
   }
   function _customCount() { return _presetList.filter(function(p){ return !p.builtIn; }).length + 1; }
+  _presetNamesRef = function() { return _presetList.map(function(p) { return p.name; }); };
   // Paste Preset: a parsed curve becomes a preset once it is named
   function _createPresetFromCurve(curve) {
     _promptNewPreset(curve, 'Pasted ' + _customCount(), 'Name Pasted Preset', false);
@@ -5181,12 +5207,17 @@ function initPanel() {
     // saves the current curve as a preset and opens its name for editing
     var newTool = document.getElementById('preset-new');
     if (newTool) {
-      // Beside the button while it is in the graph's side column, below it in the preset bar
-      _attachTooltip(newTool, 'New Preset: save the current curve as a preset', function() {
-        return newTool.parentNode && newTool.parentNode.id === 'graph-side-tools' ? 'right' : null;
-      });
+      _attachTooltip(newTool, 'New Preset: save the current curve as a preset');
       newTool.addEventListener('click', function() {
-        _promptNewPreset(getState().curve, 'Custom ' + _customCount(), 'New Preset', true);
+        _promptNewPreset(getState().curve, _newPresetName(_customCount()), 'New Preset', true);
+      });
+    }
+    // New... in the graph bar, beside the preset chip (the same job while the graph is shown)
+    var peNew = document.getElementById('pe-new');
+    if (peNew) {
+      _attachTooltip(peNew, 'New Preset: save this curve as a new preset');
+      peNew.addEventListener('click', function() {
+        _promptNewPreset(getState().curve, _newPresetName(_customCount()), 'New Preset', true);
       });
     }
   }());

@@ -191,6 +191,14 @@ input, textarea {
 #zoom-btn {
   position: absolute;
   left: 5px;
+  bottom: 36px; /* above Full Screen: its 26px + 5px gap + 5px */
+  margin-left: 0;
+  z-index: 2;
+}
+/* Full Screen sits in the graph area's bottom-left corner, under Zoom */
+#graph-full {
+  position: absolute;
+  left: 5px;
   bottom: 5px;
   margin-left: 0;
   z-index: 2;
@@ -509,23 +517,23 @@ input, textarea {
   color: var(--oc-active-color);
 }
 
-/* Graph bar chip for the edited preset: name, "edited", Save, Revert. Shown
+/* Graph bar chip for the edited preset: name, "edited", Update, Revert. Shown
    with inline display; its max-width is set inline by the bar's layout */
-/* The chip sits centred in the graph bar: #pe-center spans the bar between
-   the menu button and Full Screen (5px padding + 26px button + 5px gap on each
-   side, so its centre is the bar's) and centres the chip in it */
+/* #pe-center spans the graph bar from just after the menu button (5px padding
+   + 26px button + 5px gap) to the bar's 5px right padding: the chip sits at its
+   left, New at its right end (margin-left: auto) */
 #graph-toolbar {
   position: relative;
 }
 #pe-center {
   position: absolute;
   left: 36px;
-  right: 36px;
+  right: 5px;
   top: 0;
   bottom: 0;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
 }
 #preset-edit-chip {
   align-items: center;
@@ -584,6 +592,37 @@ input, textarea {
 .pe-btn:active {
   background-color: var(--oc-active-bg2);
   color: var(--oc-name-color);
+}
+/* New at the bar's right end, apart from the chip: the plain tool button look
+   with a label (shown with inline display; _peSetLabels makes it an icon square) */
+.pe-new {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  height: 26px;
+  padding: 0 9px 0 6px;
+  margin-left: auto;
+  border-radius: 3px;
+  box-sizing: border-box;
+  background-color: rgba(255,255,255,0.08);
+  background-image: linear-gradient(to right, rgba(255,255,255,0.06), rgba(255,255,255,0));
+  color: #d4d4d4;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 26px;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+.pe-new:hover {
+  background-color: rgba(255,255,255,0.16);
+  background-image: linear-gradient(to right, rgba(255,255,255,0.09), rgba(255,255,255,0));
+  color: #ffffff;
+}
+.pe-new:active {
+  background-color: rgba(255,255,255,0.26);
+  color: #ffffff;
 }
 .pe-tag {
   line-height: 26px;
