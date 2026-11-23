@@ -9558,7 +9558,7 @@ var _WELCOME_ITEMS = [ // titles only, split over two columns (the left one firs
   'Smoother performance',
   'Save edits to presets',
   'Replace a baked curve',
-  'Auto zoom',
+  'Instant bake per property',
   'Smarter Go button',
   'Right-click property actions',
   'Redesigned Settings'
