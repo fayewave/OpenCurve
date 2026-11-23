@@ -3064,8 +3064,12 @@ function _tlRequestValue(info) {
   var p = (s.availableParams || []).filter(function(a) { return a.key === info.lane.key; })[0];
   if (!p) return;
   // Keyframes are in media time; on a clip with a speed change one sequence
-  // second is `speed` media seconds (clipIn is the media in-point)
-  var mediaSec = s.tl ? (s.tl.clipIn || 0) + (info.t.sec - (s.tl.clipStart || 0)) * (s.tl.speed || 1) : info.t.sec;
+  // second is `speed` media seconds (clipIn is the media in-point). The row's
+  // own clip when it says (clipT: start, media in-point, speed): a linked
+  // clip's audio rows sit beside its video rows and can be trimmed differently
+  var ct = p.clipT;
+  var mediaSec = ct ? ct[1] + (info.t.sec - ct[0]) * (ct[2] || 1)
+               : s.tl ? (s.tl.clipIn || 0) + (info.t.sec - (s.tl.clipStart || 0)) * (s.tl.speed || 1) : info.t.sec;
   var id = ++_tlValReq;
   _tlValBusy = true;
   function done(v) {

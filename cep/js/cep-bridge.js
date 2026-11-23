@@ -210,7 +210,7 @@
     // Mini timeline hover: the property's value at a media time
     valueAt: function(key, sec) {
       return new Promise(function(resolve) {
-        cs.evalScript("ocValueAt('" + String(key).replace(/[^0-9_]/g, '') + "', " + Number(sec) + ")", function(r) {
+        cs.evalScript("ocValueAt('" + String(key).replace(/[^0-9_a]/g, '') + "', " + Number(sec) + ")", function(r) {
           var v = null; try { v = JSON.parse(r); } catch(_) {}
           resolve(v);
         });
