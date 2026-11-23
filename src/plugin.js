@@ -10621,6 +10621,37 @@ function _showSettingsModal() {
     veilText.style.display = tight ? 'none' : '';
     veilBtn.style.marginLeft = tight ? '6px' : '0'; // the word space the text's own padding gave
   }
+  // The widths are read straight after the modal is added, and the panel may
+  // not have laid it out yet: an empty read left the footer on one row, cut
+  // off in a narrow panel, until a resize measured again (seen on opening
+  // Settings, 2026-11-23). So for a moment after opening, a missing
+  // measurement is retried, and a footer that still spills over its box goes
+  // back to the full row and is measured afresh.
+  function _footVw() { return document.documentElement.clientWidth || document.body.clientWidth; }
+  function _footSpills() {
+    var mr = modal.getBoundingClientRect(), rr = footerRight.getBoundingClientRect();
+    if (!mr.width || !rr.width) return false;
+    return rr.right > mr.right + 1 || rr.left < mr.left - 1 || footerLeft.scrollWidth > footerLeft.clientWidth + 1;
+  }
+  function _footRemeasure() {
+    footNeed = 0; footMode = '';
+    _footSetShort(false);
+    footerRow.style.flexDirection = 'row';
+    footerRight.style.marginTop = '';
+    footerLeft.style.marginRight = '12px';
+    veilText.style.display = '';
+    veilBtn.style.marginLeft = '0';
+    setTimeout(function() { if (modal.parentNode) _layoutFooter(_footVw()); }, 0);
+  }
+  function _footSettle(n) {
+    if (n > 6) return;
+    setTimeout(function() {
+      if (!modal.parentNode) return;
+      if (!footNeed) _layoutFooter(_footVw());
+      else if (_footSpills()) _footRemeasure();
+      _footSettle(n + 1);
+    }, n ? 60 : 0);
+  }
 
   modal.appendChild(header);
   modal.appendChild(contentWrap);
@@ -10628,6 +10659,7 @@ function _showSettingsModal() {
   document.body.appendChild(modal);
   _sbSync();
   _layoutFooter(vw);
+  _footSettle(0);
 
   // Resize with the panel
   var _settingsRO = new ResizeObserver(function() {
