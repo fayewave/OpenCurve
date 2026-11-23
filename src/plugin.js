@@ -382,6 +382,18 @@ function _normalizeCurve(c) {
   return c;
 }
 
+// Row Load Curve button: the baked curve drawn as its icon, in the button's
+// 14-unit viewBox (shown at 16px), stretched to the curve's y extent like the
+// preset thumbnails so an overshoot isn't clipped
+function _rowCurveD(c) {
+  if (!c) return '';
+  var b = _curveYBounds(c), span = (b.hi - b.lo) || 1, pad = 1.8, g = 14 - 2 * pad;
+  function r(v) { return Math.round(v * 100) / 100; }
+  return _curvePathTx(c,
+    function(x) { return r(pad + x * g); },
+    function(y) { return r(pad + (1 - (y - b.lo) / span) * g); });
+}
+
 // Curve outline as an SVG path; tx/ty map normalised coords to pixels
 function _curvePathTx(c, tx, ty) {
   var segs = _segsOf(c), d = 'M' + tx(0) + ',' + ty(0);
@@ -5870,7 +5882,7 @@ function renderUI(s) {
         _addPressState(propCurve);
         propCurve.style.display = 'none';
         _attachTooltip(propCurve, 'Load the curve that was baked on this property');
-        propCurve.innerHTML = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2.5 11.5C6 11.5 8 2.5 11.5 2.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="2.5" cy="11.5" r="1.6" fill="currentColor"/><circle cx="11.5" cy="2.5" r="1.6" fill="currentColor"/></svg>';
+        propCurve.innerHTML = '<svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M1.8 12.2C6 12.2 8 1.8 12.2 1.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'; // the path becomes the baked curve (sync pass)
         propCurve.addEventListener('click', function(ev) {
           ev.stopPropagation();
           _loadBakedCurve(p.key);
@@ -5935,8 +5947,17 @@ function renderUI(s) {
       var hasCurve   = !!(brec && brec.curve);
       var replOk     = _replaceOk(brec, s.curve);
       var stateKey   = (isSel ? 's' : '') + (isBakedRow ? 'b' : '') + (isValid ? 'v' : '') + (hasCurve ? 'c' : '') + (replOk ? 'r' : '');
-      if (btn._ocState === stateKey) return;
+      // The Load Curve icon draws the baked curve: compared as its path, so a
+      // Replace (a new curve with the same state key) redraws it
+      var curveD     = hasCurve ? _rowCurveD(brec.curve) : '';
+      if (btn._ocState === stateKey && btn._ocCurveD === curveD) return;
       btn._ocState = stateKey;
+      if (btn._ocCurveD !== curveD) {
+        btn._ocCurveD = curveD;
+        var cvEl = (btn._oc && btn._oc.curve) || btn.querySelector('.prop-curve');
+        var cvPath = cvEl && cvEl.querySelector('path');
+        if (cvPath && curveD) cvPath.setAttribute('d', curveD);
+      }
       // Children are cached on the row when it is built (_oc); the lookups are
       // a fallback for a row from an older render.
       var els = btn._oc || {};
@@ -6561,7 +6582,7 @@ function initPanel() {
     return t !== keySink && (tag === 'input' || tag === 'textarea' || tag === 'select' || !!(t && t.isContentEditable));
   }
   function _focusSink(why) {
-    if (!keySink || !_SINK_FOCUS_ON) return;
+    if (!keySink || !_SINK_FOCUS_ON || !_shortcutsOn) return;
     try { keySink.focus(); } catch(_) {}
     var ok = document.activeElement === keySink;
     if (!ok) console.log('[OC] key sink focus (' + why + ') failed; active=' + (document.activeElement && document.activeElement.tagName));
@@ -6591,6 +6612,9 @@ function initPanel() {
     if (e._ocSeen) return;
     e._ocSeen = true; // the sink's own listener and the document one both see it
     if (_isField(e.target)) return;
+    // Settings > Keyboard Shortcuts off: only Esc (closing menus, the zoom
+    // slider, a preview, full screen) is still handled
+    if (!_shortcutsOn && e.key !== 'Escape') return;
     var modal = !!(document.getElementById('settings-modal') || document.getElementById('oc-confirm')
                 || document.getElementById('oc-numeric') || document.getElementById('_paste-box')
                 || document.getElementById('oc-rename') || document.getElementById('oc-welcome'));
@@ -8478,6 +8502,12 @@ var _animationsOn       = localStorage.getItem(_ANIM_KEY) !== 'off';
 // deselects that property for Go (on by default)
 var _TL_DBL_KEY         = 'opencurve-tl-dblclick';
 var _tlDblOn            = localStorage.getItem(_TL_DBL_KEY) !== 'off';
+// Settings > Keyboard Shortcuts: Enter for Go and every panel key (on by
+// default). Off, the key sink is never focused either, so keys pressed after
+// clicking the panel stay Premiere's (only Esc is still handled when it
+// arrives)
+var _SHORTCUTS_KEY      = 'opencurve-shortcuts';
+var _shortcutsOn        = localStorage.getItem(_SHORTCUTS_KEY) !== 'off';
 // 2.0.0: "Scan During Playback" is always on (the toggle only made the panel
 // worse). Drop the old key so a user who had turned it off comes back on.
 try { localStorage.removeItem('opencurve-scan-during-playback'); } catch(e) {}
@@ -9447,7 +9477,7 @@ function _confirmReset() {
     // Bake records are deliberately kept: they are a record of work done on the
     // project, not a setting, and the dialog does not offer to clear them.
     ['opencurve-presets-v10', 'opencurve-sidebar-width', _WELCOME_KEY, _CURVE_COLOR_KEY, _GRID_KEY,
-     _LAYOUT_KEY, _ANIM_KEY, _TL_DBL_KEY, _AUTO_ZOOM_KEY, _UPDATE_NOTIF_KEY, _GRAPH_KEY, _PEAK_KEY, _BN_KEY, _DRAG_GHOST_KEY,
+     _LAYOUT_KEY, _ANIM_KEY, _TL_DBL_KEY, _SHORTCUTS_KEY, _AUTO_ZOOM_KEY, _UPDATE_NOTIF_KEY, _GRAPH_KEY, _PEAK_KEY, _BN_KEY, _DRAG_GHOST_KEY,
      _DENSITY_KEY, _TL_KEY, _TL_ZOOM_KEY, _TL_PROPS_KEY, _TL_H_KEY
     ].forEach(function(k) { try { localStorage.removeItem(k); } catch(_) {} });
 
@@ -9461,6 +9491,7 @@ function _confirmReset() {
     _presetLayout   = 'list';
     _animationsOn   = true;
     _tlDblOn        = true;
+    _shortcutsOn    = true;
     _autoZoomOn     = true;
     _autoZoomFrom   = null;
     _updateNotifsOn = true; // [exchange-strip-line]
@@ -9977,6 +10008,14 @@ function _showSettingsModal() {
       function() { return _tlDblOn; }, function(v) {
         _tlDblOn = v;
         localStorage.setItem(_TL_DBL_KEY, v ? 'on' : 'off');
+      }),
+    _toggleCard('Keyboard Shortcuts', 'Enter for Go, Space, J K L, 1-9 and the other panel keys',
+      function() { return _shortcutsOn; }, function(v) {
+        _shortcutsOn = v;
+        localStorage.setItem(_SHORTCUTS_KEY, v ? 'on' : 'off');
+        // Off: let go of the key sink so the next keys reach Premiere
+        var sink = document.getElementById('oc-key-sink');
+        if (!v && sink && document.activeElement === sink) { try { sink.blur(); } catch(_) {} }
       }),
     _toggleCard('Ghost', 'While you drag, the curve\'s starting shape stays faintly behind it',
       function() { return _dragGhost; }, function(v) { _setDragGhost(v); }),
