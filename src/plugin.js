@@ -9231,41 +9231,49 @@ function _showWelcome(force) {
   overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.65);z-index:99998;display:flex;align-items:center;justify-content:center;';
 
   var box = document.createElement('div');
-  box.style.cssText = 'background:#1c1c1c;border:1px solid rgba(255,255,255,0.18);padding:22px 24px 20px;width:460px;max-width:92%;font-family:system-ui,sans-serif;box-sizing:border-box;';
+  box.style.cssText = 'background:#1c1c1c;border:1px solid rgba(255,255,255,0.18);padding:26px 24px 24px;width:460px;max-width:92%;font-family:system-ui,sans-serif;box-sizing:border-box;';
 
   var logo = document.createElement('img');
   var _dpr = window.devicePixelRatio || 1;
   logo.src = 'img/OpenCurve2_Wordmark_small' + (_dpr >= 2.5 ? '@3x' : _dpr >= 1.5 ? '@2x' : '') + '.png';
-  logo.style.cssText = 'display:block;width:145px;height:22px;margin:0 auto 14px;opacity:0.9;';
+  logo.style.cssText = 'display:block;width:145px;height:22px;margin:0 auto 16px;opacity:0.9;';
   box.appendChild(logo);
 
   var title = document.createElement('div');
   title.textContent = _WELCOME_TITLE;
-  title.style.cssText = 'color:#e4e4e4;font-size:14px;margin-bottom:12px;text-align:center;';
+  title.style.cssText = 'color:#e4e4e4;font-size:14px;margin-bottom:18px;text-align:center;';
   box.appendChild(title);
 
   // Two columns built as paired rows (item i beside item i + half), so a
   // title that wraps pushes both sides down together and the columns stay
   // level; two independent columns drifted apart when one side wrapped.
+  // Each item is its own rounded card like the Settings ones: an outline-
+  // coloured box round a 1px inset fill (UXP draws CSS borders soft), a
+  // little lighter than the card behind it.
   var list = document.createElement('div');
-  list.style.cssText = 'margin-bottom:12px;';
+  list.style.cssText = 'margin-bottom:20px;';
   var half = Math.ceil(_WELCOME_ITEMS.length / 2);
   function item(text, right) {
     var cell = document.createElement('div');
-    cell.style.cssText = 'flex:1;min-width:0;display:flex;align-items:flex-start;' + (right ? 'margin-left:16px;' : '');
+    cell.style.cssText = 'flex:1;min-width:0;display:flex;box-sizing:border-box;padding:1px;border-radius:8px;'
+      + (right ? 'margin-left:8px;' : '') + (text == null ? '' : 'background-color:#2c2c2c;');
     if (text == null) return cell; // empty cell keeps an odd count level
+    var inner = document.createElement('div');
+    inner.style.cssText = 'flex:1;min-width:0;box-sizing:border-box;border-radius:7px;background-color:#232323;'
+      + 'display:flex;flex-direction:row;align-items:center;min-height:46px;padding:9px 12px 9px 13px;';
     var dot = document.createElement('div');
-    dot.style.cssText = 'width:5px;height:5px;border-radius:3px;background:' + _curveColor + ';margin:6px 9px 0 1px;flex:0 0 5px;';
+    dot.style.cssText = 'width:6px;height:6px;border-radius:3px;background:' + _curveColor + ';margin-right:10px;flex:0 0 6px;';
     var txt = document.createElement('div');
     txt.textContent = text;
-    txt.style.cssText = 'color:#e4e4e4;font-size:12.5px;font-weight:600;line-height:1.45;';
-    cell.appendChild(dot);
-    cell.appendChild(txt);
+    txt.style.cssText = 'color:#e4e4e4;font-size:12.5px;font-weight:600;line-height:1.35;min-width:0;';
+    inner.appendChild(dot);
+    inner.appendChild(txt);
+    cell.appendChild(inner);
     return cell;
   }
   for (var i = 0; i < half; i++) {
     var row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:flex-start;margin-bottom:6px;';
+    row.style.cssText = 'display:flex;align-items:stretch;' + (i < half - 1 ? 'margin-bottom:8px;' : '');
     row.appendChild(item(_WELCOME_ITEMS[i], false));
     row.appendChild(item(i + half < _WELCOME_ITEMS.length ? _WELCOME_ITEMS[i + half] : null, true));
     list.appendChild(row);
