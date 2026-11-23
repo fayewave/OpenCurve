@@ -40,6 +40,7 @@ check out my other free plugins at [**veil.page**](https://veil.page)
 
 <p>
   <img src="img/readme/customize-your-curve.gif" width="350" hspace="1" alt="Customize your curve">
+  <img src="img/readme/bounce-and-elastic.gif" width="350" hspace="1" alt="Bounce and elastic eases: the Bounces and Bounce sliders dragged up, Elastic picked and its Friction swept low and high, then everything set back">
   <img src="img/readme/mini-timeline.gif" width="350" hspace="1" alt="A mini timeline of every keyframe">
   <img src="img/readme/jump-to-keyframe.gif" width="350" hspace="1" alt="Jump to the next keyframe">
   <img src="img/readme/presets.gif" width="350" hspace="1" alt="Presets, saved and shared">
