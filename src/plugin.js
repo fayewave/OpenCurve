@@ -6364,14 +6364,17 @@ function _ocSynthUp(why, x, y) {
   console.log('[OC] pointerup missing after a press (' + why + '); ending it');
   var init = { bubbles: true, cancelable: true, pointerId: p.id, isPrimary: true, button: 0, buttons: 0,
                clientX: x != null ? x : p.x, clientY: y != null ? y : p.y, pointerType: 'mouse' };
-  var ev = null;
-  try { ev = new PointerEvent('pointerup', init); } catch(_) { ev = null; }
-  if (!ev) { // UXP without a PointerEvent constructor: a plain event with the fields the handlers read
-    try { ev = new Event('pointerup', { bubbles: true, cancelable: true }); } catch(_) { return; }
-    ['pointerId', 'isPrimary', 'button', 'buttons', 'clientX', 'clientY', 'pointerType'].forEach(function(k) {
-      try { Object.defineProperty(ev, k, { value: init[k] }); } catch(_) {}
-    });
-  }
+  // A plain Event with the fields the handlers read, never `new PointerEvent`:
+  // UXP's PointerEvent constructor ignores its init (pointerId, clientX and
+  // detail come back empty) and dispatching one hands it to UXP's native event
+  // path, which throws "Cannot read properties of undefined (reading 'detail')"
+  // inside dispatchNativeEvent (measured live 2026-11-23, Premiere 26.0.2; it
+  // happened on every double-click). A plain Event dispatches cleanly.
+  var ev;
+  try { ev = new Event('pointerup', { bubbles: true, cancelable: true }); } catch(_) { return; }
+  ['pointerId', 'isPrimary', 'button', 'buttons', 'clientX', 'clientY', 'pointerType'].forEach(function(k) {
+    try { Object.defineProperty(ev, k, { value: init[k] }); } catch(_) {}
+  });
   ev._ocSynth = true;
   var t = p.target;
   if (!t.isConnected && t.parentNode == null) t = document; // rebuilt under the press: the document listeners still end it
