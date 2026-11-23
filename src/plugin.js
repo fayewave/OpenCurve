@@ -10581,62 +10581,45 @@ function _showSettingsModal() {
   footerRow.appendChild(footerRight);
   footer.appendChild(footerRow);
 
-  // Footer layout, narrowing in steps: everything on one row; then Report an
-  // Issue and Reset All Settings shortened to Report / Reset; then the
-  // (short) buttons dropped under the credit row, both rows centred; then,
-  // when even the credit row is too wide, "for more of my free plugins visit"
-  // hidden so only the Veil logo follows "made by faye!". Widths are measured
-  // once from the full row. What the short labels save is estimated from the
-  // label widths by character count until the first switch, then measured
-  // (a deferred read, so the new text has been laid out).
+  // Footer layout, narrowing in steps: everything on one row; then the
+  // buttons under the credit row, both rows centred; then Report an Issue and
+  // Reset All Settings shortened to Report / Reset, once the full buttons no
+  // longer fit on a row of their own; and when even the credit row is too
+  // wide, "for more of my free plugins visit" hidden so only the Veil logo
+  // follows "made by faye!". Widths are measured once, from the full row with
+  // the full labels (the layout stays that way until they are known).
   var _footShort = [[issueRow, 'Report an Issue', 'Report'], [resetRow, 'Reset All Settings', 'Reset']];
-  var footNeed = 0, footLW = 0, footRW = 0, footSave = 0, footSaveMeasured = false, footMode = 'row', footLastW = 0;
+  var footNeed = 0, footLW = 0, footRW = 0, footMode = '';
   function _footSetShort(on) {
-    _footShort.forEach(function(e) { e[0]._ocText.textContent = on ? e[2] : e[1]; });
+    _footShort.forEach(function(e) {
+      var t = on ? e[2] : e[1];
+      if (e[0]._ocText.textContent !== t) e[0]._ocText.textContent = t;
+    });
   }
   function _layoutFooter(w) {
-    footLastW = w;
-    if (!footNeed && footMode === 'row') {
+    if (!footNeed) {
       // scrollWidth: the credit row's own width even when a narrow panel has
       // already squeezed it (it may shrink, the buttons never do)
       var lw = Math.max(footerLeft.getBoundingClientRect().width, footerLeft.scrollWidth || 0), rw = footerRight.getBoundingClientRect().width;
       if (lw && rw) {
-        footNeed = Math.ceil(lw + rw) + 24 + 12;
-        footLW = Math.ceil(lw) + 24 + 12;
-        footRW = rw;
-        footSave = 0;
-        _footShort.forEach(function(e) {
-          var tw = e[0]._ocText.getBoundingClientRect().width || 0;
-          footSave += Math.floor(tw * (1 - e[2].length / e[1].length)) - 6;
-        });
-        footSave = Math.max(0, footSave);
+        footNeed = Math.ceil(lw + rw) + 24 + 12; // the footer's padding, the gap between the two
+        footLW   = Math.ceil(lw) + 24;           // each on a row of its own
+        footRW   = Math.ceil(rw) + 24;
       }
     }
-    var mode = !footNeed || w >= footNeed ? 'row' : w >= footNeed - footSave ? 'short' : w >= footLW ? 'stack' : 'tight';
+    var stack = !!footNeed && w < footNeed;
+    var short = stack && w < footRW;
+    var tight = stack && w < footLW;
+    var mode = (stack ? 's' : 'r') + (short ? 'h' : '') + (tight ? 't' : '');
     if (mode === footMode) return;
-    var wasShort = footMode !== 'row', short = mode !== 'row';
     footMode = mode;
-    if (short !== wasShort) _footSetShort(short);
-    var stack = mode === 'stack' || mode === 'tight', tight = mode === 'tight';
+    _footSetShort(short);
     footerRow.style.flexDirection = stack ? 'column' : 'row';
     footerRow.style.alignItems = 'center'; // stacked, each row sits centred
     footerRight.style.marginTop = stack ? '8px' : '';
     footerLeft.style.marginRight = stack ? '0' : '12px'; // or the credit row sits off centre
     veilText.style.display = tight ? 'none' : '';
     veilBtn.style.marginLeft = tight ? '6px' : '0'; // the word space the text's own padding gave
-    if (short && !footSaveMeasured) {
-      footSaveMeasured = true;
-      setTimeout(function() {
-        if (footMode === 'row') { footSaveMeasured = false; return; }
-        // The button group never shrinks (flex-shrink 0), so its width with the
-        // short labels holds in either layout; the credit row could be
-        // squeezed, which is why its width is the one taken from the full row
-        var rw = footerRight.getBoundingClientRect().width;
-        if (!rw) { footSaveMeasured = false; return; }
-        footSave = Math.max(0, Math.floor(footRW - rw));
-        _layoutFooter(footLastW); // re-decide with the measured saving
-      }, 0);
-    }
   }
 
   modal.appendChild(header);
