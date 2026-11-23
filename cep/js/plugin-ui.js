@@ -4317,7 +4317,7 @@ function initPanel() {
     var w = ptb.clientWidth;
     if (!(w > 0)) return;
     var collapse = w < _ptbNeed();
-    if (collapse === _ptbCollapsed) return;
+    if (collapse === _ptbCollapsed) { _psCheckWidth(); return; }
     _ptbCollapsed = collapse;
     // inline display: UXP ignores class-driven display changes
     _PTB_IDS.forEach(function(id) {
@@ -4329,6 +4329,7 @@ function initPanel() {
     // is hidden the menu button takes that job (inline, UXP ignores class changes)
     pMenuBtn.style.marginRight = collapse ? 'auto' : '';
     _hidePresetMenu();
+    _psCheckWidth(); // the search box's width after the tools moved
   }
   function _showPresetMenu() {
     _hidePresetMenu();
@@ -5669,6 +5670,14 @@ function _fitGoForUndo() {
 // is on show. Session only. _applyPresetLayout marks the tiles on every pass.
 var _presetQuery = '';
 var _psSig = '';
+// A box narrower than this leaves the "n of N" count out, so the typed text
+// keeps its room (_psCheckWidth, from the preset bar's ResizeObserver)
+var _PS_COUNT_MIN = 190, _psNarrow = false;
+function _psCheckWidth() { _presetSearchSync(); } // the width is measured there
+function _psMeasure(box) {
+  var w = box.offsetWidth;
+  if (w > 0) _psNarrow = w < _PS_COUNT_MIN;
+}
 var _psLastRes = { shown: 0, total: 0 };
 function _presetWords() {
   return _presetQuery.toLowerCase().split(/\s+/).filter(function(w) { return !!w; });
@@ -5703,7 +5712,8 @@ function _presetSearchSync(res) {
   var tags = _tagFilterList(), tagOn = tags.length > 0;
   var on = _presetWords().length > 0 || tagOn;
   var col = /^#[0-9a-fA-F]{6}$/.test(_curveColor) ? _curveColor : '#ffffff';
-  var sig = (on ? 1 : 0) + '|' + col + '|' + res.shown + '|' + res.total + '|' + _presetQuery + '|' + tags.join(',');
+  _psMeasure(box); // also on every search change, not only on a bar resize
+  var sig = (on ? 1 : 0) + '|' + col + '|' + res.shown + '|' + res.total + '|' + _presetQuery + '|' + tags.join(',') + '|' + (_psNarrow ? 1 : 0);
   if (sig === _psSig) return; // every write below is behind this
   _psSig = sig;
   box.style.backgroundColor = on ? _hexToRgba(col, 0.8) : '';
@@ -5714,7 +5724,7 @@ function _presetSearchSync(res) {
   }
   var cnt = document.getElementById('preset-search-count');
   if (cnt) {
-    cnt.style.display = on ? '' : 'none';
+    cnt.style.display = (on && !_psNarrow) ? '' : 'none';
     if (on) { cnt.textContent = res.shown + ' of ' + res.total; cnt.style.color = col; }
   }
   var clr = document.getElementById('preset-search-clear');

@@ -383,7 +383,7 @@ html, body {
    stroke and the count inline (_presetSearchSync). */
 .preset-search {
   display: flex;
-  flex: 1 1 auto;
+  flex: 1 1 0px; /* its width is the bar's free space, never its contents' (the count hides below _PS_COUNT_MIN) */
   min-width: 0;
   height: 26px;
   margin-left: 5px;
