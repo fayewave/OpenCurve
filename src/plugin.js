@@ -10583,9 +10583,10 @@ function _showSettingsModal() {
 
   // Footer layout, narrowing in steps: everything on one row; then Report an
   // Issue and Reset All Settings shortened to Report / Reset; then the
-  // (short) buttons dropped under the credit row; then, when even that row
-  // is too wide, "made by faye!" on its own line above the Veil link. Widths
-  // are measured once from the full row. What the short labels save is estimated from the
+  // (short) buttons dropped under the credit row, both rows centred; then,
+  // when even the credit row is too wide, "for more of my free plugins visit"
+  // hidden so only the Veil logo follows "made by faye!". Widths are measured
+  // once from the full row. What the short labels save is estimated from the
   // label widths by character count until the first switch, then measured
   // (a deferred read, so the new text has been laid out).
   var _footShort = [[issueRow, 'Report an Issue', 'Report'], [resetRow, 'Reset All Settings', 'Reset']];
@@ -10618,12 +10619,11 @@ function _showSettingsModal() {
     if (short !== wasShort) _footSetShort(short);
     var stack = mode === 'stack' || mode === 'tight', tight = mode === 'tight';
     footerRow.style.flexDirection = stack ? 'column' : 'row';
-    footerRow.style.alignItems = stack ? 'flex-start' : 'center';
+    footerRow.style.alignItems = 'center'; // stacked, each row sits centred
     footerRight.style.marginTop = stack ? '8px' : '';
-    footerLeft.style.flexDirection = tight ? 'column' : 'row';
-    footerLeft.style.alignItems = tight ? 'flex-start' : 'center';
-    veilBtn.style.marginLeft = tight ? '-4px' : '0'; // its text lines up under "made by faye!"
-    veilBtn.style.marginTop = tight ? '2px' : '';
+    footerLeft.style.marginRight = stack ? '0' : '12px'; // or the credit row sits off centre
+    veilText.style.display = tight ? 'none' : '';
+    veilBtn.style.marginLeft = tight ? '6px' : '0'; // the word space the text's own padding gave
     if (short && !footSaveMeasured) {
       footSaveMeasured = true;
       setTimeout(function() {
