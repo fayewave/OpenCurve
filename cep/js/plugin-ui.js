@@ -2438,7 +2438,7 @@ function _pressPreset(i) {
   var list = document.getElementById('all-presets-list');
   if (!list) return;
   var tiles = Array.prototype.filter.call(list.querySelectorAll('.preset-btn'), function(b) {
-    return b.id !== '_update-notif';
+    return b.id !== '_update-notif' && !b._ocFiltered; // a search leaves some out
   });
   if (tiles[i]) tiles[i].click();
 }
@@ -4300,7 +4300,9 @@ function initPanel() {
   // here, then (_newPresetPlace)
   function _newInPtb() { return !_graphVisible; }
   // Left: the menu button (and New Preset while it is here); right: List/Grid, Graph, Timeline, Settings
-  function _ptbNeed() { var left = _newInPtb() ? 2 : 1; return (left * 26 + (left - 1) * 5) + (4 * 26 + 3 * 5) + 10 + 8; }
+  // ... plus the search box's _PS_MIN and its 5px margin
+  var _PS_MIN = 80;
+  function _ptbNeed() { var left = _newInPtb() ? 2 : 1; return (left * 26 + (left - 1) * 5) + (4 * 26 + 3 * 5) + 10 + 8 + _PS_MIN + 5; }
   var _ptbCollapsed = null;
   var _ptbDismiss   = null;
   function _hidePresetMenu() {
@@ -4420,6 +4422,7 @@ function initPanel() {
   };
   _newPresetPlace();
   _ptbLayout();
+  _presetSearchInit();
 
   // ── Unified preset system ─────────────────────────────────────
   var _STORAGE_KEY  = 'opencurve-presets-v10';
@@ -4690,6 +4693,7 @@ function initPanel() {
         preset.name = v; nameSpan.textContent = v;
         _savePresetList(_presetList);
         _presetEditSync(); // the chip shows the name
+        if (_presetQuery) _applyPresetLayout(true); // the new name may not match the search
       }, opts && opts.title ? opts : null);
     }
     btn._ocRename = startRename; // New Preset / Paste open it for the fresh tile
@@ -4767,7 +4771,7 @@ function initPanel() {
       // force a layout on the ghost's new position.
       var isGrid = _presetCols > 1; // grid, or the two-column list
       var items = Array.from(container.children).filter(function(c) {
-        return c !== dragEl && c !== dropLine;
+        return c !== dragEl && c !== dropLine && c.style.display !== 'none'; // a search hides some
       });
       var after = null;
       if (isGrid) {
@@ -4917,6 +4921,7 @@ function initPanel() {
   function _promptNewPreset(curve, defName, title, makeActive) {
     curve = _cloneCurve(curve);
     _renamePresetDialog(defName, function(name) {
+      _presetSearchSet(''); // so the new tile is on show
       var preset = { id: 'c' + Date.now(), name: name, curve: curve };
       _presetList.push(preset);
       _savePresetList(_presetList);
@@ -4939,6 +4944,7 @@ function initPanel() {
   function _addPresetEntries(entries) {
     var list = document.getElementById('all-presets-list');
     if (!list || !entries.length) return;
+    _presetSearchSet(''); // so the new tiles are on show
     entries.forEach(function(p) {
       _presetList.push(p);
       var btn = _buildPresetBtn(p);
@@ -5591,11 +5597,127 @@ function _fitGoForUndo() {
   goBtn.style.paddingRight = shown ? '28px' : '';
 }
 
+// ─── Preset search (2026-11-23) ───────────────────────────────
+// The box in the preset bar (#preset-search) filters the tiles by name as it is
+// typed: every word has to appear in the name, case ignored. A tile that misses
+// carries _ocFiltered (CEP: hidden here); the
+// update tile shows only with no search. While a search is on, the box takes
+// the theme colour (its outline, the icon and an "n of N" count) and the clear
+// cross shows; a search with no match puts a line over the empty list. Esc in
+// the box clears it (a second Esc leaves the box), Enter clicks the first tile
+// left. Adding a preset (New, Paste, Import) clears the search so the new tile
+// is on show. Session only. _applyPresetLayout marks the tiles on every pass.
+var _presetQuery = '';
+var _psSig = '';
+var _psLastRes = { shown: 0, total: 0 };
+function _presetWords() {
+  return _presetQuery.toLowerCase().split(/\s+/).filter(function(w) { return !!w; });
+}
+function _presetFilterMark() {
+  var list = document.getElementById('all-presets-list');
+  var res = { shown: 0, total: 0 };
+  if (!list) return res;
+  var words = _presetWords();
+  var tiles = list.querySelectorAll('.preset-btn');
+  for (var i = 0; i < tiles.length; i++) {
+    var b = tiles[i], f = false;
+    if (b.id === '_update-notif') f = words.length > 0;
+    else {
+      var n = b.querySelector('.preset-name'), t = n ? String(n.textContent).toLowerCase() : '';
+      for (var k = 0; k < words.length; k++) if (t.indexOf(words[k]) < 0) { f = true; break; }
+      res.total++;
+      if (!f) res.shown++;
+    }
+    b._ocFiltered = f;
+    if (!b.classList.contains('preset-dragging')) { var d = f ? 'none' : ''; if (b.style.display !== d) b.style.display = d; }
+  }
+  _presetSearchSync(res);
+  return res;
+}
+function _presetSearchSync(res) {
+  if (res) _psLastRes = res; else res = _psLastRes;
+  var box = document.getElementById('preset-search');
+  if (!box) return;
+  var on = _presetWords().length > 0;
+  var col = /^#[0-9a-fA-F]{6}$/.test(_curveColor) ? _curveColor : '#ffffff';
+  var sig = (on ? 1 : 0) + '|' + col + '|' + res.shown + '|' + res.total + '|' + _presetQuery;
+  if (sig === _psSig) return; // every write below is behind this
+  _psSig = sig;
+  box.style.backgroundColor = on ? _hexToRgba(col, 0.8) : '';
+  var ic = box.querySelector('.ps-icon');
+  if (ic) {
+    var parts = ic.querySelectorAll('circle, line');
+    for (var i = 0; i < parts.length; i++) parts[i].setAttribute('stroke', on ? col : '#8c8c8c');
+  }
+  var cnt = document.getElementById('preset-search-count');
+  if (cnt) {
+    cnt.style.display = on ? '' : 'none';
+    if (on) { cnt.textContent = res.shown + ' of ' + res.total; cnt.style.color = col; }
+  }
+  var clr = document.getElementById('preset-search-clear');
+  if (clr) clr.style.display = _presetQuery ? 'flex' : 'none';
+  var empty = document.getElementById('preset-search-empty');
+  if (empty) {
+    var none = on && res.shown === 0;
+    empty.style.display = none ? '' : 'none';
+    if (none) {
+      var q = _presetQuery.trim();
+      if (q.length > 30) q = q.slice(0, 29) + '\u2026';
+      empty.textContent = 'No presets match \u201c' + q + '\u201d';
+    }
+  }
+}
+function _psRelayout() {
+  _applyPresetLayout(true); // marks and hides the tiles
+  var list = document.getElementById('all-presets-list');
+  if (list) list.scrollTop = 0;
+  _presetUpdateFade();
+}
+function _presetSearchSet(q) {
+  q = String(q || '');
+  var inp = document.getElementById('preset-search-input');
+  if (inp && inp.value !== q) inp.value = q;
+  if (q === _presetQuery) return;
+  _presetQuery = q;
+  _psRelayout();
+}
+function _presetSearchInit() {
+  var box = document.getElementById('preset-search');
+  var inp = document.getElementById('preset-search-input');
+  var clr = document.getElementById('preset-search-clear');
+  if (!box || !inp || box._ocWired) return;
+  box._ocWired = true;
+  function fromInput() { _presetSearchSet(inp.value); }
+  inp.addEventListener('input', fromInput);
+  inp.addEventListener('keyup', fromInput); // a host that sends no input event
+  inp.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' || e.keyCode === 27) {
+      e.preventDefault();
+      if (_presetQuery) _presetSearchSet(''); else { try { inp.blur(); } catch(_) {} }
+    } else if (e.key === 'Enter' || e.keyCode === 13) {
+      e.preventDefault();
+      _pressPreset(0); // the first tile left
+    }
+  });
+  // A press anywhere on the box types into it (the key sink's own deferred
+  // grab is queued first, so this one wins)
+  box.addEventListener('pointerdown', function(e) {
+    if (e.target === inp || (clr && clr.contains(e.target))) return;
+    setTimeout(function() { try { inp.focus(); } catch(_) {} }, 0);
+  });
+  if (clr) {
+    clr.addEventListener('click', function(e) { e.stopPropagation(); _presetSearchSet(''); });
+    _attachTooltip(clr, 'Clear search (Esc)');
+  }
+  _presetFilterMark();
+}
+
 var _TILE_GAP = 6; // the list's ground between preset tiles and round the list's edges
 function _applyPresetLayout(force) {
   _styleLayoutBtn();
   var list = document.getElementById('all-presets-list');
   if (!list) return;
+  _presetFilterMark(); // the search: hides the tiles it leaves out
   var isGrid = _presetLayout === 'grid';
   var w = list.offsetWidth || 180;
   // Grid: 3 columns from 220px, else 2. List: two columns side by side once
@@ -5829,6 +5951,7 @@ function _hexToRgba(hex, alpha) {
 
 function _applyCurveColor(color) {
   _curveColor = color;
+  _presetSearchSync(); // an active search box wears the theme colour
   var el = document.getElementById('sg-curve');
   if (el) el.setAttribute('stroke', color);
   var dg = document.getElementById('sg-drag-ghost');
