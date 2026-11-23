@@ -4772,9 +4772,12 @@ function initPanel() {
       var after = null;
       if (isGrid) {
         // Insert before the tile the cursor is over (the dragged item takes its place)
+        // (each tile's hit box takes half the gap round it, so the gaps between
+        // separate tiles never read as empty space)
+        var hg = _TILE_GAP / 2;
         for (var i = 0; i < items.length; i++) {
           var r = items[i].getBoundingClientRect();
-          if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+          if (e.clientX >= r.left - hg && e.clientX <= r.right + hg && e.clientY >= r.top - hg && e.clientY <= r.bottom + hg) {
             after = items[i];
             break;
           }
@@ -5588,6 +5591,7 @@ function _fitGoForUndo() {
   goBtn.style.paddingRight = shown ? '28px' : '';
 }
 
+var _TILE_GAP = 6; // the list's ground between preset tiles and round the list's edges
 function _applyPresetLayout(force) {
   _styleLayoutBtn();
   var list = document.getElementById('all-presets-list');
@@ -5603,20 +5607,24 @@ function _applyPresetLayout(force) {
   var cacheKey = (isGrid ? 'g' : 'l') + cols + '_' + btnCount;
   if (!force && _applyPresetLayout._lastKey === cacheKey) return;
   _applyPresetLayout._lastKey = cacheKey;
-  var itemW = multi ? (100/cols).toFixed(3) + '%' : '100%';
+  // Separate tiles (2026-11-23): _TILE_GAP of the list's ground round every
+  // tile, as flex gap and padding in the multi-column views, as a bottom margin
+  // in the one-column list (the drop line sits in a block list there)
+  var G = _TILE_GAP, gapPx = G + 'px';
+  var itemW = multi ? 'calc((100% - ' + ((cols - 1) * G) + 'px) / ' + cols + ')' : '100%';
   var thumbSz = isGrid ? (cols >= 3 ? 40 : 42) : 28;
 
   if (multi) {
     list.style.display = 'flex';
     list.style.flexWrap = 'wrap';
     list.style.alignContent = 'flex-start';
-    list.style.padding = '0';
-    list.style.gap = '0';
+    list.style.padding = gapPx;
+    list.style.gap = gapPx;
   } else {
     list.style.display = '';
     list.style.flexWrap = '';
     list.style.alignContent = '';
-    list.style.padding = '';
+    list.style.padding = gapPx + ' ' + gapPx + ' 0';
     list.style.gap = '';
   }
 
@@ -5667,7 +5675,7 @@ function _applyPresetLayout(force) {
       btn.style.whiteSpace = '';
       btn.style.minHeight = '';
       btn.style.marginRight = '';
-      btn.style.marginBottom = '';
+      btn.style.marginBottom = gapPx;
     }
   });
 

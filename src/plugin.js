@@ -7733,9 +7733,12 @@ function initPanel() {
       var after = null;
       if (isGrid) {
         // Insert before the tile the cursor is over (the dragged item takes its place)
+        // (each tile's hit box takes half the gap round it, so the gaps between
+        // separate tiles never read as empty space)
+        var hg = _TILE_GAP / 2;
         for (var i = 0; i < items.length; i++) {
           var r = items[i].getBoundingClientRect();
-          if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+          if (e.clientX >= r.left - hg && e.clientX <= r.right + hg && e.clientY >= r.top - hg && e.clientY <= r.bottom + hg) {
             after = items[i];
             break;
           }
@@ -8933,11 +8936,19 @@ function _applyPresetLayout(force) {
   // _updateGridCols. The list is a page, not a scroller.
   var panel = list.parentNode, panelH = panel ? panel.clientHeight : 0;
   var tileH = isGrid ? thumbSz + 34 : _TILE_H_LIST;
-  var rows = Math.max(1, Math.floor((panelH - _PAGER_H) / tileH));
+  // Separate tiles (2026-11-23): _TILE_GAP of the list's ground round every
+  // tile. The list is padded by the gap at its top and left and each tile has
+  // the gap as its right and bottom margin (only bottom margins, so a block
+  // list collapses nothing; UXP has no flex gap), with widths in whole pixels
+  // because UXP has no calc(); so a row takes tileH + gap
+  var G = _TILE_GAP;
+  var rows = Math.max(1, Math.floor((panelH - _PAGER_H - G) / (tileH + G)));
+  var listW = list.clientWidth || w;
+  var tileW = Math.max(20, Math.floor((listW - G) / cols) - G);
   _presetPerPage = rows * cols;
   _presetRows = rows; _presetPanelH = panelH; _presetTileH = tileH; // for the row stretch in _presetPageApply
   _presetGridThumb = isGrid ? thumbSz : 0;
-  var cacheKey = (isGrid ? 'g' : 'l') + cols + '_' + btnCount + '_' + _presetPerPage;
+  var cacheKey = (isGrid ? 'g' : 'l') + cols + '_' + btnCount + '_' + _presetPerPage + '_' + tileW;
   if (!force && _applyPresetLayout._lastKey === cacheKey) { _presetPageApply(); return; }
   _applyPresetLayout._lastKey = cacheKey;
   // Only past the cache check: UXP fires the list's ResizeObserver on every
@@ -8945,25 +8956,25 @@ function _applyPresetLayout(force) {
   // relayout the panel, which left the list unresponsive after scrolling
   // (the v1.2.0 "smoother scrolling" bug, back when the toolbar button arrived)
   _styleLayoutBtn();
-  var itemW = multi ? (100/cols).toFixed(3) + '%' : '100%';
+  var itemW = tileW + 'px', gapPx = G + 'px';
 
   // List container
+  list.style.padding = gapPx + ' 0 0 ' + gapPx;
   if (multi) {
     list.style.display = 'flex';
     list.style.flexWrap = 'wrap';
     list.style.alignContent = 'flex-start';
-    list.style.padding = '0';
     list.style.gap = '0';
   } else {
     list.style.display = '';
     list.style.flexWrap = '';
     list.style.alignContent = '';
-    list.style.padding = '';
     list.style.gap = '';
   }
 
   // Each preset button
   list.querySelectorAll('.preset-btn').forEach(function(btn) {
+    btn.style.flexShrink = '0';
     if (isGrid) {
       btn.style.width = itemW;
       btn.style.flexDirection = 'column';
@@ -8971,8 +8982,8 @@ function _applyPresetLayout(force) {
       btn.style.justifyContent = 'center'; // rows are stretched to fill the page, content stays centred
       btn.style.border = 'none';
       btn.style.borderBottom = 'none';
-      btn.style.marginRight = '0';
-      btn.style.marginBottom = '0';
+      btn.style.marginRight = gapPx;
+      btn.style.marginBottom = gapPx;
       btn.style.textAlign = 'center';
       btn.style.gap = '0';
       btn.style.alignItems = 'center';
@@ -8988,8 +8999,8 @@ function _applyPresetLayout(force) {
       btn.style.padding = '';
       btn.style.border = '';
       btn.style.borderBottom = '';
-      btn.style.marginRight = '0';
-      btn.style.marginBottom = '0';
+      btn.style.marginRight = gapPx;
+      btn.style.marginBottom = gapPx;
       btn.style.textAlign = '';
       btn.style.gap = '';
       btn.style.alignItems = '';
@@ -8999,7 +9010,7 @@ function _applyPresetLayout(force) {
       btn.style.minHeight = '';
       btn.style.justifyContent = '';
     } else {
-      btn.style.width = '';
+      btn.style.width = itemW;
       btn.style.flexDirection = '';
       btn.style.padding = '';
       btn.style.borderBottom = '';
@@ -9012,8 +9023,8 @@ function _applyPresetLayout(force) {
       btn.style.whiteSpace = '';
       btn.style.minHeight = '';
       btn.style.justifyContent = '';
-      btn.style.marginRight = '';
-      btn.style.marginBottom = '';
+      btn.style.marginRight = gapPx;
+      btn.style.marginBottom = gapPx;
     }
   });
 
@@ -9141,7 +9152,8 @@ function _updateGridCols(entries) {
 // input hold on the list, which is the point) flip pages; hovering an arrow
 // during a drag flips after _PAGE_FLIP_MS and keeps flipping while it stays.
 var _PAGER_H      = 26;   // the pager row's CSS height
-var _TILE_H_LIST  = 45;   // list row: 28px thumb + 16px padding + 1px border
+var _TILE_H_LIST  = 44;   // list row: 28px thumb + 16px padding
+var _TILE_GAP     = 6;    // the list's ground between tiles and round the page's edges
 var _PAGE_FLIP_MS = 600;  // hover on a pager arrow while dragging a tile
 var _presetPage    = 0;
 var _presetPerPage = 1;
@@ -9171,9 +9183,11 @@ function _presetPageApply() {
   // while it shows) over the rows that fit it, so no empty band is left under
   // the last row. The same height on every page, so a short last page keeps
   // its tiles the size of the others. Unknown height (first render): none set.
+  // Each row is a tile plus _TILE_GAP under it, after the list's top padding.
+  var G = _TILE_GAP;
   var listH = pages > 1 ? _presetPanelH - _PAGER_H : _presetPanelH;
-  var rowsFit = pages > 1 ? _presetRows : Math.max(1, Math.floor(_presetPanelH / _presetTileH));
-  var rowPx = listH > 0 ? listH / rowsFit : 0;
+  var rowsFit = pages > 1 ? _presetRows : Math.max(1, Math.floor((_presetPanelH - G) / (_presetTileH + G)));
+  var rowPx = listH > 0 ? Math.max(_presetTileH, (listH - G) / rowsFit - G) : 0;
   var rowH = rowPx ? rowPx.toFixed(2) + 'px' : '';
   // Grid: centre the thumbnail + name in the stretched row through the top
   // padding (UXP's flex justify-content left them at the top)

@@ -441,14 +441,14 @@ input, textarea {
 }
 
 /* ─── Preset buttons ────────────────────────────────────────── */
-/* Chromium draws the translucent white --border as a light line here; UXP
-   renders it dark. Use an explicit dark divider so the two editions match. */
+/* Separate tiles (2026-11-23): each tile is its own filled box with rounded
+   corners, with the list's ground between them (the gap is set inline by
+   _applyPresetLayout). No divider line any more. */
 .preset-btn {
   width: 100%;
   padding: 8px 8px;
   border: none;
-  border-bottom: 1px solid rgba(0,0,0,0.4);
-  border-radius: 0;
+  border-radius: 6px;
   -webkit-appearance: none;
   appearance: none;
   color: #d4d4d4;
@@ -478,7 +478,7 @@ input, textarea {
    left of a tile is a little brighter than its colour. background-color is set
    separately so a host that drops the gradient still shows the plain fill. */
 .preset-btn {
-  background-color: transparent;
+  background-color: #1c1c1c;
   background-image: linear-gradient(to right, rgba(255,255,255,0.045), rgba(255,255,255,0));
 }
 
