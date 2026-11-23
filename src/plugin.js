@@ -8937,12 +8937,13 @@ function _applyPresetLayout(force) {
   var panel = list.parentNode, panelH = panel ? panel.clientHeight : 0;
   var tileH = isGrid ? thumbSz + 34 : _TILE_H_LIST;
   // Separate tiles (2026-11-23): _TILE_GAP of the list's ground round every
-  // tile. The list is padded by the gap at its top and left and each tile has
+  // tile. The list is padded by the gap at its left (none at the top: the
+  // toolbar's own 5px bottom padding is the gap there) and each tile has
   // the gap as its right and bottom margin (only bottom margins, so a block
   // list collapses nothing; UXP has no flex gap), with widths in whole pixels
   // because UXP has no calc(); so a row takes tileH + gap
   var G = _TILE_GAP;
-  var rows = Math.max(1, Math.floor((panelH - _PAGER_H - G) / (tileH + G)));
+  var rows = Math.max(1, Math.floor((panelH - _PAGER_H) / (tileH + G)));
   var listW = list.clientWidth || w;
   var tileW = Math.max(20, Math.floor((listW - G) / cols) - G);
   _presetPerPage = rows * cols;
@@ -8959,7 +8960,7 @@ function _applyPresetLayout(force) {
   var itemW = tileW + 'px', gapPx = G + 'px';
 
   // List container
-  list.style.padding = gapPx + ' 0 0 ' + gapPx;
+  list.style.padding = '0 0 0 ' + gapPx;
   if (multi) {
     list.style.display = 'flex';
     list.style.flexWrap = 'wrap';
@@ -9183,11 +9184,11 @@ function _presetPageApply() {
   // while it shows) over the rows that fit it, so no empty band is left under
   // the last row. The same height on every page, so a short last page keeps
   // its tiles the size of the others. Unknown height (first render): none set.
-  // Each row is a tile plus _TILE_GAP under it, after the list's top padding.
+  // Each row is a tile plus _TILE_GAP under it (the list has no top padding).
   var G = _TILE_GAP;
   var listH = pages > 1 ? _presetPanelH - _PAGER_H : _presetPanelH;
-  var rowsFit = pages > 1 ? _presetRows : Math.max(1, Math.floor((_presetPanelH - G) / (_presetTileH + G)));
-  var rowPx = listH > 0 ? Math.max(_presetTileH, (listH - G) / rowsFit - G) : 0;
+  var rowsFit = pages > 1 ? _presetRows : Math.max(1, Math.floor(_presetPanelH / (_presetTileH + G)));
+  var rowPx = listH > 0 ? Math.max(_presetTileH, listH / rowsFit - G) : 0;
   var rowH = rowPx ? rowPx.toFixed(2) + 'px' : '';
   // Grid: centre the thumbnail + name in the stretched row through the top
   // padding (UXP's flex justify-content left them at the top)

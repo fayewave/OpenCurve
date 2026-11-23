@@ -5609,7 +5609,8 @@ function _applyPresetLayout(force) {
   _applyPresetLayout._lastKey = cacheKey;
   // Separate tiles (2026-11-23): _TILE_GAP of the list's ground round every
   // tile, as flex gap and padding in the multi-column views, as a bottom margin
-  // in the one-column list (the drop line sits in a block list there)
+  // in the one-column list (the drop line sits in a block list there). No top
+  // padding: the toolbar's own 5px bottom padding is the gap above the first row
   var G = _TILE_GAP, gapPx = G + 'px';
   var itemW = multi ? 'calc((100% - ' + ((cols - 1) * G) + 'px) / ' + cols + ')' : '100%';
   var thumbSz = isGrid ? (cols >= 3 ? 40 : 42) : 28;
@@ -5618,13 +5619,13 @@ function _applyPresetLayout(force) {
     list.style.display = 'flex';
     list.style.flexWrap = 'wrap';
     list.style.alignContent = 'flex-start';
-    list.style.padding = gapPx;
+    list.style.padding = '0 ' + gapPx + ' ' + gapPx;
     list.style.gap = gapPx;
   } else {
     list.style.display = '';
     list.style.flexWrap = '';
     list.style.alignContent = '';
-    list.style.padding = gapPx + ' ' + gapPx + ' 0';
+    list.style.padding = '0 ' + gapPx;
     list.style.gap = '';
   }
 
