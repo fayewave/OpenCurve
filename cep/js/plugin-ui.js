@@ -837,7 +837,8 @@ function _stylePeakBtn() {
   // mode stays visible while the A-curve button itself is hidden
   var mb = document.getElementById('graph-tools-menu');
   if (mb) {
-    var tint = (_peakMode || _bounceMode) && btn.style.display === 'none'; // Bounce mode's button collapses with it
+    var bnBtn = document.getElementById('bounce-mode'); // the side column hides its buttons one by one, from the bottom
+    var tint = (_peakMode && btn.style.display === 'none') || (_bounceMode && !!bnBtn && bnBtn.style.display === 'none');
     mb.style.backgroundColor = tint ? 'rgba(61,220,132,0.18)' : '';
     mb.style.color      = tint ? '#3ddc84' : '';
   }
@@ -1082,7 +1083,7 @@ function _bnPlaceDots(W, H) {
     // as running underneath the buttons rather than showing through their
     // translucent fills: _BN_FLOOR_X0 on screen, mapped back through the zoom
     // (the line lives in the zoomed #sg-content; _updateContentTransform re-places it)
-    var x1 = b0.x - b0.s, sideBtn = document.getElementById('bounce-mode');
+    var x1 = b0.x - b0.s, sideBtn = document.getElementById('peak-mode'); // the column's top button, the last to hide
     if (sideBtn && sideBtn.style.display !== 'none') {
       var o = _zoomOrigin();
       x1 = Math.max(x1, o.x + (_BN_FLOOR_X0 - o.x) / _zoom);
@@ -4056,8 +4057,9 @@ function initPanel() {
 
   // The mode tools (A-curve, Bounce, Add Point) sit in a column down the graph
   // area's left side (#graph-side-tools), above the zoom button in its
-  // bottom-left corner. When the area is too short for both (_SIDE_NEED), the
-  // column's buttons hide with inline display and the graph menu lists them.
+  // bottom-left corner. When the area is too short for all of them, the
+  // column's buttons hide one by one from the bottom with inline display
+  // (_sideFits) and the graph menu lists the hidden ones.
   // The bar itself only holds the menu button and the preset chip at the left
   // and New at the right (_tbChipLayout); Full Screen sits under Zoom in the
   // graph area's bottom-left corner.
@@ -4075,8 +4077,13 @@ function initPanel() {
   var _TB_NEED = 26 + 10 + 8;
   // Column: the three mode buttons and their 5px gaps from the top + 8px air
   // + Zoom and Full Screen in the bottom-left corner, each 26px + 5px
-  var _SIDE_NEED = (3 * 26 + 2 * 5) + 8 + 2 * (26 + 5);
-  var _tbCollapsed = null;
+  // The buttons hide one at a time from the bottom (Add Point, then Bounce,
+  // then A-curve) as the area gets shorter: button i (from 0) spans
+  // 31i..31i+26 from the top and needs 8px air above Zoom and Full Screen
+  var _SIDE_BOTTOM = 8 + 2 * (26 + 5);
+  function _sideFits(h) { return Math.max(0, Math.min(_tbTools.length, Math.floor((h - _SIDE_BOTTOM - 26) / 31) + 1)); }
+  var _tbShown = null;     // how many of the column's buttons show, from the top
+  var _tbCollapsed = null; // any of them hidden
   var _tbDismiss   = null;
   function _hideToolsMenu() {
     var m = document.getElementById('_tools-menu');
@@ -4104,14 +4111,15 @@ function initPanel() {
     if (w > 0) _tbChipLayout(w);
     var h = canvasWrap ? canvasWrap.clientHeight : 0;
     if (!(h > 0)) return; // the graph is hidden
-    var collapse = h < _SIDE_NEED;
-    if (collapse === _tbCollapsed) return;
-    _tbCollapsed = collapse;
+    var shown = _sideFits(h);
+    if (shown === _tbShown) return;
+    _tbShown = shown;
+    _tbCollapsed = shown < _tbTools.length;
     // inline display: UXP ignores class-driven display changes
-    _tbTools.forEach(function(b) { if (b) b.style.display = collapse ? 'none' : ''; });
+    _tbTools.forEach(function(b, i) { if (b) { var d = i < shown ? '' : 'none'; if (b.style.display !== d) b.style.display = d; } });
     _hideToolsMenu();
     _hideZoomSlider(); // its anchor may just have been hidden
-    _stylePeakBtn(); // the menu button only carries the A-curve tint while collapsed
+    _stylePeakBtn(); // the menu button carries the mode's tint while that mode's button is hidden
     if (_bounceMode && _svgW > 0) _bnPlaceDots(_svgW, _svgH); // the floor line starts after the column only while it shows
   }
   function _showToolsMenu() {
@@ -4156,11 +4164,11 @@ function initPanel() {
     }
     var peNewM = document.getElementById('pe-new');
     if (peNewM && !_peNewShown()) item('New Preset\u2026', peNewM, function() { peNewM.click(); });
-    if (_tbCollapsed) {
-      item(_peakMode ? 'A-curve Mode: On' : 'A-curve Mode', peakBtn, function() { _setPeakMode(!_peakMode); }, { active: _peakMode });
-      item(_bounceMode ? 'Bounce Mode: On' : 'Bounce Mode', bounceBtn, function() { _setBounceMode(!_bounceMode); }, { active: _bounceMode });
-      item('Add Point', addPtBtn, function() { if (_peakMode) _setPeakMode(false); _addPoint(); });
-    }
+    // The side column's hidden buttons (it hides them from the bottom up)
+    var _hid = function(b) { return !!b && b.style.display === 'none'; };
+    if (_hid(peakBtn))   item(_peakMode ? 'A-curve Mode: On' : 'A-curve Mode', peakBtn, function() { _setPeakMode(!_peakMode); }, { active: _peakMode });
+    if (_hid(bounceBtn)) item(_bounceMode ? 'Bounce Mode: On' : 'Bounce Mode', bounceBtn, function() { _setBounceMode(!_bounceMode); }, { active: _bounceMode });
+    if (_hid(addPtBtn))  item('Add Point', addPtBtn, function() { if (_peakMode) _setPeakMode(false); _addPoint(); });
     item('Flip',      flipBtn,   function() { _applyCurveOp(_flipCurve); });
     item('Invert',    invertBtn, function() { _applyCurveOp(_invertCurve); });
     item('Numeric Entry', numBtn, function() { _showNumericPanel(); });
