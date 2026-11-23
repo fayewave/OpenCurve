@@ -1095,6 +1095,7 @@ var _BN_SLIDERS = [
   { key: 'fric', label: 'Friction', tip: 'How much each bounce loses: higher dies out faster' },
   { key: 'hit',  label: 'Hit time', tip: 'When it first reaches the end value. Drag the blue dot on the graph too' },
 ];
+var _BN_LIFT = 0; // the segments' 1px text nudge (UXP sits text low; Settings' _uxpLift)
 function _bnInit() {
   var panel = document.getElementById('bounce-panel');
   _bnInitSVG();
@@ -1102,21 +1103,29 @@ function _bnInit() {
   _bnEls = { seg: {}, sl: {} };
   panel.style.cssText = 'display:none;flex-direction:column;flex-shrink:0;padding:6px 10px 9px 10px;background:#1a1a1a;'; // its own fill, apart from the graph's #111 surround
   var top = document.createElement('div');
-  top.style.cssText = 'display:flex;align-items:center;justify-content:space-between;height:28px;margin-bottom:4px;';
+  top.style.cssText = 'display:flex;align-items:center;justify-content:space-between;height:30px;margin-bottom:4px;';
+  // Segmented pickers styled like Settings > Keyframe Spacing: a #2e2e2e
+  // outline round a 1px inset #121212 fill (filled boxes, since UXP draws CSS
+  // borders soft), 24px segments, the chosen one raised to #333
   function seg(key, items) {
     var box = document.createElement('div');
-    box.style.cssText = 'display:flex;align-items:center;height:24px;padding:2px;border-radius:5px;background-color:#252525;';
+    box.style.cssText = 'box-sizing:border-box;flex-shrink:0;height:30px;padding:1px;border-radius:6px;background-color:#2e2e2e;';
+    var inner = document.createElement('div');
+    inner.style.cssText = 'box-sizing:border-box;display:flex;flex-direction:row;height:28px;padding:2px;border-radius:5px;background-color:#121212;';
+    box.appendChild(inner);
     _bnEls.seg[key] = [];
-    items.forEach(function(it) {
+    items.forEach(function(it, idx) {
       var b = document.createElement('div');
       b.textContent = it[1];
-      b.style.cssText = 'display:flex;align-items:center;justify-content:center;height:20px;padding:0 10px;border-radius:4px;font-size:12px;cursor:pointer;color:#9a9a9a;';
+      b.style.cssText = 'display:flex;align-items:center;justify-content:center;box-sizing:border-box;height:24px;min-width:44px;padding:'
+        + (3 - _BN_LIFT) + 'px 8px ' + (3 + _BN_LIFT) + 'px;border-radius:4px;font-size:12px;line-height:18px;cursor:pointer;white-space:nowrap;color:#8c8c8c;'
+        + (idx ? 'margin-left:2px;' : '');
       b._ocVal = it[0];
       b.addEventListener('mouseenter', function() { b._ocHov = true; _bnPaintSeg(key); });
       b.addEventListener('mouseleave', function() { b._ocHov = false; _bnPaintSeg(key); });
       b.addEventListener('click', function() { var ch = {}; ch[key] = it[0]; _bnSet(ch, false); });
       if (it[2]) _attachTooltip(b, it[2]);
-      box.appendChild(b);
+      inner.appendChild(b);
       _bnEls.seg[key].push(b);
     });
     return box;
@@ -1241,7 +1250,7 @@ function _bnLayout() {
 function _bnPaintSeg(key) {
   (_bnEls && _bnEls.seg[key] || []).forEach(function(b) {
     var on = _bnOpts[key] === b._ocVal;
-    var bg = on ? '#3d3d3d' : b._ocHov ? '#2f2f2f' : 'transparent', col = on ? '#ffffff' : b._ocHov ? '#d4d4d4' : '#9a9a9a';
+    var bg = on ? '#333333' : b._ocHov ? '#222222' : 'transparent', col = on ? '#ffffff' : '#8c8c8c';
     if (b._ocBg !== bg) { b._ocBg = bg; b.style.backgroundColor = bg; }
     if (b._ocCol !== col) { b._ocCol = col; b.style.color = col; }
   });
