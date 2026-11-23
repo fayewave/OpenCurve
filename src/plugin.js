@@ -697,6 +697,36 @@ function _mkPtEls() {
   a.appendChild(inner); a.appendChild(sq);
   return { li: line(), lo: line(), hi: handle(), ho: handle(), a: a, inner: inner, sq: sq };
 }
+// Handle hover highlight: the handle (or added point) under the pointer, or
+// the one being dragged, draws a thicker stroke. Only SVG attributes are
+// written (cheap in UXP, unlike HTML), and only when the hovered handle
+// changes. Descriptors as hitTest returns them: {k:'p1'|'p2'|'in'|'out'|'a', i}.
+var _HANDLE_SW = '1.5', _HANDLE_SW_HOT = '4';  // the white disc's ring (#sg-h1 / #sg-h2 and added handles)
+var _ANCHOR_SW = '2',   _ANCHOR_SW_HOT = '3.5'; // added points' circle / square
+var _hoverKey = '', _hoverEls = [];
+function _handleHoverEls(d) {
+  if (!d) return [];
+  if (d.k === 'p1' || d.k === 'p2') {
+    var g = document.getElementById(d.k === 'p1' ? 'sg-h1' : 'sg-h2');
+    var gc = g ? g.querySelectorAll('circle') : [];
+    return gc.length > 1 ? [[gc[1], _HANDLE_SW, _HANDLE_SW_HOT]] : [];
+  }
+  var e = _ptEls[d.i];
+  if (!e) return [];
+  if (d.k === 'a') return [[e.inner, _ANCHOR_SW, _ANCHOR_SW_HOT], [e.sq, _ANCHOR_SW, _ANCHOR_SW_HOT]];
+  var h = d.k === 'in' ? e.hi : e.ho;
+  var hc = h ? h.querySelectorAll('circle') : [];
+  return hc.length > 1 ? [[hc[1], _HANDLE_SW, _HANDLE_SW_HOT]] : []; // [0] the halo, [1] the white disc
+}
+function _setHandleHover(d) {
+  var key = d ? d.k + (d.i != null ? d.i : '') : '';
+  if (key === _hoverKey && (!key || (_hoverEls[0] && _hoverEls[0][0].parentNode))) return;
+  _hoverEls.forEach(function(x) { x[0].setAttribute('stroke-width', x[1]); });
+  _hoverKey = key;
+  _hoverEls = _handleHoverEls(d);
+  _hoverEls.forEach(function(x) { x[0].setAttribute('stroke-width', x[2]); });
+}
+
 function _updatePtsSVG(curve, W, H) {
   var lines = document.getElementById('sg-pts-lines'), g = document.getElementById('sg-pts');
   if (!lines || !g) return;
@@ -1875,6 +1905,7 @@ function initGraphEditor(svg) {
     }
     svg.setPointerCapture(e.pointerId);
     dragging    = hit;
+    _setHandleHover(hit); // the dragged handle stays highlighted
     _lastHandle = hit; // arrow keys nudge this one
     liveCurve   = _cloneCurve(getState().curve);
     dragRect    = svg.getBoundingClientRect();
@@ -1892,15 +1923,18 @@ function initGraphEditor(svg) {
     if (dragging === 'peak') { _applyPeakPointer(e); return; }
     if (dragging === 'bn-hit' || dragging === 'bn-top') { _applyBnPointer(e); return; }
     if (!dragging) {
-      if (_peakMode) { setCursor('crosshair'); return; }
+      if (_peakMode) { _setHandleHover(null); setCursor('crosshair'); return; }
       if (_bounceMode) {
+        _setHandleHover(null);
         var hr = svg.getBoundingClientRect();
         var hw = _bnDotAt(_unscale(e.clientX - hr.left, e.clientY - hr.top), HANDLE_R + HIT_TOLERANCE + 4);
         setCursor(hw === 'hit' ? 'ew-resize' : hw === 'top' ? 'ns-resize' : 'pointer');
         return;
       }
       var curveH = liveCurve || getState().curve;
-      setCursor(hitTest(e, svg.getBoundingClientRect(), curveH) ? 'grab' : 'crosshair');
+      var hovHit = hitTest(e, svg.getBoundingClientRect(), curveH);
+      _setHandleHover(hovHit);
+      setCursor(hovHit ? 'grab' : 'crosshair');
       return;
     }
     dragMoved = true;
@@ -1962,7 +1996,7 @@ function initGraphEditor(svg) {
     }
   }
 
-  function endDrag() {
+  function endDrag(e) {
     if (!dragging) return;
     _isDragging = false;
     _setSnapBg(false);
@@ -1984,9 +2018,13 @@ function initGraphEditor(svg) {
     liveCurve = null;
     dragRect  = null;
     setCursor('crosshair');
+    // Whatever is under the pointer at release stays lit (the dragged handle
+    // usually is); a release off the graph clears it
+    _setHandleHover(e && e.clientX != null && !e._ocSynth ? hitTest(e) : null);
   }
 
   svg.addEventListener('pointerup',     endDrag);
+  svg.addEventListener('pointerleave', function() { if (!dragging) _setHandleHover(null); });
   svg.addEventListener('pointercancel', endDrag);
 
   // UXP never delivers key events to window or document (see CLAUDE.md), so
