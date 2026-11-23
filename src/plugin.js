@@ -2429,7 +2429,9 @@ async function _clipInPoint(clip) {
 }
 
 
-async function _findQualifiedParams(chain, phLocal) {
+// kp: prefix for the row keys ('a' on an audio clip, see _detectContextFull)
+async function _findQualifiedParams(chain, phLocal, kp) {
+  kp = kp || '';
   var qualified = [];
   var compCount = 0;
   try { compCount = await _call(chain, 'getComponentCount'); }
@@ -2477,7 +2479,7 @@ async function _findQualifiedParams(chain, phLocal) {
       var label = live || _fallbackLabel(displayName);
       var kfSecs = [];
       for (var ks = 0; ks < kfArr.length; ks++) kfSecs.push(kfArr[ks].seconds);
-      qualified.push({ key: i+'_'+j, displayName: displayName, label: label, live: !!live, matchName: matchName,
+      qualified.push({ key: kp+i+'_'+j, displayName: displayName, label: label, live: !!live, matchName: matchName,
                        param: param, comp: comp, paramIdx: j,
                        // val0 is the value at kf0 this loop already read; the bake
                        // context below used to fetch the same value a second time
@@ -3085,12 +3087,11 @@ function _jumpPair(kfSecs, phLocal, fps) {
 }
 
 async function _detectContextFull(project, sequence, ph, selItems) {
-  var bestQualified = null;
-  var bestFound     = null;
-  var recFloor      = _bakeSeq; // records newer than this scan aren't judged by it
+  var recFloor = _bakeSeq; // records newer than this scan aren't judged by it
 
   // In-point, media in-point and speed of a candidate clip, then its keyframed
-  // properties around the playhead's media time
+  // properties around the playhead's media time. Audio rows get keys starting
+  // with 'a', so a linked clip's two parts never share a row key.
   async function tryClip(c) {
     c.clipIn = await _clipInPoint(c.clip); // the raw value: part of the bake records' clip identity
     var end  = typeof c.clipEnd === 'number' ? c.clipEnd : await _clipEnd(c.clip);
@@ -3099,143 +3100,161 @@ async function _detectContextFull(project, sequence, ph, selItems) {
     c.srcIn  = tm.srcIn;
     c.speed  = tm.speed;
     var phLocal = _toMedia({ clipStart: c.clipStart || 0, clipIn: c.srcIn, speed: c.speed }, ph);
-    return await _findQualifiedParams(c.chain, phLocal);
+    return await _findQualifiedParams(c.chain, phLocal, c.isAudio ? 'a' : '');
+  }
+  function anyHere(qp) { return qp.some(function(p) { return !p.isOutside; }); }
+  // The first candidate whose keyframes surround the playhead, else the first
+  // with any keyframed property: { qp, c } or null
+  async function pick(cands) {
+    var fb = null;
+    for (var i = 0; i < cands.length; i++) {
+      var qp = await tryClip(cands[i]);
+      if (!qp.length) continue;
+      if (anyHere(qp)) return { qp: qp, c: cands[i] };
+      if (!fb) fb = { qp: qp, c: cands[i] };
+    }
+    return fb;
   }
 
-  // 1. Try the selected clips first (video, then audio) — fast path, avoids the
-  // expensive track scan. selItems comes from detectContext, which has already
-  // fetched it this poll.
-  // Among the SELECTED clips, one whose keyframes surround the playhead wins
-  // over one whose keyframes are all elsewhere (a linked clip's audio fade is
-  // offered while its video keyframes are somewhere else); the first selected
-  // clip with keyframes is the fallback.
-  var fallback = null;
-  async function consider(c) {
-    var qp = await tryClip(c);
-    if (!qp.length) return false;
-    if (qp.some(function(p) { return !p.isOutside; })) { bestQualified = qp; bestFound = c; return true; }
-    if (!fallback) fallback = { qp: qp, c: c };
-    return false;
-  }
+  // 1. The selected clips first (fast path, avoids the track scan). selItems
+  // comes from detectContext, which has already fetched it this poll.
   var selc = { here: [], elsewhere: null };
   try { selc = await _selCandidates(sequence, selItems, ph); } catch(_) {}
   var sels = selc.here.length ? selc.here : (selc.elsewhere ? [selc.elsewhere] : []);
-  for (var si = 0; si < sels.length; si++) {
-    if (await consider(sels[si])) break;
-  }
-  // A selected VIDEO clip is respected: no other clip's keyframes are shown. A
-  // selected audio clip alone isn't: a music bed left selected would otherwise
-  // hide every keyframed video clip. It wins while the playhead is inside one
-  // of its keyframe pairs; otherwise the video tracks are scanned as usual.
+  // A selected VIDEO clip is respected: no other clip's keyframes are shown.
   var respectSel = sels.some(function(c) { return !c.isAudio; });
-
-  // 2. Track scan (video tracks only), exactly as before 2.0.2: the topmost
-  // clip under the playhead that has a keyframed property wins.
+  var parts = [];
   var scanned = [];
-  if (!bestQualified && !respectSel) {
-    try { scanned = await _clipsViaTrackScan(sequence, ph); } catch(_) {}
-    for (var ci = 0; ci < scanned.length; ci++) {
-      var sqp = await tryClip(scanned[ci]);
-      if (sqp.length > 0) { bestQualified = sqp; bestFound = scanned[ci]; break; }
+  if (respectSel) {
+    // The selected video clip and the selected audio clip (a linked clip
+    // selects both) each give their rows, video first. Until 2026-11-23 only
+    // one did, whichever had a pair around the playhead, so clicking along a
+    // clip with Scale and Volume keyframes flipped the rows between the two.
+    // Among several selected clips of one kind, one whose keyframes surround
+    // the playhead still beats one whose keyframes are all elsewhere.
+    var pv = await pick(sels.filter(function(c) { return !c.isAudio; }));
+    var pa = await pick(sels.filter(function(c) { return c.isAudio; }));
+    if (pv) parts.push(pv);
+    if (pa) parts.push(pa);
+  } else {
+    // A selected audio clip alone isn't respected that way: a music bed left
+    // selected would otherwise hide every keyframed video clip. It wins while
+    // the playhead is inside one of its keyframe pairs; otherwise the video
+    // tracks are scanned exactly as before 2.0.2 (the topmost clip under the
+    // playhead with a keyframed property wins), and it is the fallback.
+    var pa2 = await pick(sels);
+    if (pa2 && anyHere(pa2.qp)) parts.push(pa2);
+    else {
+      try { scanned = await _clipsViaTrackScan(sequence, ph); } catch(_) {}
+      for (var ci = 0; ci < scanned.length; ci++) {
+        var sqp = await tryClip(scanned[ci]);
+        if (sqp.length > 0) { parts.push({ qp: sqp, c: scanned[ci] }); break; }
+      }
+      if (!parts.length && pa2) parts.push(pa2);
     }
   }
-  if (!bestQualified && fallback) { bestQualified = fallback.qp; bestFound = fallback.c; }
 
   // No clips found at playhead at all
   if (!sels.length && scanned.length === 0) {
     return { status: 'no-clip', availableParams: [], hint: 'No clip found at playhead position' };
   }
-
-  if (!bestQualified) {
+  if (!parts.length) {
     return { status: 'no-keyframes', availableParams: [], hint: 'No property with 2+ keyframes found on clips at playhead.' };
   }
 
-  var found = bestFound;
-  // Identity for bake records (per-row undo). Name + in-point survive moving the
-  // clip around the timeline, unlike start/end. The UXP API has no stable clip
-  // id, so a copy of the clip shares this identity; the records are also checked
-  // against the property's actual keyframes (see _bakedKeysFor), which limits
-  // any mix-up to copies that carry the same baked keyframes.
-  // Already read when this clip was picked above; one round trip, not two
-  var clipIn = typeof found.clipIn === 'number' ? found.clipIn : await _clipInPoint(found.clip);
-  var clipId = '';
   var seqKey = '';
-  var clipName = '';
   try { seqKey = String(sequence.guid || ''); } catch(_) {}
-  try { clipName = String((await found.clip.getName()) || ''); } catch(_) {}
-  clipId = seqKey + '|' + (clipName || '?') + '|' + clipIn.toFixed(4);
-
-  // Keyframe times are media time. tlInfo maps them to sequence time and back
-  // (_toSeq / _toMedia, which account for a speed change), and mfps is frames
-  // per media second, for counting frames between keyframes.
   var fps = await _fps(sequence);
-  var speed = found.speed || 1;
-  var mfps  = fps / speed;
-  // Mini timeline: the clip's extent and the playhead, all in sequence seconds;
-  // clipIn is the media in-point the keyframe times are measured against
-  var clipEnd = typeof found.clipEnd === 'number' ? found.clipEnd : await _clipEnd(found.clip);
-  var tlInfo  = { clipStart: found.clipStart || 0, clipEnd: clipEnd,
-                  clipIn: typeof found.srcIn === 'number' ? found.srcIn : clipIn, speed: speed, fps: fps, ph: ph };
-  var phMedia = _toMedia(tlInfo, ph);
-  function seq(t) { return _toSeq(tlInfo, t); }
-  var paramList   = bestQualified.map(function(p){
-    // _param: live handle for the row undo button (a proxy kept from bake time can go stale)
-    // _kf0/_kf1/_out: the playhead's bracket, so bake records only colour the row while it sits inside their span
-    var jp = _jumpPair(p.kfSecs, phMedia, mfps);
-    var entry = { key: p.key, displayName: p.displayName, label: p.label, jumpSec: seq(jp ? jp.start : p.kf0.seconds),
-                  _param: p.param, _kf: p.kfSecs, _kf0: p.kf0.seconds, _kf1: p.kf1.seconds, _out: !!p.isOutside,
-                  _fc: Math.round((p.kf1.seconds - p.kf0.seconds) * mfps),
-                  // Mini timeline lane: keyframes and the bracket in sequence seconds
-                  tlKf: p.kfSecs.map(seq),
-                  tlKf0: seq(p.kf0.seconds), tlKf1: seq(p.kf1.seconds), tlOut: !!p.isOutside };
-    // Nearest 2+ frame pair, for the status strip's click-to-jump
-    var near = _nearestPair(p.kfSecs, phMedia, mfps);
-    if (near) { entry.nearSec = seq(near.start); entry.nearDist = near.dist / speed; }
-    return entry;
-  });
-  // Which bake records hold on each row (times and values, see _evalRecords);
-  // also retires records whose bake is gone from every clip that shared it
-  var hereInfo = { start: found.clipStart || 0, trackIdx: found.trackIdx, isAudio: !!found.isAudio };
-  var retireList = await _evalRecords(clipId, paramList, sequence, hereInfo, recFloor);
-  function withRetire(o) { o._retire = retireList; o._retireSeq = sequence; o._retireHere = hereInfo; return o; }
-  var validParams = bestQualified.filter(function(p){ return !p.isOutside; });
+  var clipId = '', clipName = '', tlInfo = null, firstHere = null, hintP = null;
+  var paramList = [], validParams = [], retireList = [], paramContexts = {};
+  for (var pi = 0; pi < parts.length; pi++) {
+    var found = parts[pi].c, qp = parts[pi].qp;
+    // Identity for bake records (per-row undo). Name + in-point survive moving
+    // the clip around the timeline, unlike start/end. The UXP API has no stable
+    // clip id, so a copy of the clip shares this identity; the records are also
+    // checked against the property's actual keyframes (see _bakedKeysFor),
+    // which limits any mix-up to copies that carry the same baked keyframes.
+    // A linked clip's video and audio parts share it too: their row keys differ.
+    var pIn = typeof found.clipIn === 'number' ? found.clipIn : await _clipInPoint(found.clip);
+    var pName = '';
+    try { pName = String((await found.clip.getName()) || ''); } catch(_) {}
+    var pId = seqKey + '|' + (pName || '?') + '|' + pIn.toFixed(4);
+    // Keyframe times are media time. pTl maps them to sequence time and back
+    // (_toSeq / _toMedia, which account for a speed change), and mfps is frames
+    // per media second, for counting frames between keyframes.
+    var speed = found.speed || 1;
+    var mfps  = fps / speed;
+    var pEnd  = typeof found.clipEnd === 'number' ? found.clipEnd : await _clipEnd(found.clip);
+    var pTl   = { clipStart: found.clipStart || 0, clipEnd: pEnd,
+                  clipIn: typeof found.srcIn === 'number' ? found.srcIn : pIn, speed: speed, fps: fps, ph: ph };
+    // Mini timeline: the extent of every clip the rows come from, and the
+    // playhead, in sequence seconds; clipIn / speed are the first clip's
+    if (!tlInfo) { tlInfo = Object.assign({}, pTl); clipId = pId; clipName = pName; }
+    else {
+      if (pTl.clipStart < tlInfo.clipStart) tlInfo.clipStart = pTl.clipStart;
+      if (pTl.clipEnd > tlInfo.clipEnd) tlInfo.clipEnd = pTl.clipEnd;
+    }
+    var phMedia = _toMedia(pTl, ph);
+    var seq = (function(tl) { return function(t) { return _toSeq(tl, t); }; })(pTl);
+    var rows = qp.map(function(p) {
+      // _param: live handle for the row undo button (a proxy kept from bake time can go stale)
+      // _kf0/_kf1/_out: the playhead's bracket, so bake records only colour the row while it sits inside their span
+      // clipId / _tlP / clipT: the row's own clip (its records, its time mapping)
+      var jp = _jumpPair(p.kfSecs, phMedia, mfps);
+      var entry = { key: p.key, displayName: p.displayName, label: p.label, jumpSec: seq(jp ? jp.start : p.kf0.seconds),
+                    clipId: pId, _tlP: pTl, clipT: [pTl.clipStart, pTl.clipIn, speed],
+                    _param: p.param, _kf: p.kfSecs, _kf0: p.kf0.seconds, _kf1: p.kf1.seconds, _out: !!p.isOutside,
+                    _fc: Math.round((p.kf1.seconds - p.kf0.seconds) * mfps),
+                    // Mini timeline lane: keyframes and the bracket in sequence seconds
+                    tlKf: p.kfSecs.map(seq),
+                    tlKf0: seq(p.kf0.seconds), tlKf1: seq(p.kf1.seconds), tlOut: !!p.isOutside };
+      // Nearest 2+ frame pair, for the status strip's click-to-jump
+      var near = _nearestPair(p.kfSecs, phMedia, mfps);
+      if (near) { entry.nearSec = seq(near.start); entry.nearDist = near.dist / speed; }
+      return entry;
+    });
+    // Which bake records hold on each row (times and values, see _evalRecords);
+    // also lists records whose bake is gone from every clip that shared it
+    var hereInfo = { start: found.clipStart || 0, trackIdx: found.trackIdx, isAudio: !!found.isAudio };
+    if (!firstHere) firstHere = hereInfo;
+    retireList = retireList.concat(await _evalRecords(pId, rows, sequence, hereInfo, recFloor));
+    var vps = qp.filter(function(p) { return !p.isOutside; });
+    for (var vi = 0; vi < vps.length; vi++) {
+      var vp   = vps[vi];
+      // val0 came back with the qualified entry; only the second value is new,
+      // and the two used to be fetched one after the other
+      var val0 = vp.val0 !== undefined ? vp.val0 : _extractValue(await _getValue(vp.param, vp.kf0));
+      var val1 = _extractValue(await _getValue(vp.param, vp.kf1));
+      var fc   = Math.round((vp.kf1.seconds - vp.kf0.seconds) * mfps);
+      // fps here is frames per MEDIA second (the bake steps through media time),
+      // which is the sequence rate divided by the clip's speed
+      paramContexts[vp.key] = {
+        param: vp.param, kf0: vp.kf0, kf1: vp.kf1,
+        val0: val0, val1: val1, frameCount: fc, displayName: vp.displayName, key: vp.key,
+        project: project, sequence: sequence, clip: found.clip, clipId: pId, fps: mfps, isAudio: !!found.isAudio,
+        place: { start: found.clipStart || 0, trackIdx: found.trackIdx, isAudio: !!found.isAudio },
+      };
+    }
+    // A pair inside a live bake record is that bake's own keyframes (2+ frames
+    // apart when it was written with a wider spacing), so it isn't bakeable again
+    _bakedKeysFor(pId, rows).forEach(function(k) { delete paramContexts[k]; });
+    // For the hint: a property with a real (2+ frame) range. A baked
+    // property's one-frame pairs would otherwise give a useless "302.35s – 302.36s".
+    for (var hi = 0; hi < qp.length && !hintP; hi++) {
+      if ((qp[hi].kf1.seconds - qp[hi].kf0.seconds) * mfps >= 2) hintP = qp[hi];
+    }
+    paramList = paramList.concat(rows);
+    validParams = validParams.concat(vps);
+  }
+  function withRetire(o) { o._retire = retireList; o._retireSeq = sequence; o._retireHere = firstHere; return o; }
 
   if (validParams.length === 0) {
-    // Use a property with a real (2+ frame) range for the hint. A baked
-    // property's one-frame pairs would otherwise give a useless "302.35s – 302.36s".
-    var hintP = null;
-    for (var hi = 0; hi < bestQualified.length; hi++) {
-      var hq = bestQualified[hi];
-      if ((hq.kf1.seconds - hq.kf0.seconds) * mfps >= 2) { hintP = hq; break; }
-    }
-    if (!hintP) hintP = bestQualified[0];
+    if (!hintP) hintP = parts[0].qp[0];
     return withRetire({
       status: 'outside', availableParams: paramList, validParamKeys: [], clipId: clipId, clipName: clipName, tl: tlInfo,
       hint: 'Move playhead between keyframes (' + hintP.kf0.seconds.toFixed(2) + 's – ' + hintP.kf1.seconds.toFixed(2) + 's)',
     });
   }
-  var paramContexts = {};
-  for (var vi = 0; vi < validParams.length; vi++) {
-    var vp   = validParams[vi];
-    // val0 came back with the qualified entry; only the second value is new,
-    // and the two used to be fetched one after the other
-    var val0 = vp.val0 !== undefined ? vp.val0 : _extractValue(await _getValue(vp.param, vp.kf0));
-    var val1 = _extractValue(await _getValue(vp.param, vp.kf1));
-    var fc   = Math.round((vp.kf1.seconds - vp.kf0.seconds) * mfps);
-    // fps here is frames per MEDIA second (the bake steps through media time),
-    // which is the sequence rate divided by the clip's speed
-    paramContexts[vp.key] = {
-      param: vp.param, kf0: vp.kf0, kf1: vp.kf1,
-      val0: val0, val1: val1, frameCount: fc, displayName: vp.displayName, key: vp.key,
-      project: project, sequence: sequence, clip: found.clip, fps: mfps, isAudio: !!found.isAudio,
-      place: { start: found.clipStart || 0, trackIdx: found.trackIdx, isAudio: !!found.isAudio },
-    };
-  }
-
-  // A pair inside a live bake record is that bake's own keyframes (2+ frames
-  // apart when it was written with a wider spacing), so it isn't bakeable again
-  var covered = _bakedKeysFor(clipId, paramList);
-  covered.forEach(function(k){ delete paramContexts[k]; });
   var validParamKeys = validParams
     .filter(function(p){ return paramContexts[p.key] && paramContexts[p.key].frameCount >= 2; })
     .map(function(p){ return p.key; });
@@ -3250,9 +3269,9 @@ async function _detectContextFull(project, sequence, ph, selItems) {
     });
   }
 
-  var firstCtx  = validParamKeys.length > 0 ? paramContexts[validParamKeys[0]] : null;
+  var firstCtx  = paramContexts[validParamKeys[0]];
   var hintFrames = firstCtx ? firstCtx.frameCount + ' frames' : '';
-  var selectionHint = found.viaSelection ? ' (selected clip)' : '';
+  var selectionHint = parts[0].c.viaSelection ? ' (selected clip)' : '';
 
   return withRetire({
     status: 'valid',
@@ -3537,8 +3556,12 @@ function _loadBakeRecords() {
     if (!Array.isArray(arr)) return;
     arr.forEach(function(r) {
       if (!r || typeof r.clipId !== 'string' || !Array.isArray(r.times)) return;
+      // Audio rows' keys start with 'a' since 2026-11-23 (a linked clip's video
+      // and audio rows show together); records baked on audio before that get it
+      var key = r.key;
+      if (r.place && r.place.isAudio && typeof key === 'string' && key.charAt(0) !== 'a') key = 'a' + key;
       _bakeRecords.push({
-        id: r.id || 0, batch: r.batch || 0, clipId: r.clipId, key: r.key, displayName: r.displayName || '', label: r.label || '',
+        id: r.id || 0, batch: r.batch || 0, clipId: r.clipId, key: key, displayName: r.displayName || '', label: r.label || '',
         param: null, project: null, fps: r.fps || 0, kf0Sec: r.kf0Sec, kf1Sec: r.kf1Sec,
         times: r.times, step: r.step || 1, curve: r.curve || null,
         fp: Array.isArray(r.fp) ? r.fp : null, fpTol: r.fpTol || 0, place: r.place || null, fpPending: !!r.fpPending,
@@ -3598,7 +3621,7 @@ function _recOkOn(rec, p) {
 }
 // Records that apply to this row where the playhead is now
 function _recsForRow(clipId, row, key) {
-  return _bakesFor(clipId, key).filter(function(r){ return !row || (_recForRow(r, row) && _recOkOn(r, row) && _recHere(r, row)); });
+  return _bakesFor((row && row.clipId) || clipId, key).filter(function(r){ return !row || (_recForRow(r, row) && _recOkOn(r, row) && _recHere(r, row)); });
 }
 // Newest record that applies to this row where the playhead is now
 function _bakeRecFor(s, key) {
@@ -3889,7 +3912,7 @@ async function _evalRecords(clipId, avail, sequence, here, recFloor) {
       }
       p._recBad.push(rec.id);
       if (rec.dormant) continue; // already retired
-      if (v !== 'kept') retire.push({ rec: rec, vk: vk });
+      if (v !== 'kept') retire.push({ rec: rec, vk: vk, here: here }); // here: the clip it was judged on
     }
   }
   return retire;
@@ -3907,11 +3930,12 @@ async function _applyRetire(list, sequence, here) {
   for (var k = 0; k < (list || []).length; k++) {
     var r = list[k];
     if (_bakeRecords.indexOf(r.rec) < 0) continue;
+    var rh = r.here || here; // a linked clip's audio part is judged on its own clip
     var other = null;
-    try { other = await _findRecCarrier(r.rec, sequence, here); } catch(_) {}
+    try { other = await _findRecCarrier(r.rec, sequence, rh); } catch(_) {}
     if (other) {
       _setVerdict(r.vk, 'kept');
-      if (!r.rec.place || _samePlace(here, r.rec.place)) {
+      if (!r.rec.place || _samePlace(rh, r.rec.place)) {
         r.rec.param = null;
         if (r.rec.batch > _sessionBatchFloor) { r.rec.batch = 0; _saveBakeRecords(); _showUndoBtn(_hasSessionBakes()); }
       }
@@ -3957,7 +3981,7 @@ function _parseClipId(clipId) {
 // (component and parameter index) when the name still matches, else the same
 // parameter index in any component whose name for it matches
 async function _paramForRec(chain, rec) {
-  var parts = String(rec.key || '').split('_');
+  var parts = String(rec.key || '').replace(/^a/, '').split('_'); // 'a': an audio clip's row
   var ci = parseInt(parts[0], 10), pj = parseInt(parts[1], 10);
   if (!(pj >= 0)) return null;
   var count = 0; try { count = await _call(chain, 'getComponentCount'); } catch(_) { return null; }
@@ -4025,6 +4049,10 @@ async function _findRecCarrier(rec, sequence, exclude) {
   if (!id || !sequence) return null;
   try { if (id.seq && String(sequence.guid || '') !== id.seq) return null; } catch(_) {}
   var clips = await _clipsWithIdentity(sequence, id.name || '', id.inStr);
+  // A linked clip's video and audio parts share the identity: only look at
+  // the kind the record was baked on (audio rows' keys start with 'a')
+  var recAudio = String(rec.key || '').charAt(0) === 'a';
+  clips = clips.filter(function(c) { return !!c.isAudio === recAudio; });
   function same(c, h) {
     return !!h && c.isAudio === !!h.isAudio && c.trackIdx === h.trackIdx && Math.abs(c.start - (h.start || 0)) < 1e-4;
   }
@@ -4046,7 +4074,7 @@ async function _findRecCarrier(rec, sequence, exclude) {
 function _bakedKeysFor(clipId, avail) {
   var keys = [];
   (avail || []).forEach(function(p) {
-    var recs = _bakesFor(clipId, p.key).filter(function(r){ return _recForRow(r, p) && _recOkOn(r, p) && _recHere(r, p); });
+    var recs = _bakesFor(p.clipId || clipId, p.key).filter(function(r){ return _recForRow(r, p) && _recOkOn(r, p) && _recHere(r, p); });
     if (recs.length) keys.push(p.key);
   });
   return keys;
@@ -4056,9 +4084,10 @@ function _bakedKeysFor(clipId, avail) {
 // marked (and retired) the records whose fingerprint is gone.
 function _tlAttachSpans(clipId, avail, tl) {
   (avail || []).forEach(function(p) {
-    p.tlSpans = _bakesFor(clipId, p.key)
+    var ptl = p._tlP || tl; // the row's own clip
+    p.tlSpans = _bakesFor(p.clipId || clipId, p.key)
       .filter(function(r){ return _recForRow(r, p) && _recOkOn(r, p) && (!Array.isArray(p._kf) || _recAlive(r, p._kf)); })
-      .map(function(r){ return tl ? [_toSeq(tl, r.kf0Sec), _toSeq(tl, r.kf1Sec)] : [r.kf0Sec, r.kf1Sec]; });
+      .map(function(r){ return ptl ? [_toSeq(ptl, r.kf0Sec), _toSeq(ptl, r.kf1Sec)] : [r.kf0Sec, r.kf1Sec]; });
   });
 }
 function _recordBakes(s, keys, contexts, written) {
@@ -4069,7 +4098,7 @@ function _recordBakes(s, keys, contexts, written) {
     var key = keys[w.ci];
     var ap  = (s.availableParams || []).filter(function(p){ return p.key === key; })[0];
     _bakeRecords.push({
-      id: ++_bakeSeq, batch: batchId, clipId: s.clipId, key: key,
+      id: ++_bakeSeq, batch: batchId, clipId: ctx.clipId || s.clipId, key: key,
       displayName: ap ? ap.displayName : key,
       label: ap ? (ap.label || ap.displayName) : key,
       param: ctx.param, project: ctx.project, fps: ctx.fps,
@@ -4193,8 +4222,9 @@ async function _recJobs(recs, key, s, sequence) {
   var unreachable = 0;
   for (var ri = 0; ri < recs.length; ri++) {
     var rec = recs[ri];
-    var liveRow = (rec.clipId === s.clipId)
-      ? (s.availableParams || []).filter(function(p){ return p.key === rec.key && _recForRow(rec, p) && _recOkOn(rec, p); })[0] : null;
+    var liveRow = (s.availableParams || []).filter(function(p){
+      return p.key === rec.key && (p.clipId || s.clipId) === rec.clipId && _recForRow(rec, p) && _recOkOn(rec, p);
+    })[0] || null;
     var param = (liveRow && liveRow._param) ? liveRow._param : rec.param;
     var have  = null;
     if (param) {
@@ -5522,7 +5552,11 @@ function _tlRequestValue(info) {
   var s = getState();
   var p = (s.availableParams || []).filter(function(a) { return a.key === info.lane.key; })[0];
   if (!p) return;
-  var mediaSec = s.tl ? _toMedia(s.tl, info.t.sec) : info.t.sec;
+  // The row's own clip when it says (clipT: start, media in-point, speed): a
+  // linked clip's audio rows sit beside its video rows and can be trimmed differently
+  var ct = p.clipT;
+  var mediaSec = ct ? _toMedia({ clipStart: ct[0], clipIn: ct[1], speed: ct[2] }, info.t.sec)
+               : s.tl ? _toMedia(s.tl, info.t.sec) : info.t.sec;
   var id = ++_tlValReq;
   _tlValBusy = true;
   function done(v) {
