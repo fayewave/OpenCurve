@@ -6269,6 +6269,60 @@ var _ocCursorHeld   = null; // element carrying the hovered cursor across a swap
 document.addEventListener('pointerdown',   function(e) { _ocPtrDown = true; _ocPtrX = e.clientX; _ocPtrY = e.clientY; }, true);
 document.addEventListener('pointerup',     function() { _ocPtrDown = false; _holdFixResume(); }, true);
 document.addEventListener('pointercancel', function() { _ocPtrDown = false; _holdFixResume(); }, true);
+
+// Lost releases (2026-11-23, CCX only): a double-click anywhere left whatever
+// was pressed dragging after the button was let go, so every press-drag (graph
+// handles, preset reorder, the dividers, the timeline height) waited for a
+// pointerup that never came. Windows sends the second press of a double-click
+// as its own message and UXP evidently doesn't always give it a matching
+// pointerup. Every drag here ends on pointerup, so a press whose release went
+// missing gets a synthetic one, dispatched at the element that was pressed (it
+// bubbles through the capturing parent), as soon as anything shows the button
+// is up: a click, dblclick or mouseup with no pointerup since the press, or a
+// move reporting no button held. A real pointerup clears the pending press
+// first, so a normal press never gets a second one; the drag ends are
+// idempotent anyway. Not confirmed with an event log in the CCX yet (the UDT
+// probe of 2026-11-23 couldn't open the panel next to the installed one).
+var _ocPress = null; // { target, id, x, y } while a press waits for its pointerup
+function _ocSynthUp(why, x, y) {
+  var p = _ocPress;
+  _ocPress = null;
+  if (!p || !p.target) return;
+  console.log('[OC] pointerup missing after a press (' + why + '); ending it');
+  var init = { bubbles: true, cancelable: true, pointerId: p.id, isPrimary: true, button: 0, buttons: 0,
+               clientX: x != null ? x : p.x, clientY: y != null ? y : p.y, pointerType: 'mouse' };
+  var ev = null;
+  try { ev = new PointerEvent('pointerup', init); } catch(_) { ev = null; }
+  if (!ev) { // UXP without a PointerEvent constructor: a plain event with the fields the handlers read
+    try { ev = new Event('pointerup', { bubbles: true, cancelable: true }); } catch(_) { return; }
+    ['pointerId', 'isPrimary', 'button', 'buttons', 'clientX', 'clientY', 'pointerType'].forEach(function(k) {
+      try { Object.defineProperty(ev, k, { value: init[k] }); } catch(_) {}
+    });
+  }
+  ev._ocSynth = true;
+  var t = p.target;
+  if (!t.isConnected && t.parentNode == null) t = document; // rebuilt under the press: the document listeners still end it
+  try { t.dispatchEvent(ev); } catch(e) { console.log('[OC] synthetic pointerup failed:', e); }
+  // Some drags never release their capture themselves; whichever element
+  // still holds it (the pressed one or a parent) lets go here
+  for (var n = p.target; n && n.hasPointerCapture; n = n.parentNode) {
+    try { if (n.hasPointerCapture(p.id)) n.releasePointerCapture(p.id); } catch(_) {}
+  }
+}
+document.addEventListener('pointerdown', function(e) {
+  if (e.button !== 0) return;
+  _ocPress = { target: e.target, id: e.pointerId, x: e.clientX, y: e.clientY };
+}, true);
+document.addEventListener('pointerup',     function(e) { if (!e._ocSynth) _ocPress = null; }, true);
+document.addEventListener('pointercancel', function() { _ocPress = null; }, true);
+['click', 'dblclick', 'mouseup'].forEach(function(type) {
+  document.addEventListener(type, function(e) {
+    if (_ocPress && (type !== 'mouseup' || e.button === 0)) _ocSynthUp(type, e.clientX, e.clientY);
+  }, true);
+});
+document.addEventListener('pointermove', function(e) {
+  if (_ocPress && typeof e.buttons === 'number' && (e.buttons & 1) === 0) _ocSynthUp('move without button', e.clientX, e.clientY);
+}, true);
 // The next real hover ends the carried cursor: UXP has hit-tested again by then
 document.addEventListener('pointerover', function() {
   if (_ocCursorHeld) { _ocCursorHeld.style.cursor = ''; document.body.style.cursor = ''; _ocCursorHeld = null; }
