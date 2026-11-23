@@ -10234,6 +10234,11 @@ function _showSettingsModal() {
   });
   issueRow.style.marginRight = '8px';
   _attachTooltip(issueRow, 'Open the OpenCurve issues page on GitHub');
+  // The GitHub button's icon (open in browser; the copy icon in the Exchange build)
+  var issueIcon = document.createElement('span');
+  issueIcon.style.cssText = 'display:inline-flex;width:15px;height:15px;margin-right:6px;';
+  issueIcon.innerHTML = ghIc;
+  issueRow._ocIn.insertBefore(issueIcon, issueRow._ocText);
 
   var footerRight = document.createElement('div');
   footerRight.style.cssText = 'display:flex;align-items:center;flex-shrink:0;';
@@ -10244,21 +10249,56 @@ function _showSettingsModal() {
   footerRow.appendChild(footerRight);
   footer.appendChild(footerRow);
 
-  // Footer layout: the buttons sit to the right of the credit row while
-  // both fit side by side, otherwise they drop underneath. Measured once
-  // from the row layout (the elements keep their natural widths).
-  var footNeed = 0, footStacked = false;
+  // Footer layout, narrowing in steps: everything on one row; then Report an
+  // Issue and Reset All Settings shortened to Report / Reset; then the
+  // (short) buttons dropped under the credit row. Widths are measured once
+  // from the full row. What the short labels save is estimated from the
+  // label widths by character count until the first switch, then measured
+  // (a deferred read, so the new text has been laid out).
+  var _footShort = [[issueRow, 'Report an Issue', 'Report'], [resetRow, 'Reset All Settings', 'Reset']];
+  var footNeed = 0, footRW = 0, footSave = 0, footSaveMeasured = false, footMode = 'row', footLastW = 0;
+  function _footSetShort(on) {
+    _footShort.forEach(function(e) { e[0]._ocText.textContent = on ? e[2] : e[1]; });
+  }
   function _layoutFooter(w) {
-    if (!footNeed && !footStacked) {
-      var lw = footerLeft.getBoundingClientRect().width, rw = footerRight.getBoundingClientRect().width;
-      if (lw && rw) footNeed = Math.ceil(lw + rw) + 24 + 12;
+    footLastW = w;
+    if (!footNeed && footMode === 'row') {
+      // scrollWidth: the credit row's own width even when a narrow panel has
+      // already squeezed it (it may shrink, the buttons never do)
+      var lw = Math.max(footerLeft.getBoundingClientRect().width, footerLeft.scrollWidth || 0), rw = footerRight.getBoundingClientRect().width;
+      if (lw && rw) {
+        footNeed = Math.ceil(lw + rw) + 24 + 12;
+        footRW = rw;
+        footSave = 0;
+        _footShort.forEach(function(e) {
+          var tw = e[0]._ocText.getBoundingClientRect().width || 0;
+          footSave += Math.floor(tw * (1 - e[2].length / e[1].length)) - 6;
+        });
+        footSave = Math.max(0, footSave);
+      }
     }
-    var stack = footNeed ? w < footNeed : false;
-    if (stack === footStacked) return;
-    footStacked = stack;
+    var mode = !footNeed || w >= footNeed ? 'row' : w >= footNeed - footSave ? 'short' : 'stack';
+    if (mode === footMode) return;
+    var wasShort = footMode !== 'row', short = mode !== 'row';
+    footMode = mode;
+    if (short !== wasShort) _footSetShort(short);
+    var stack = mode === 'stack';
     footerRow.style.flexDirection = stack ? 'column' : 'row';
     footerRow.style.alignItems = stack ? 'flex-start' : 'center';
     footerRight.style.marginTop = stack ? '8px' : '';
+    if (short && !footSaveMeasured) {
+      footSaveMeasured = true;
+      setTimeout(function() {
+        if (footMode === 'row') { footSaveMeasured = false; return; }
+        // The button group never shrinks (flex-shrink 0), so its width with the
+        // short labels holds in either layout; the credit row could be
+        // squeezed, which is why its width is the one taken from the full row
+        var rw = footerRight.getBoundingClientRect().width;
+        if (!rw) { footSaveMeasured = false; return; }
+        footSave = Math.max(0, Math.floor(footRW - rw));
+        _layoutFooter(footLastW); // re-decide with the measured saving
+      }, 0);
+    }
   }
 
   modal.appendChild(header);
