@@ -883,9 +883,17 @@ function detectContext(needFull) {
           if (!_alive && _ocRebase(_inf, p)) _alive = true;
           var _fcRec = Math.round((p.kf1Time - p.kf0Time) * (_inf.fps || p.seqFps || p.fps));
           if (!_alive || (!p.isOutside && _fcRec > (_inf.step || 1) && p.kf0Time >= _inf.kf0Time - 0.0001 && p.kf1Time <= _inf.kf1Time + 0.0001)) {
-            _bb.splice(_bj, 1);
+            // Dormant, not dropped: Ctrl+Z in Premiere can't reach a ZXP bake,
+            // but undoing the edit before it (a moved keyframe) breaks the
+            // fingerprint, and the redo puts it back. Dropping the record then
+            // left the bake on the clip as a grey run for good. A dormant record
+            // colours nothing, feeds no undo and blocks no bake; it wakes up
+            // when its bake holds again, and a new bake over its span drops it
+            // (_ocDropDormant).
+            _inf.dormant = true;
             continue;
           }
+          if (_inf.dormant) delete _inf.dormant;
           tlSpans.push([_r4(_seqT(p, _inf.kf0Time)), _r4(_seqT(p, _inf.kf1Time))]);
           // The record stays, but it only colours the row (and feeds its undo button)
           // while the playhead's bracket sits inside the span it baked; elsewhere on
@@ -1299,6 +1307,7 @@ function bakeKeyframes(argsJSON) {
       return _jsonStringify({ success: false, error: firstErr || 'No keyframes were written.' });
     }
 
+    for (var di = 0; di < undoInfo.length; di++) _ocDropDormant(undoInfo[di]);
     _undoStack.push(undoInfo);
     var warn = firstErr || (changed ? changed + ' of the selected properties changed and were skipped' : null);
     // bakedIds: each baked property's new record id, so the panel's row Undo /
@@ -1698,9 +1707,36 @@ function _ocPruneBatches() {
     }
   }
 }
-// Batches made this session (what the panel-wide Undo button can revert)
+// Batches made this session that the panel-wide Undo button can revert: a
+// batch whose records are all dormant (see detectContext) has nothing to undo
+// until its bake holds again
+function _ocBatchLive(b) {
+  for (var i = 0; i < b.length; i++) if (!b[i].dormant) return true;
+  return false;
+}
 function _ocSessionBatches() {
-  return Math.max(0, _undoStack.length - _ocSessionFloor);
+  var n = 0;
+  for (var bi = Math.max(0, _ocSessionFloor); bi < _undoStack.length; bi++) if (_ocBatchLive(_undoStack[bi])) n++;
+  return n;
+}
+// A new bake on the same clip and property over a dormant record's span: that
+// bake is gone for good, so forget the record (it would wake up on top of the
+// new one, which writes the same times)
+function _ocDropDormant(info) {
+  for (var bi = 0; bi < _undoStack.length; bi++) {
+    var b = _undoStack[bi];
+    for (var bj = b.length - 1; bj >= 0; bj--) {
+      var o = b[bj];
+      if (o === info || !o.dormant) continue;
+      if (o.compIdx !== info.compIdx || o.propIdx !== info.propIdx) continue;
+      if (o.nodeId && info.nodeId) { if (o.nodeId !== info.nodeId) continue; }
+      else if (o.clipName !== info.clipName || Math.abs(o.clipStart - info.clipStart) > 0.0005) continue;
+      if (o.displayName && info.displayName && o.displayName !== info.displayName) continue;
+      if (o.seqId && info.seqId && o.seqId !== info.seqId) continue;
+      if (o.kf0Time < info.kf1Time - 0.0001 && o.kf1Time > info.kf0Time + 0.0001) b.splice(bj, 1);
+    }
+  }
+  _ocPruneBatches();
 }
 
 // Per-row undo: remove the keyframes added by the given bake records
@@ -1776,7 +1812,11 @@ function undoBake() {
       return _jsonStringify({ success: false, error: 'Nothing to undo from this session' });
     }
 
-    var batch = _undoStack.pop();
+    // The newest batch with something to undo; dormant ones above it stay put
+    // (they may wake up again, see detectContext)
+    var bIdx = _undoStack.length - 1;
+    while (bIdx >= _ocSessionFloor && !_ocBatchLive(_undoStack[bIdx])) bIdx--;
+    var batch = _undoStack.splice(bIdx, 1)[0];
     var sequence = app.project.activeSequence;
     var removed = 0;
     var skipped = 0;
@@ -1809,7 +1849,7 @@ function undoBake() {
     if (removed === 0) {
       // Removed nothing — most likely the clip moved/changed since baking.
       // Put the batch back so the user can retry after reselecting the clip.
-      _undoStack.push(batch);
+      _undoStack.splice(bIdx, 0, batch);
       return _jsonStringify({ success: false, error: 'Could not undo — the original clip may have moved or changed. Select it and try again.', remaining: _ocSessionBatches() });
     }
 

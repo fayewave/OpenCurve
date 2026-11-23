@@ -3542,7 +3542,7 @@ function _loadBakeRecords() {
         param: null, project: null, fps: r.fps || 0, kf0Sec: r.kf0Sec, kf1Sec: r.kf1Sec,
         times: r.times, step: r.step || 1, curve: r.curve || null,
         fp: Array.isArray(r.fp) ? r.fp : null, fpTol: r.fpTol || 0, place: r.place || null, fpPending: !!r.fpPending,
-        prev: _prevOk(r.prev) ? r.prev : null,
+        prev: _prevOk(r.prev) ? r.prev : null, dormant: !!r.dormant || undefined,
       });
       if (r.id > _bakeSeq) _bakeSeq = r.id;
       if (r.batch > _bakeBatchSeq) _bakeBatchSeq = r.batch;
@@ -3556,7 +3556,7 @@ function _saveBakeRecords() {
     var out = _bakeRecords.slice(-_BAKE_RECORDS_MAX).map(function(r) {
       return { id: r.id, batch: r.batch, clipId: r.clipId, key: r.key, displayName: r.displayName, label: r.label || '', fps: r.fps,
                kf0Sec: r.kf0Sec, kf1Sec: r.kf1Sec, times: r.times.map(r6), step: r.step || 1, curve: r.curve || null,
-               fp: r.fp || null, fpTol: r.fpTol || 0, place: r.place || null, fpPending: !!r.fpPending, prev: r.prev || null };
+               fp: r.fp || null, fpTol: r.fpTol || 0, place: r.place || null, fpPending: !!r.fpPending, prev: r.prev || null, dormant: r.dormant ? 1 : 0 };
     });
     localStorage.setItem(_BAKE_RECORDS_KEY, JSON.stringify(out));
   } catch(_) {}
@@ -3588,7 +3588,7 @@ function _dropBake(rec) {
   if (i >= 0) { _bakeRecords.splice(i, 1); _saveBakeRecords(); }
 }
 function _hasSessionBakes() {
-  return _bakeRecords.some(function(r){ return r.batch > _sessionBatchFloor; });
+  return _bakeRecords.some(function(r){ return r.batch > _sessionBatchFloor && !r.dormant; });
 }
 // Does this record hold on this row? _evalRecords lists the ones that don't
 // (keyframes or values gone, or written by a bake on a copy of the clip) in
@@ -3882,8 +3882,13 @@ async function _evalRecords(clipId, avail, sequence, here, recFloor) {
         }
         if (v !== 'ok') dead = true;
       }
-      if (!dead) continue;
+      if (!dead) {
+        // its bake is back (a redo in Premiere): wake it up
+        if (rec.dormant) { delete rec.dormant; _saveBakeRecords(); _showUndoBtn(_hasSessionBakes()); }
+        continue;
+      }
       p._recBad.push(rec.id);
+      if (rec.dormant) continue; // already retired
       if (v !== 'kept') retire.push({ rec: rec, vk: vk });
     }
   }
@@ -3910,11 +3915,28 @@ async function _applyRetire(list, sequence, here) {
         r.rec.param = null;
         if (r.rec.batch > _sessionBatchFloor) { r.rec.batch = 0; _saveBakeRecords(); _showUndoBtn(_hasSessionBakes()); }
       }
-    } else {
-      _dropBake(r.rec);
+    } else if (!r.rec.dormant) {
+      // Dormant, not dropped: Ctrl+Z undoes a bake in Premiere and Ctrl+Shift+Z
+      // redoes it, and a dropped record left the redone bake as a grey run for
+      // good. A dormant record is marked bad on every scan (so it colours
+      // nothing and blocks no bake), leaves the panel-wide Undo, wakes up in
+      // _evalRecords once its bake holds again, and goes when a new bake on the
+      // same property covers its span (_dropDormant).
+      r.rec.dormant = true;
+      _saveBakeRecords();
       _showUndoBtn(_hasSessionBakes());
     }
   }
+}
+function _dropDormant(rec) {
+  var gone = false;
+  for (var i = _bakeRecords.length - 1; i >= 0; i--) {
+    var o = _bakeRecords[i];
+    if (o === rec || !o.dormant || o.clipId !== rec.clipId || o.key !== rec.key) continue;
+    if (o.displayName && rec.displayName && o.displayName !== rec.displayName) continue;
+    if (o.kf0Sec < rec.kf1Sec - 1e-4 && o.kf1Sec > rec.kf0Sec + 1e-4) { _bakeRecords.splice(i, 1); gone = true; }
+  }
+  return gone;
 }
 // A scan result's pending retirements, applied once (the result object is
 // cached and handed out again on idle polls)
@@ -4055,6 +4077,7 @@ function _recordBakes(s, keys, contexts, written) {
       step: w.step || 1, curve: _cloneCurve(s.curve),
       fp: w.fp || null, fpTol: _fpTolFor(ctx.val0, ctx.val1), place: ctx.place || null, fpPending: !!w.fp,
     });
+    _dropDormant(_bakeRecords[_bakeRecords.length - 1]);
   }
   if (written.length) _saveBakeRecords();
 }
@@ -4135,7 +4158,7 @@ async function _undoLastBakeRun() {
   var s = getState();
   // Only bakes made this session: records loaded from a previous session are
   // undone from their row button, once the playhead is over the clip
-  var mine = _bakeRecords.filter(function(r){ return r.batch > _sessionBatchFloor; });
+  var mine = _bakeRecords.filter(function(r){ return r.batch > _sessionBatchFloor && !r.dormant; });
   if (s.isBaking || mine.length === 0) return;
   var last = 0;
   for (var i = 0; i < mine.length; i++) if (mine[i].batch > last) last = mine[i].batch;
