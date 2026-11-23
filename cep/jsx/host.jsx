@@ -878,6 +878,9 @@ function detectContext(needFull) {
           // inside the span wider than the bake's keyframe spacing means the
           // bake was undone outside the panel (one of ours would be narrower).
           var _alive = (p.kfSecs && p.kfSecs.length) ? _ocBakeAlive(_inf, p.kfSecs) : true;
+          // ...unless the whole bake is still there, moved in media time (a
+          // head-trimmed adjustment layer): follow it
+          if (!_alive && _ocRebase(_inf, p)) _alive = true;
           var _fcRec = Math.round((p.kf1Time - p.kf0Time) * (_inf.fps || p.seqFps || p.fps));
           if (!_alive || (!p.isOutside && _fcRec > (_inf.step || 1) && p.kf0Time >= _inf.kf0Time - 0.0001 && p.kf1Time <= _inf.kf1Time + 0.0001)) {
             _bb.splice(_bj, 1);
@@ -1627,6 +1630,55 @@ function _ocBakeAlive(info, kfSecs) {
     for (var i = 0; i < times.length; i++) if (_ocHasTime(kfSecs, times[i])) n++;
   }
   return n > 0 && n * 2 >= times.length;
+}
+
+// Trimming the head of an adjustment layer (any synthetic item) keeps its
+// in-point at 3600 and moves every keyframe's media time by the trim, so they
+// stay put on the timeline (seen on 26.0.2). A record's times are media times,
+// so the bake looked undone and the record was dropped. Find the offset that
+// puts both original keyframes and every keyframe the bake wrote back on the
+// property, never onto another live record's span, and move the record by it.
+// (A normal clip keeps its keyframe times through a trim, and nodeId survives
+// it, so only synthetic items need this.)
+function _ocHasSorted(a, t) {
+  var lo = 0, hi = a.length - 1;
+  while (lo <= hi) {
+    var mid = (lo + hi) >> 1, d = a[mid] - t;
+    if (d < -0.0001) lo = mid + 1; else if (d > 0.0001) hi = mid - 1; else return true;
+  }
+  return false;
+}
+function _ocRebase(info, p) {
+  var kf = p.kfSecs, times = info.times || [];
+  if (!kf || !kf.length || !times.length || typeof info.kf0Time !== 'number' || typeof info.kf1Time !== 'number') return false;
+  if (!(info.kf1Time > info.kf0Time) || kf.length < times.length) return false;
+  var s = kf.slice(0); s.sort(function(a, b) { return a - b; });
+  for (var i = 0; i < s.length; i++) {
+    var d = s[i] - info.kf0Time;
+    if (Math.abs(d) < 0.0001 || !_ocHasSorted(s, info.kf1Time + d)) continue;
+    var all = true;
+    for (var j = 0; j < times.length && all; j++) if (!_ocHasSorted(s, times[j] + d)) all = false;
+    if (!all) continue;
+    var lo = info.kf0Time + d, hi = info.kf1Time + d, onOther = false;
+    for (var bi = 0; bi < _undoStack.length && !onOther; bi++) {
+      for (var bj = 0; bj < _undoStack[bi].length; bj++) {
+        var o = _undoStack[bi][bj];
+        if (o === info || o.compIdx !== info.compIdx || o.propIdx !== info.propIdx) continue;
+        if ((o.nodeId || '') !== (info.nodeId || '') || o.clipName !== info.clipName) continue;
+        if (lo < o.kf1Time - 0.0001 && hi > o.kf0Time + 0.0001 && _ocBakeAlive(o, kf)) { onOther = true; break; }
+      }
+    }
+    if (onOther) continue;
+    info.kf0Time = lo;
+    info.kf1Time = hi;
+    var moved = [];
+    for (var k = 0; k < times.length; k++) moved.push(times[k] + d);
+    info.times = moved;
+    // the start moved with the trim (the fallback match for records without a nodeId)
+    if (typeof p.clipStart === 'number') info.clipStart = p.clipStart;
+    return true;
+  }
+  return false;
 }
 
 function _ocFindBake(id) {

@@ -3747,6 +3747,93 @@ function _kfSig(kf) {
   for (var i = 0; i < (kf || []).length; i++) sum += kf[i];
   return (kf || []).length + ':' + Math.round(sum * 1e4);
 }
+// ── Trimming the head of a clip after a bake ──
+// A normal clip keeps its keyframes in media time, but a head trim changes its
+// in-point, which is part of the record's clipId, so the record stopped
+// matching. _adoptTrimmed takes over a record of the same sequence and clip
+// name with another in-point when its whole bake (times, and values for records
+// that carry them) is on this row, and renames it to this clip.
+// An adjustment layer (any synthetic item: colour matte, title) is the other
+// way round: its in-point stays at 3600 and Premiere moves every keyframe's
+// media time by the trim so they stay put on the timeline (seen on 26.0.2), so
+// the record's times miss and it was dropped as undone. _recRebase finds the
+// offset that puts every keyframe the bake wrote back on the property and
+// moves the record by it.
+function _placeOf(here) {
+  return here ? { start: here.start || 0, trackIdx: here.trackIdx, isAudio: !!here.isAudio } : null;
+}
+function _hasSorted(a, t) {
+  var lo = 0, hi = a.length - 1;
+  while (lo <= hi) {
+    var mid = (lo + hi) >> 1, d = a[mid] - t;
+    if (d < -1e-4) lo = mid + 1; else if (d > 1e-4) hi = mid - 1; else return true;
+  }
+  return false;
+}
+// Every written time present, and both original keyframes: stricter than
+// _recAlive, for matches made without the record's own clip identity
+function _recFull(rec, kf, d) {
+  d = d || 0;
+  var s = kf.slice().sort(function(a, b) { return a - b; });
+  if (!_hasSorted(s, rec.kf0Sec + d) || !_hasSorted(s, rec.kf1Sec + d)) return false;
+  for (var i = 0; i < rec.times.length; i++) if (!_hasSorted(s, rec.times[i] + d)) return false;
+  return true;
+}
+async function _adoptTrimmed(clipId, p, here, recFloor) {
+  var me = _parseClipId(clipId);
+  if (!me || !me.seq) return;
+  var changed = false;
+  for (var i = 0; i < _bakeRecords.length; i++) {
+    var r = _bakeRecords[i];
+    if (r.key !== p.key || r.clipId === clipId || !_recForRow(r, p)) continue;
+    if (recFloor >= 0 && r.id > recFloor) continue;
+    var id = _parseClipId(r.clipId);
+    if (!id || id.seq !== me.seq || id.name !== me.name) continue;
+    if (!_recAlive(r, p._kf)) continue;
+    if (r.fp && r.fp.length ? !(await _recValsOk(r, p._param)) : !_recFull(r, p._kf)) continue;
+    r.clipId = clipId;
+    r.place  = _placeOf(here);
+    changed = true;
+  }
+  if (changed) _saveBakeRecords();
+}
+// Offsets d (at most a few) that put the record's two keyframes and every time
+// it wrote on the property's keyframes
+function _recShifts(rec, kf) {
+  var out = [], times = rec.times || [];
+  if (!(rec.kf1Sec > rec.kf0Sec) || !times.length || !kf || kf.length < times.length) return out;
+  var s = kf.slice().sort(function(a, b) { return a - b; });
+  for (var i = 0; i < s.length && out.length < 4; i++) {
+    var d = s[i] - rec.kf0Sec;
+    if (Math.abs(d) < 1e-4 || !_hasSorted(s, rec.kf1Sec + d)) continue;
+    var all = true;
+    for (var j = 0; j < times.length && all; j++) if (!_hasSorted(s, times[j] + d)) all = false;
+    if (all) out.push(d);
+  }
+  return out;
+}
+async function _recRebase(rec, p, recs, here) {
+  if (!Array.isArray(p._kf)) return false;
+  var ds = _recShifts(rec, p._kf);
+  for (var k = 0; k < ds.length; k++) {
+    var d = ds[k], lo = rec.kf0Sec + d, hi = rec.kf1Sec + d;
+    // Never onto another bake that is still where its record says
+    var onOther = recs.some(function(o) {
+      return o !== rec && lo < o.kf1Sec - 1e-4 && hi > o.kf0Sec + 1e-4 && _recAlive(o, p._kf);
+    });
+    if (onOther) continue;
+    var fp = rec.fp ? rec.fp.map(function(e) { return [e[0] + d, e[1]]; }) : null;
+    if (fp && fp.length && p._param && !(await _recValsOk({ fp: fp, fpTol: rec.fpTol }, p._param))) continue;
+    rec.kf0Sec = lo;
+    rec.kf1Sec = hi;
+    rec.times  = rec.times.map(function(t) { return t + d; });
+    rec.fp     = fp;
+    rec.place  = _placeOf(here);
+    _saveBakeRecords();
+    return true;
+  }
+  return false;
+}
 // Mark the records that don't hold on each row (p._recBad) and return the ones
 // to retire (_applyRetire forgets those whose bake is gone from every clip that
 // shared it). Nothing is dropped here: a scan's result can still be thrown away
@@ -3760,6 +3847,7 @@ async function _evalRecords(clipId, avail, sequence, here, recFloor) {
   for (var pi = 0; pi < (avail || []).length; pi++) {
     var p = avail[pi];
     p._recBad = [];
+    if (Array.isArray(p._kf) && p._kf.length) await _adoptTrimmed(clipId, p, here, recFloor);
     var recs = _bakesFor(clipId, p.key).filter(function(r){ return _recForRow(r, p) && !(recFloor >= 0 && r.id > recFloor); });
     if (!recs.length) continue;
     var sig = _kfSig(p._kf);
@@ -3772,6 +3860,9 @@ async function _evalRecords(clipId, avail, sequence, here, recFloor) {
       // on a slowed-down clip was written a sequence frame apart, which is more
       // than one frame of the media rate the rows now count in.
       var dead = Array.isArray(p._kf) && !_recAlive(rec, p._kf);
+      // ...unless the whole bake is still there, moved in media time (a
+      // head-trimmed adjustment layer): follow it
+      if (dead && await _recRebase(rec, p, recs, here)) dead = false;
       if (!dead && _recHere(rec, p) && typeof p._kf0 === 'number' && !p._out) {
         var fcRec = rec.fps > 0 ? Math.round((p._kf1 - p._kf0) * rec.fps) : p._fc;
         if (typeof fcRec === 'number' && fcRec > (rec.step || 1)) dead = true;
